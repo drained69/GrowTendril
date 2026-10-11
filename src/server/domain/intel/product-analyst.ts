@@ -61,13 +61,38 @@ const CATEGORIES: { category: string; terms: string[]; competitors: string[]; te
   { category: "Stablecoin payments", terms: ["stablecoin", "usdc", "payments", "payouts", "settlement", "checkout"], competitors: [], terminology: ["stablecoins", "USDC", "payments", "settlement", "on-chain payments"] },
   { category: "Developer tooling", terms: ["sdk", "api", "cli", "developers", "library", "open source"], competitors: [], terminology: ["SDK", "API", "developer experience", "integration"] },
   { category: "Web3 infrastructure", terms: ["blockchain", "onchain", "on-chain", "smart contract", "rpc", "wallet", "chain"], competitors: [], terminology: ["wallets", "smart contracts", "cross-chain", "RPC"] },
+  { category: "SaaS & business software", terms: ["saas", "platform", "workflow", "automation", "crm", "teams", "b2b", "subscription", "integrations"], competitors: [], terminology: ["workflow automation", "team collaboration", "integrations", "reporting"] },
+  { category: "E-commerce & consumer products", terms: ["shop", "store", "order", "shipping", "delivery", "collection", "brand", "gift", "free returns", "buy"], competitors: [], terminology: ["online store", "shipping", "reviews", "gifts", "returns"] },
+  { category: "Marketplaces & local services", terms: ["marketplace", "booking", "appointment", "book a", "local", "hire", "service provider", "listings", "rent"], competitors: [], terminology: ["booking", "local services", "listings", "providers"] },
+  { category: "Education & community", terms: ["course", "learn", "lessons", "students", "curriculum", "newsletter", "community", "cohort", "membership"], competitors: [], terminology: ["online course", "learning", "community", "cohort"] },
+  { category: "Health & wellness", terms: ["health", "fitness", "wellness", "patients", "clinic", "nutrition", "therapy", "sleep", "habit"], competitors: [], terminology: ["wellness", "fitness", "habits", "health tracking"] },
+  { category: "Finance & fintech", terms: ["banking", "lending", "invest", "insurance", "budgeting", "accounting", "invoice", "loans", "savings"], competitors: [], terminology: ["personal finance", "invoicing", "lending", "budgeting"] },
   { category: "Data & analytics", terms: ["analytics", "data", "dashboard", "insights", "metrics"], competitors: [], terminology: ["analytics", "data pipeline", "insights"] },
 ];
+
+const TARGET_USERS: Record<string, string[]> = {
+  "AI agent infrastructure": ["Developers", "Technical founders", "Platform teams"],
+  "Stablecoin payments": ["Developers", "Finance and payments teams"],
+  "Developer tooling": ["Developers", "Technical founders", "Platform teams"],
+  "Web3 infrastructure": ["Developers", "Protocol and platform teams"],
+  "SaaS & business software": ["Operations leaders", "Team leads", "Founders"],
+  "E-commerce & consumer products": ["Shoppers", "Gift buyers", "Brand-loyal customers"],
+  "Marketplaces & local services": ["Customers booking services", "Service providers"],
+  "Education & community": ["Learners", "Parents and students", "Community members"],
+  "Health & wellness": ["Health-conscious consumers", "Patients and clients", "Practitioners"],
+  "Finance & fintech": ["Consumers managing money", "Small-business owners", "Finance teams"],
+  "Data & analytics": ["Data teams", "Product teams"],
+};
+
+const CONSUMER_CATEGORIES = new Set(["E-commerce & consumer products", "Marketplaces & local services", "Education & community", "Health & wellness"]);
+
+/** No category matched: stay neutral and let the founder's own words drive the keywords. */
+const GENERAL_CATEGORY = { category: "General product", terms: [] as string[], competitors: [] as string[], terminology: [] as string[] };
 
 function heuristicProfile(input: ProductInput, pages: PageText[]): ProductProfile {
   const corpus = [input.description, ...pages.flatMap((p) => [p.title ?? "", p.description ?? "", ...p.headings, p.text.slice(0, 4000)])].join("\n").toLowerCase();
   const scored = CATEGORIES.map((c) => ({ c, n: c.terms.filter((t) => corpus.includes(t)).length })).sort((a, b) => b.n - a.n);
-  const top = scored[0].n ? scored[0].c : CATEGORIES[2];
+  const top = scored[0].n ? scored[0].c : GENERAL_CATEGORY;
   const second = scored[1]?.n ? scored[1].c : null;
   const bigrams = frequentBigrams(pages.map((p) => [...p.headings, p.description ?? ""].join(" ")).concat(input.description), 1, 15);
   const descTokens = tokenize(input.description).filter((t) => t.length > 3);
@@ -76,7 +101,7 @@ function heuristicProfile(input: ProductInput, pages: PageText[]): ProductProfil
   return {
     summary: pages.find((p) => p.description)?.description ?? input.description,
     category: second ? `${top.category} · ${second.category}` : top.category,
-    targetUsers: top.category === "Data & analytics" ? ["Data teams", "Product teams"] : ["Developers", "Technical founders", "Platform teams"],
+    targetUsers: TARGET_USERS[top.category] ?? ["People and teams who match the description you gave"],
     competitors: [],
     valueProps: pages.flatMap((p) => p.headings).filter((h) => h.split(" ").length >= 3 && h.split(" ").length <= 12).slice(0, 5),
     integrations: [...new Set((corpus.match(/\b(base|arc|solana|ethereum|arbitrum|polygon|langchain|openai|anthropic|next\.js|python|typescript|rust|stripe|circle)\b/g) ?? []))].slice(0, 10),
@@ -133,9 +158,17 @@ function heuristicIcp(profile: ProductProfile): IcpProposal[] {
       { tier: "secondary", title: "Developer tooling companies", description: "API businesses exploring usage-based machine payments", companySize: "10–200", segments: ["developer tools", "API providers"], signals: ["Discussing usage-based pricing", "Exploring x402"] },
     ];
   }
+  // Consumer-facing categories sell to individuals, so describe people rather than companies.
+  if (CONSUMER_CATEGORIES.has(profile.category)) {
+    const what = terms[0] ?? profile.category.toLowerCase();
+    return [
+      { tier: "primary", title: `People looking for ${what}`, description: `People whose public posts show they are asking about, comparing or looking for ${terms.join(", ") || what}`, companySize: null, segments: profile.targetUsers.map((t) => t.toLowerCase()), signals: ["Asks for recommendations", "Compares options publicly", "Complains about an alternative"] },
+      { tier: "secondary", title: "People comparing alternatives", description: "Buyers publicly comparing options in this category", companySize: null, segments: ["buyers", "evaluators"], signals: ["Asks for recommendations", "Complains about incumbents"] },
+    ];
+  }
   return [
-    { tier: "primary", title: `Teams adopting ${profile.category}`, description: `Companies whose public activity overlaps ${terms.join(", ")}`, companySize: "10–100", segments: profile.targetUsers.map((t) => t.toLowerCase()), signals: ["Public questions about " + (terms[0] ?? "the category"), "Hiring for relevant roles", "Recent launch in the category"] },
-    { tier: "secondary", title: "Developers evaluating alternatives", description: "Individual developers comparing tools in this category", companySize: null, segments: ["developer"], signals: ["Asks for recommendations", "Complains about incumbents"] },
+    { tier: "primary", title: profile.category === "General product" ? `People interested in ${terms[0] ?? "your product"}` : `Teams adopting ${profile.category}`, description: `Companies whose public activity overlaps ${terms.join(", ")}`, companySize: "10–100", segments: profile.targetUsers.map((t) => t.toLowerCase()), signals: ["Public questions about " + (terms[0] ?? "the category"), "Hiring for relevant roles", "Recent launch in the category"] },
+    { tier: "secondary", title: "People comparing alternatives", description: "Buyers publicly comparing options in this category", companySize: null, segments: ["buyers", "evaluators"], signals: ["Asks for recommendations", "Complains about incumbents"] },
   ];
 }
 

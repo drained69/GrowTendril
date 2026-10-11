@@ -69,6 +69,9 @@ export async function onboardIcpAction(): Promise<ActionResult> {
 }
 
 const MISSION_TEMPLATES = {
+  first_100_customers: { name: "First 100 Customers", goalEvent: "purchase", goalDescription: "paying customers" },
+  first_100_users: { name: "First 100 Users", goalEvent: "signup", goalDescription: "signups from people who match your ideal customer" },
+  qualified_leads: { name: "Qualified Leads", goalEvent: "lead", goalDescription: "qualified leads" },
   first_100_devs: { name: "First 100 Developers", goalEvent: "sdk_key_created", goalDescription: "verified SDK users" },
   find_buyers: { name: "Find 20 Buyers", goalEvent: "demo_request", goalDescription: "high-intent qualified companies requesting a demo" },
   own_narrative: { name: "Own the Narrative", goalEvent: "visit", goalDescription: "qualified visits from the target narrative" },
@@ -76,7 +79,7 @@ const MISSION_TEMPLATES = {
 } as const;
 
 const MissionForm = z.object({
-  template: z.enum(["first_100_devs", "find_buyers", "own_narrative", "kol_discovery"]),
+  template: z.enum(["first_100_customers", "first_100_users", "qualified_leads", "first_100_devs", "find_buyers", "own_narrative", "kol_discovery"]),
   goal: z.coerce.number().int().min(1).max(1_000_000),
   days: z.coerce.number().int().min(1).max(180),
   budget: z.string().regex(/^\d+(\.\d{1,6})?$/, "Budget must be a USDC amount"),

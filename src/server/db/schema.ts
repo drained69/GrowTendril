@@ -183,7 +183,7 @@ export const missions = pgTable(
   {
     id: id(),
     projectId: text("project_id").notNull().references(() => projects.id, { onDelete: "cascade" }),
-    template: text("template").notNull(), // first_100_devs | find_buyers | own_narrative | kol_discovery | custom
+    template: text("template").notNull(), // first_100_customers | first_100_users | qualified_leads | first_100_devs | find_buyers | own_narrative | kol_discovery | custom
     name: text("name").notNull(),
     goalDescription: text("goal_description").notNull(),
     /** Conversion event that counts toward the goal. */

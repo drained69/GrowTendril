@@ -1,59 +1,396 @@
+<div align="center">
+
 # GrowTendril
 
-**Give your AI a growth goal and a budget.**
+**An autonomous growth operator for any business.**<br/>
+Give it a product, a goal and a budget. It finds who is ready to buy, decides what is worth doing, pays for it within rules you set, and proves what worked.
 
-GrowTendril is an autonomous growth operator for Web3 and developer products. A founder gives it a product, a target customer, a goal, a timeframe, a USDC budget and hard spending rules. GrowTendril then:
+[![CI](https://github.com/drained69/growthOS/actions/workflows/ci.yml/badge.svg)](https://github.com/drained69/growthOS/actions/workflows/ci.yml)
+![Node](https://img.shields.io/badge/node-%E2%89%A5%2020-3c873a)
+![Next.js](https://img.shields.io/badge/Next.js-15-black)
+![TypeScript](https://img.shields.io/badge/TypeScript-strict-3178c6)
+![Payments](https://img.shields.io/badge/payments-USDC%20on%20Arc-2775ca)
 
-- discovers who shows real intent,
-- maps the narratives and the voices shaping them,
-- decides what is worth pursuing, and whether extra information is worth paying for,
-- spends USDC on Arc through Circle infrastructure, inside a deterministic policy engine,
-- measures attributed results, and moves the next dollar toward what worked.
+</div>
 
 ```
 DISCOVER → UNDERSTAND → VERIFY → DECIDE → SPEND → EXECUTE → MEASURE → ATTRIBUTE → LEARN → REALLOCATE → repeat
 ```
 
-It optimizes **verified growth per USDC spent**. It does not optimize followers, impressions, posts or emails sent.
+GrowTendril optimizes one number: **verified growth per dollar spent.** It does not optimize followers, impressions, posts or emails sent, and it never contacts anyone on your behalf.
 
 ---
 
 ## Contents
 
-[Problem](#problem) · [Solution](#solution) · [Why GrowTendril](#why-growtendril) · [Architecture](#architecture) · [Running it as a product](#running-it-as-a-product) · [Agent loop](#agent-loop) · [Customer discovery](#customer-discovery) · [Narrative intelligence](#narrative-intelligence) · [KOL intelligence](#kol-intelligence) · [Creator campaigns](#creator-campaigns) · [Growth missions](#growth-missions) · [Attribution](#attribution) · [Autonomous budget](#autonomous-budget) · [Policy engine](#policy-engine) · [Circle Agent Stack](#circle-agent-stack) · [Arc App Kit](#arc-app-kit) · [Security](#security) · [Setup](#setup) · [Environment variables](#environment-variables) · [Demo](#demo) · [Testnet instructions](#testnet-instructions) · [Mainnet](#mainnet) · [Verification status](#verification-status) · [Known limitations](#known-limitations) · [Roadmap](#roadmap)
+1. [Who it is for](#who-it-is-for)
+2. [What it does](#what-it-does)
+3. [Quick start](#quick-start)
+4. [A worked example](#a-worked-example)
+5. [Core concepts](#core-concepts)
+6. [How the intelligence works](#how-the-intelligence-works)
+7. [Creator campaigns](#creator-campaigns)
+8. [Measuring results](#measuring-results)
+9. [The policy engine](#the-policy-engine)
+10. [Payments on Circle and Arc](#payments-on-circle-and-arc)
+11. [Architecture](#architecture)
+12. [Configuration](#configuration)
+13. [Deployment](#deployment)
+14. [Testnet and mainnet](#testnet-and-mainnet)
+15. [Security and privacy](#security-and-privacy)
+16. [Verification and testing](#verification-and-testing)
+17. [Troubleshooting](#troubleshooting)
+18. [Known limitations](#known-limitations)
+19. [Roadmap](#roadmap)
+20. [Contributing](#contributing)
 
 ---
 
-## Problem
+## Who it is for
 
-Early-stage technical products don't lack tools for *doing* growth. They lack judgment about *where* growth is:
+GrowTendril is for **any business that has a product and wants customers**, from a one-person shop to a funded startup. It is not specific to crypto or software. The engine looks for *buying intent in public conversation*: people asking for recommendations, comparing options, complaining about alternatives, switching tools, or announcing something that creates a need. Those signals exist in every market.
 
-- Lead lists are scraped by volume and carry no evidence of intent.
-- "Influencer" tools rank people by follower count, and a big audience is not a relevant one.
-- Marketing dashboards summarize activity but don't decide anything.
-- AI marketing assistants generate content and messages, and often spam.
-- Nobody connects a dollar spent to a qualified developer acquired, so budget isn't reallocated.
+| If you sell… | Signals it looks for | A typical goal | Sources that help most |
+| --- | --- | --- | --- |
+| **SaaS and B2B software** | Recommendation requests, migrations away from a competitor, hiring for the role your product serves | Signups, demo requests, trials | Reddit, X, YouTube, Hacker News, RSS |
+| **E-commerce and consumer products** | "Any good ___?" threads, gift searches, complaints about alternatives, review discussions | Purchases | Reddit, YouTube, X |
+| **Local services and marketplaces** | "Looking for a ___" posts, questions, service complaints | Bookings, leads | Reddit, X, RSS |
+| **Education and communities** | Learners comparing courses, questions about getting started | Signups, trials, purchases | YouTube, Reddit, X, RSS |
+| **Health and wellness** | Habit and routine discussions, product comparisons | Trials, app installs, purchases | YouTube, Reddit |
+| **Finance and fintech** | Questions about tools, switching providers, pain points | Signups, qualified leads | Reddit, X, RSS |
+| **Developer tools** | Public technical questions, adoption of rival tools, repo activity | SDK keys, installs | GitHub, Hacker News, Reddit, X |
+| **Web3 and crypto products** | Integration questions, launches, wallet and chain discussions | Wallet connects, signups | X, GitHub, Hacker News, Reddit |
 
-## Solution
+> **Be realistic about fit.** GrowTendril works best where your buyers talk in public (forums, social platforms, video comments, blogs). If your customers are found only through private channels, there is less to observe. Signal detection currently reads English-language text.
 
-GrowTendril behaves like a growth employee with a company card and strict limits:
+You do not need to know anything about crypto to use it. Payments are made in **USDC**, a US-dollar stablecoin: you fund the agent's wallet once, and it pays for data and creators from that budget under your limits. See [Payments on Circle and Arc](#payments-on-circle-and-arc) for what that means in practice.
 
-| It answers… | …with |
+## What it does
+
+**Understand your market**
+- Reads your public site and docs to build a product profile and ideal customer profile (ICP).
+- Collects public posts from the sources you connect and turns them into dated, attributable **evidence**.
+- Scores companies and people on buying intent with a transparent, weighted breakdown, and shows *why now*.
+- Maps **narratives** (the topics people are talking about), their velocity and lifecycle, and which voices drive them.
+- Detects **product issues** in public feedback and holds paid acquisition while one is blocking sign-ups.
+
+**Decide what is worth doing**
+- Ranks **creators** (influencers, writers, channel owners) by relevance and discussion quality, not follower count.
+- Turns high-confidence opportunities into **experiments** with a hypothesis, a success metric and a stop condition.
+- Decides whether extra information is worth buying, using an expected-value model, and buys it automatically when it is.
+
+**Spend safely**
+- Every payment is a structured action checked by a deterministic **policy engine**: limits, categories, approvals, a kill switch.
+- Anything above your limits waits in an **Approval Inbox**. Approvals re-check the hard rules.
+- Every decision produces a sha256-sealed **receipt** that links to the payment trace.
+
+**Prove what worked**
+- First-party **attribution**: tracked links and signed conversion events tie each result to the experiment that produced it.
+- Measures cost per qualified conversion, stops losing experiments and moves unspent budget to winners.
+- **Creator campaigns** let creators opt in, publish under rules they can read first, and earn per accepted post and verified result.
+
+**Run it as a team product**
+- Workspaces with roles, invites, encrypted per-workspace integrations and an isolated wallet per workspace.
+- Autopilot on a schedule, a durable job queue, a daily brief and a full audit trail.
+
+### The principles it is built on
+
+- **Money moves only through code, never through a prompt.** An AI model never sets a score, never computes attribution and never triggers a payment.
+- **No spam.** It produces opportunities, evidence and drafts. A human decides who to contact.
+- **No fabrication.** Every record is labelled `DEMO`, `SIMULATED`, `TESTNET` or `LIVE`. There are no invented posts, hashes, settlements or metrics.
+- **Honest numbers.** Budget figures say where they came from: measured from your data, your setting, or a starting value you have not reviewed. Missing inputs stay missing.
+
+---
+
+## Quick start
+
+Requires **Node 20 or newer**. No API keys are needed to explore.
+
+```bash
+git clone https://github.com/drained69/growthOS.git
+cd growthOS
+npm install
+cp .env.example .env.local
+npm run dev                               # web on :3000, sample data seller on :4021
+```
+
+Open <http://localhost:3000> and choose **See it work**. This creates a private guest workspace with a fictional product (labelled `DEMO` everywhere) so you can explore every screen. Payments in the demo are recorded as **SIMULATED**: the full decision and policy path runs and nothing moves.
+
+### Use it for your own product
+
+1. **Sign up** and create a workspace. Enter your site, docs link and a short description.
+2. **Review** the generated profile and ideal customer, then pick a **mission** (for example *First 100 Customers*), a goal, a timeframe and a budget.
+3. **Set your limits** and an autopilot cadence, or leave autopilot off and run cycles by hand.
+4. **Connect sources** under *Integrations* (Hacker News works with no key; Reddit, YouTube, X, GitHub and RSS take keys).
+5. **Run a scan.** It collects and analyzes evidence only and never spends.
+6. Optional, when you want it to act: create the **agent wallet**, fund it, and send **conversion events** from your product so results can be attributed. See [Testnet and mainnet](#testnet-and-mainnet).
+
+### Scripts
+
+| Command | What it does |
 | --- | --- |
-| Why this company / person / KOL? | Transparent, weighted scores with the reason behind each component |
-| Why now? | Dated signals (launches, hiring, questions, migrations) with a recency decay |
-| What evidence? | Every claim links to a source; purchased evidence is tagged `PAID · x402` |
-| What should we do? | A measurable experiment with a hypothesis, success metric and stop condition |
-| How much is it worth spending? | An expected-value-of-information model and the policy engine |
-| Did it work? | First-party attribution, cost per qualified conversion, and reallocation |
+| `npm run dev` | Web app plus the sample x402 data seller |
+| `npm run dev:web` | Web app only |
+| `npm run build` then `npm start` | Production build and server |
+| `npm test` | Unit and integration tests (63) |
+| `npm run typecheck` | `tsc --noEmit` |
+| `npm run demo:run` | Run the 8-step demo loop headlessly, in simulation |
+| `npm run doctor` | Validate the payment integration against the real network, step by step |
+| `npm run wallet:setup` | `-- --entity-secret` registers a Circle entity secret; `-- --local` prints a throwaway testnet key |
+| `npm run worker` | Standalone job worker (see [Deployment](#deployment)) |
+| `npm run signals` | The sample x402 data seller on its own |
+| `npm run db:seed` | Reset and seed the demo workspace |
+| `npm run db:generate` | Generate a migration after a schema change |
+| `npm run test:events` | Send valid, replayed and tampered signed events to a running instance (uses the seeded demo project) |
 
-## Why GrowTendril
+> The embedded database (PGlite) is single-process. Stop the dev server before running `db:seed` or `demo:run` against the same `.data/pglite` folder, or point `PGLITE_DIR` elsewhere. Set `DATABASE_URL` to use Postgres.
 
-- **It decides.** The Operator runs the loop on its own: it buys data when the information is worth more than its price, creates experiments when confidence crosses a threshold, stops losing experiments and reallocates their unspent budget.
-- **Money moves only through code, never through a prompt.** Every money movement is a Zod-validated structured action, checked by a deterministic policy engine, and run through an idempotent transaction state machine.
-- **Every decision gets an auditable receipt**, sha256-sealed, with the full payment trace.
-- **No spam.** It never sends emails, DMs, mentions or comments. It produces the opportunity, the evidence and a draft, and a human decides.
-- **No fabrication.** Every record is labelled `DEMO`, `SIMULATED`, `TESTNET` or `LIVE`. No fake posts, hashes, settlements or metrics.
+---
+
+## A worked example
+
+*Illustrative. The bundled demo uses a fictional developer tool; this shows how the same loop applies to a different business.*
+
+**Hearth & Wick** sells hand-poured soy candles online. The owner has 400 USDC to test growth and wants 100 paying customers.
+
+1. **Onboarding.** She enters the shop URL. GrowTendril reads the public pages and classifies the product as *E-commerce and consumer products*, with target users such as gift buyers and brand-loyal customers. She edits the competitors it could not know.
+2. **Mission.** *First 100 Customers*, goal event `purchase`, 30 days, 400 USDC.
+3. **Economics.** In *Settings → Economics* she enters what a customer is worth (40 USDC) and her margin (60%). Until her store has sent enough purchase events, the action-to-customer rate is shown as **No data** and the planner will not invent one.
+4. **Integrations.** She connects Reddit and YouTube. A scan finds public threads such as *"any recommendations for a non-toxic soy candle?"*, tagged as recommendation requests, with the thread linked as evidence.
+5. **Opportunities.** GrowTendril surfaces a narrative ("clean-burning candles") that is accelerating, and three creators who write thoughtful gift guides, ranked above a larger account whose engagement looks inflated.
+6. **Creator campaign.** She sets *Purchase* as the target, a max cost per purchase of 12 USDC and a 200 USDC test budget. The plan explains the number of creators, base pay per accepted post, the per-action bonus and the holdback. Only the test phase is released at launch.
+7. **Creators opt in** through a public link, read the rules (including the disclosure requirement) and apply. She accepts three. Each gets a private tracking link.
+8. **Posts and results.** Creators submit their posts. She reviews them against a rubric and cannot accept one that lacks a clear disclosure. Her shop's checkout sends a signed `purchase` event carrying the tracking reference, so each sale is credited to the right creator.
+9. **Payouts.** Earned rewards, after the holdback, become payouts. Each goes through the policy engine and, because creator payments are approval-gated by default, waits in her Approval Inbox with the reason for every line.
+10. **Learning.** The held budget goes only to creators whose measured cost per purchase beats her ceiling. A daily brief summarizes spend, results and what changed.
+
+---
+
+## Core concepts
+
+| Concept | Meaning |
+| --- | --- |
+| **Workspace** | One product being grown. Everything is scoped to a workspace: data, wallet, integrations, members, policy. |
+| **Mission** | A goal (a conversion event and a target), a timeframe and a budget split by category. |
+| **Opportunity** | Something worth doing about a company, a creator, a narrative or a customer, with a confidence score and the evidence behind it. |
+| **Experiment** | A measurable bet with a hypothesis, success metric, stop condition and a budget paid in two tranches. |
+| **Evidence** | A dated, sourced observation. Purchased evidence is tagged `PAID · x402`. |
+| **Policy** | Your spending rules, enforced in code on every action. |
+| **Receipt** | A sha256-sealed record of what the agent saw, why it acted, the policy verdict and the payment trace. |
+| **Data mode** | `DEMO` (fictional seed data), `SIMULATED` (would have happened, nothing moved), `TESTNET` (real activity with test funds) or `LIVE` (real public data, or real funds on mainnet). |
+
+### Roles
+
+| Role | Can |
+| --- | --- |
+| **Viewer** | Read intelligence, experiments and receipts |
+| **Member** | Everything a viewer can, plus run scans and cycles, create experiments and campaigns, and review posts |
+| **Admin** | Everything a member can, plus approve spend, edit the spend policy and economics, manage the wallet, integrations and members |
+| **Owner** | Everything an admin can, plus workspace settings and deletion; on mainnet, only an owner can resume a frozen wallet |
+
+Permissions are checked in every server action and page. Invites are single-use links whose token is stored hashed and expires after seven days.
+
+### Screens
+
+Overview, Daily brief, Discover, Customers, Narratives, Creators, Growth graph, Opportunities, Missions, Creator campaigns, Experiments, Wallet, Approvals, Arc / Circle activity, Receipts, Agent runs, Integrations, Team and Settings (workspace, product profile, ideal customer, spend policy, economics, autopilot). A ⌘K command palette jumps anywhere.
+
+### Scans, cycles and autopilot
+
+- **Run scan** collects and analyzes evidence. It never buys data, creates experiments or pays anyone.
+- **Run cycle** runs the full loop and *may spend within your policy*: buy verifying data, propose an experiment's first payment, reallocate budget.
+- **Autopilot** (hourly, every 6 hours or daily) schedules cycles for live workspaces. Every run and its step-by-step log appears under *Agent runs*.
+
+---
+
+## How the intelligence works
+
+Everything below is deterministic code. Claude is optional and only used for reading your product pages and drafting creator briefs; it never scores, attributes or pays.
+
+### Customer discovery
+
+Posts are classified with auditable rules into intent signals: **recommendation requests, competitor usage, migrations, complaints, questions, launches, new initiatives, funding, hiring, partnerships and adoption**. Organizations are attributed only when the source states it (for example an org-owned repository or a launch post); nothing is guessed from a name.
+
+Each company gets a score from 0 to 100 with a reason for every component:
+
+| Component | Weight | How it is measured |
+| --- | --- | --- |
+| Product fit | 0.25 | Overlap with your product keywords and ICP segments |
+| Timing | 0.20 | Recency of the top three signals, with a 7-day half-life |
+| Buying intent | 0.25 | Noisy-OR over the strongest instance of each signal type |
+| Evidence quality | 0.15 | Independent sources, provider diversity, data verified over x402 |
+| Engagement opportunity | 0.15 | A public question to answer, a public thread, a named contact |
+
+**Confidence** rises only when evidence quality or signal diversity rises, so buying verified data can move it and a prompt cannot. Discovery produces evidence, a recommended approach and drafts. Contacting anyone is a human decision.
+
+### Narratives and product feedback
+
+Candidate topics (your keywords plus frequent phrases) map to sets of posts. Topics whose posts are at least 75% contained in a larger theme merge into it. Each narrative gets 7-day volume, prior-week volume, velocity, relevance and controversy, and a lifecycle status: `EMERGING`, `ACCELERATING`, `PEAKING`, `DECLINING`, `CONTROVERSIAL`, `UNDEREXPLORED` or `STABLE`.
+
+**Product mentions** go beyond sentiment: feature requests, complaints, praise, competitor comparisons, questions, purchase intent, churn risk, confusion and integration requests, clustered week over week. An issue that is frequent and growing fast is flagged as **blocking acquisition**, and the operator holds paid acquisition until it is addressed.
+
+### Creator intelligence
+
+Creators are scored on eight components: audience fit, topic authority, recent relevance, engagement quality (discussion ratio, not likes), narrative fit, historical product fit, authenticity signals (inflated reach, promotional and speculative patterns) and campaign fit. **Follower count is not a component.** It enters only log-damped, at most +10 points, inside topic authority.
+
+The **creator brief** covers the objective, why this creator, why now, audience, current narrative, core idea, product proof, a demo worth showing, angles, **claims with sources**, things to avoid, the call to action, the tracking link and the creator's freedom. Drafts are marked as suggestions to rewrite in the creator's own voice. GrowTendril never posts as anyone.
+
+### Value of information
+
+Before spending on data, the agent estimates whether the answer could change a decision: `EVI = stake × P(decision flips) × loss fraction`, where `P(flip) ≈ min(1, expected lift ÷ gap to the threshold) × source reliability`. It buys only if `price × 2 ≤ EVI` and the price is within the per-call cap. A decision that is already confident does not buy.
+
+### Missions and experiments
+
+Mission templates: **First 100 Customers**, **First 100 Users**, **Qualified Leads**, **First 100 Developers**, **Find 20 Buyers**, **Own the Narrative** and **KOL Discovery**. Each has a goal event, target, timeframe and a budget split across research, services, creators, bounties, content and community.
+
+Experiments carry a hypothesis, target, action, budget, timeframe, success metric, **stop condition** ("cost per result above X after Y spent") and the evidence they rest on. They are paid in two tranches: the first is the amount at risk before the stop condition is evaluated, and the second is released only if the stop condition has not been hit. The strategist never commits more than the mission's uncommitted budget.
+
+---
+
+## Creator campaigns
+
+Opt-in creator programs where a business can see exactly what it paid for, and a creator can see exactly why they earned.
+
+**The business enters three things:** the action it wants (for example a purchase, signup or booking), the most it can afford per action, and a test budget. The planner proposes a two-week campaign and explains every number instead of applying a fixed split.
+
+| Number | Derived from |
+| --- | --- |
+| Creators (1 to 25, default cap 10) | Each creator needs room for a minimum number of paid actions in the test phase |
+| Test-phase ceiling per creator | The test phase split evenly, so no single creator can consume the test |
+| Base pay per accepted post | At most one action's worth, with fixed pay held to a share of the creator's ceiling |
+| Discussion bonus (capped) | Half of base pay, only for discussion a reviewer rates as useful |
+| Bonus per verified action | A share of your max cost per action, so results stay under what an action is worth |
+
+### Budget follows results, with real figures
+
+- **Settings → Economics** holds your own figures: what a customer is worth, gross margin, the share of margin to spend on acquisition, and the planning rules (test-phase share, fixed-pay cap, action-bonus share, minimum actions, maximum creators, holdback days).
+- Every planner figure is labelled **Measured** (computed from your own events and ledger, with the sample size), **Your setting**, **Starting value** (not yet reviewed) or **No data**. Missing inputs stay missing; nothing is guessed.
+- The suggested **max cost per action** is `customer value × gross margin × action-to-customer rate × acquisition share`. The rate is measured from your conversion events once there are at least 30 linked actions, and the average customer value from at least 10 valued purchase events.
+- **Staged release.** Only a test phase (default 50%) is released to creators at launch. The rest is held, then released only to creators whose *measured* cost per verified action beats your ceiling, in proportion to their verified actions. Every release is audit-logged with a reason per creator.
+- **Holdback.** A verified action becomes payable only after a hold period (default 7 days) so fake or reversed actions can be caught before any payout.
+
+### How creators take part
+
+Creators opt in through a public link (`/c/<token>`) that shows the exact rules before they post, including the **disclosure requirement**: paid posts must clearly disclose the relationship, as FTC-style endorsement guidance expects. **Honest opinions stay eligible.** Creators are paid for accepted posts, not for positive sentiment. Each creator gets a private contribution page (`/creator/<token>`, no account needed) with their tracking link, submitted posts, quality assessment, every reward line with its reason and evidence, and their *observed* mindshare.
+
+### Rules enforced in code
+
+- Posts must be https links on the creator's platform, and an undisclosed post cannot be accepted.
+- Only the first *N* accepted posts earn base pay.
+- Verified actions are the target conversion carried by the creator's own tracking link inside the window (plus seven days), counted once per visitor. Demo events never pay on live campaigns.
+- Every reward is capped by the creator ceiling and the released budget, and its reason says when a cap applied.
+- Payouts are standard payment actions: validated, policy-checked and, by default, sent to the Approval Inbox before the creator is paid at their own address. A denied or failed payout returns the rewards to "earned". A post whose reward is being paid cannot be re-reviewed.
+
+**Observed mindshare** is the share of on-topic posts (and engagement) authored by a creator among posts GrowTendril collected from your connected sources during the window. Platforms do not expose every post, so it is always labelled *observed* and shown with its sample size and sources.
+
+---
+
+## Measuring results
+
+- Every experiment gets a **campaign ID**, an **experiment ID**, UTM parameters and a **referral code**.
+- `/r/<code>` records a first-party visit (rate-limited, bot-filtered, de-duplicated by a visitor cookie) and redirects to your UTM-tagged page with a `gos_ref` parameter. Your site needs to keep that reference and send it back with the conversion.
+- `POST /api/events` ingests conversion events, signed with your workspace's webhook secret.
+- Attribution is a deterministic join on the referral code. There is no modelled or AI-guessed attribution.
+- The budget agent compares cost per result against the mission median: **SCALE** at 60% of the median or lower with at least 3 conversions, **REDUCE** at 160% or higher, **STOP** when the stop condition is hit. Below 10 USDC spent, the result is "insufficient data".
+
+### Sending conversion events
+
+| Event | Typical use |
+| --- | --- |
+| `visit` | Recorded automatically by tracked links |
+| `signup`, `lead`, `trial_start`, `app_install`, `booking`, `purchase`, `demo_request` | Business outcomes for any kind of product |
+| `wallet_connect`, `sdk_key_created`, `sdk_install` | Web3 and developer products |
+| `custom` | Anything else, with `customName` |
+
+```bash
+BODY='{"event":"purchase","ref":"<gos_ref>","visitorId":"order_1042","idempotencyKey":"order-1042-purchase","value":"38.00"}'
+T=$(date +%s)
+SIG=$(printf '%s' "$T.$BODY" | openssl dgst -sha256 -hmac "$WEBHOOK_SECRET" | sed 's/^.* //')
+curl -X POST https://your-app.example/api/events \
+  -H "content-type: application/json" \
+  -H "x-growthos-project: <your project id>" \
+  -H "x-growthos-signature: t=$T,v1=$SIG" \
+  -d "$BODY"
+```
+
+The signature is `HMAC_SHA256(secret, "<t>.<raw body>")`. Timestamps older than five minutes are rejected, and `idempotencyKey` makes retries safe. The project ID and a ready-made example appear under *Integrations*. The secret is shown once when you rotate it and is never displayed again.
+
+### Budget view
+
+The budget shows total, spent (committed and settled), committed (reserved by live experiments and approvals) and available, with the allocation by category. A reallocation is itself a structured action through the policy engine, only unspent budget can move, and large moves need approval.
+
+---
+
+## The policy engine
+
+`src/server/domain/agent/policy.ts` is a pure function of `(action, policy, state)`. Free-form text cannot reach it: every action is parsed by a strict schema first.
+
+| Rule | Effect when it fails |
+| --- | --- |
+| Wallet configured, wallet not frozen (the founder kill switch) | **Deny** |
+| Allowed token (USDC), network and allowed chains | **Deny** |
+| Forbidden actions (mass unsolicited messaging, automated DMs, cold email, automated mentions) | **Deny** |
+| Valid recipient: missing, zero and burn addresses are refused | **Deny** |
+| Hard ceiling, mission budget, active mission, approved categories | **Deny** |
+| Sufficient balance: Gateway funds for data purchases, wallet funds for sends | **Deny** (unknown balance on mainnet: approval) |
+| Max transaction, daily spend, category budget | Needs **approval** |
+| Category requires approval; creator and bounty thresholds; approved services | Needs **approval** |
+
+Examples, all unit-tested: buying research data for 0.08 USDC is **allowed**; paying a creator 250 USDC **needs approval**; moving 2,000 USDC is **denied** even with founder approval. Approving waives approval-level rules for that single decision. **Deny rules are re-checked at approval time.**
+
+Payments follow a state machine: `PROPOSED → (DENIED | AWAITING_APPROVAL → AUTHORIZED | REJECTED) → EXECUTING → SUBMITTED → SETTLED | FAILED`, plus `SIMULATED`. Execution takes a lock with a conditional update, so the same decision can never be paid twice, and every transition is logged.
+
+---
+
+## Payments on Circle and Arc
+
+### Why USDC
+
+GrowTendril's agent needs to pay for small things (a data lookup for a cent) and larger things (a creator payout) under programmable rules, without a card processor and without a human for every transaction. **USDC** is a dollar-denominated stablecoin; **Arc** is the network the agent settles on; **Circle** provides the wallets, the batching of tiny payments and the SDKs. As a user you only need to fund the agent's wallet. Creators who are paid need a USDC address on Arc.
+
+### Wallets
+
+Each workspace gets its own wallet. Keys are never held by GrowTendril in Circle mode and are never sent to the browser or to an AI model.
+
+- **Circle developer-controlled wallets (recommended).** Each workspace gets its own wallet set and an EOA on Arc (`createWalletSet` and `createWallets({ accountType: "EOA" })`), created from the Wallet page. GrowTendril holds only the platform API key and entity secret, server-side, and signs payment authorizations through Circle. An existing Circle wallet can be attached by id.
+- **Server-side development key.** For local testnet use only, via `AGENT_PRIVATE_KEY`. It is refused on mainnet.
+
+### Buying data over x402
+
+```
+need identified (confidence below the commit threshold)
+ → find a service with the needed capability (Agent Marketplace or the bundled seller)
+ → live quote: unpaid request → HTTP 402 + PAYMENT-REQUIRED (exact price, payee, Gateway option for the network)
+ → expected value of information vs price
+ → purchase action → schema → policy engine
+ → sign an EIP-712 authorization (Circle wallet or development key)
+ → retry with Payment-Signature → PAYMENT-RESPONSE → Circle settlement id
+ → response stored with a sha256 digest; each returned signal becomes PAID · x402 evidence
+ → deterministic re-score → confidence before and after
+ → decision receipt
+```
+
+The buyer mirrors Circle's own client, split into **quote, then pay**, so policy runs on the seller's actual price. A hard amount cap is enforced again inside the scheme's pre-payment hook, so a seller that raises its price between quote and payment cannot be paid more than was authorized. This is covered by tests.
+
+### Gateway nanopayments
+
+Sub-cent purchases are signed authorizations, not one on-chain transaction each; Circle Gateway batches them. USDC in the wallet is not spendable by x402 until it is **deposited into Gateway** (Wallet → *Deposit to Gateway*, run as a background job that records both transaction hashes). Settlements are followed from `received` through `batched` to `confirmed`, then matched to the on-chain batch transaction by timestamp, the same heuristic as the organizer's reference implementation, and labelled as such. The *Arc / Circle activity* page shows request, price, settlement id, status and an explorer link.
+
+### Agent Marketplace and the bundled seller
+
+The agent discovers paid data services through Circle's Agent Marketplace discovery API, infers capabilities (company enrichment, creator audience, narrative pulse, research) and prefers services payable on Arc through Gateway batching. A policy setting controls which hosts may be bought from autonomously.
+
+`services/signals-api` is a small independent seller paywalled with Circle's Gateway middleware, so the purchase path is real end to end: `/v1/company-intel` ($0.01), `/v1/narrative-pulse` ($0.005) and `/v1/creator-audience` ($0.02, which returns `available: false` for real creators because no permitted public source exposes audience composition).
+
+### App Kit
+
+| Capability | Used for |
+| --- | --- |
+| **Send** | Approved creator payments, bounties and partner incentives |
+| **Bridge** | Moving budget to another chain, approval-gated as treasury. The policy engine supports it; the agent does not initiate bridges yet |
+| **Unified balance** | A chain-abstracted, read-only view of Gateway capital |
+| **Onramp** | Optional "Add budget" flow, founder-authorized and restricted to the workspace's own wallet |
+| **Earn** | Recommendation only: idle capital beyond two weeks of run rate is flagged. Never executed |
+| **Borrow** | Not built |
 
 ---
 
@@ -61,449 +398,275 @@ GrowTendril behaves like a growth employee with a company card and strict limits
 
 ```mermaid
 flowchart LR
-  subgraph Sources[Public sources - official APIs]
-    X[X API v2] --- GH[GitHub REST] --- RD[Reddit OAuth] --- YT[YouTube Data] --- HN[HN Algolia] --- RSS[RSS / news]
+  subgraph Sources[Public sources, official APIs]
+    X[X API v2] --- GH[GitHub] --- RD[Reddit OAuth] --- YT[YouTube Data] --- HN[Hacker News] --- RSS[RSS and news]
   end
-  Sources --> ING[Ingest] --> AN[Analysis engine<br/>signals · evidence · scores<br/>narratives · KOLs · issues]
+  Sources --> ING[Ingest] --> AN[Analysis engine<br/>signals, evidence, scores<br/>narratives, creators, issues]
   AN --> OPP[Opportunities]
   OPP --> OP{Operator}
-  OP -->|confidence < 80%| VOI[Value-of-information model]
+  OP -->|confidence below threshold| VOI[Value-of-information model]
   VOI -->|worth it| ACT
-  OP -->|confidence ≥ 80%| STR[Strategist → Experiment + campaign + UTM/ref code]
+  OP -->|confidence at or above threshold| STR[Strategist: experiment, campaign, tracking link]
   STR --> ACT[Structured action]
-  ACT --> ZOD[Zod schema] --> POL[Policy engine]
-  POL -->|ALLOW| SM[Tx state machine]
-  POL -->|APPROVAL| INBOX[Approval Inbox] -->|founder approves<br/>deny rules re-checked| SM
+  ACT --> ZOD[Schema validation] --> POL[Policy engine]
+  POL -->|ALLOW| SM[Transaction state machine]
+  POL -->|APPROVAL| INBOX[Approval Inbox] -->|approved, deny rules re-checked| SM
   POL -->|DENY| RCPT
-  SM -->|x402| GW[Circle Gateway<br/>nanopayments] --> ARC[(Arc Testnet)]
-  SM -->|send / bridge| AK[Arc App Kit] --> ARC
+  SM -->|x402| GW[Circle Gateway nanopayments] --> ARC[(Arc)]
+  SM -->|send, bridge| AK[Arc App Kit] --> ARC
   SM --> RCPT[Decision receipt]
-  EVT[Conversion events<br/>/r/code · signed webhook] --> ATT[Attribution] --> LRN[Budget agent<br/>learn + reallocate] --> POL
+  EVT[Conversion events<br/>tracked link, signed webhook] --> ATT[Attribution] --> LRN[Budget agent<br/>learn and reallocate] --> POL
 ```
 
-**Stack:** Next.js 15 (App Router, server components and server actions), TypeScript, Tailwind v4, Drizzle ORM on Postgres, Zod, viem, Circle SDKs. The database is embedded **PGlite** by default (zero setup); set `DATABASE_URL` to use a real Postgres server. A separate Express process (`services/signals-api`) is an x402 seller paywalled with Circle Gateway.
+**Stack:** Next.js 15 (App Router, server components and server actions), TypeScript in strict mode, Tailwind v4, Drizzle ORM on Postgres, Zod, viem and the Circle SDKs. The database is embedded **PGlite** by default (zero setup); set `DATABASE_URL` to use a real Postgres server. 47 tables, migrations applied automatically on boot.
+
+### Logical agents
+
+| Agent | Responsibility | Uses an LLM? |
+| --- | --- | --- |
+| Product Analyst | Reads public pages, builds the profile and ICP | Optional (Claude), with a deterministic fallback |
+| Discovery | Queries sources, classifies intent signals, builds evidence | No |
+| Narrative | Clusters conversation, computes velocity and lifecycle | No |
+| Creator | Scores creators on eight components | No |
+| Strategist | Turns opportunities into experiments with stop conditions | No |
+| Budget | Measures cost per result, stops losers, reallocates unspent budget | No |
+| Attribution | Joins conversion events to campaigns by referral code | No |
+| Operator | Runs the loop and decides what happens next | No |
+| Brief writer | Optional creator drafts, marked as suggestions | Optional (Claude) |
+
+Without an Anthropic key, product analysis falls back to rules that recognise common business categories (SaaS, e-commerce, local services, education, health, finance, developer tooling, Web3 and more) and leave competitors and use cases for you to fill in.
+
+### Source layout
 
 ```
 src/
-  app/                         routes only — pages, layouts, API handlers (thin; no business logic)
-    (marketing)/  (auth)/login · signup   invite/[token]   onboarding/   app/*   api/*
-  components/
-    ui/                        design system: Button, Card, Badge, DataTable, Dialog, Menu, Toast, form fields…
-    layout/                    app shell: sidebar, topbar, ⌘K command palette, run-agent button
-    features/                  feature components (intel, wallet, approvals, integrations, team, settings…)
-    charts/                    SVG charts (sparkline, stacked bar, goal progress, bar list)
-  lib/                         isomorphic helpers (money, time, shell types)
-  server/                      server-only
-    actions/                   server actions, one module per area; each runs guard(permission) first
-    auth/                      sessions, passwords, roles & permissions (access.ts), current user/workspace
-    domain/
-      agent/                   actions.ts (Zod) · policy.ts · ledger.ts (state machine) · decisions.ts (receipts)
-                               information-value.ts · purchase.ts (x402) · execute.ts · operator.ts
-      intel/                   product-analyst · crawl · signals · analyze · narratives · mentions · discovery
-      scoring/                 intent.ts (customers) · kol.ts
-      growth/                  experiments · attribution · learning · kol-brief · brief · graph
-      workspace/               members.ts (memberships, invites, roles)
-    integrations/
-      circle/                  config · client · wallets (per-workspace) · signer · x402 · gateway · marketplace · appkit
-      providers/               x · github · reddit · youtube · hackernews · rss · (tiktok/discord/telegram: unavailable)
-      vault.ts                 encrypted per-workspace provider credentials
-      llm/                     optional Claude client
-    jobs/                      durable queue · scheduler (autopilot) · handlers · worker
-    queries/                   read models for pages (missions, activity, metrics, shell)
-    security/                  HMAC, rate limits, AES-256-GCM secrets
-    db/                        schema.ts · client.ts (PGlite or Postgres) · helpers.ts
-    demo/                      seed · guided script · demo enrichment fixtures
-  instrumentation.ts           starts the in-process job worker
-services/signals-api/server.ts x402 seller (createGatewayMiddleware)
-drizzle/                       SQL migrations (applied automatically on boot)
+  app/                      routes only: marketing, auth, invite, onboarding, app/*, public creator pages, api/*
+  components/{ui,layout,features,charts}   design system, app shell, feature components
+  lib/                      isomorphic helpers (money, time, shared types)
+  server/                   server-only code
+    actions/                server actions, one module per area; each starts with a permission guard
+    auth/                   sessions, passwords, roles and permissions
+    domain/{agent,intel,scoring,growth,workspace}
+    integrations/{circle,providers,llm,vault.ts}
+    jobs/                   durable queue, scheduler, handlers, worker
+    queries/                read models for pages
+    security/               HMAC, rate limits, AES-256-GCM secrets, SSRF-safe fetch
+    db/                     schema, client (PGlite or Postgres), helpers
+    demo/                   seed data, guided script, fixtures
+services/signals-api/       sample x402 data seller
+scripts/                    seed, demo-run, doctor, wallet-setup, worker, test-events
+drizzle/                    SQL migrations
+docs/PLAN.md                design record and verified SDK table
 ```
 
-**Logical agents** (deterministic code unless noted):
+### Jobs and autopilot
 
-| Agent | Responsibility | LLM? |
-| --- | --- | --- |
-| Product Analyst | Reads public pages, builds the profile and ICP | Optional (Claude, structured output); heuristic fallback |
-| Discovery | Queries providers, classifies intent signals, builds evidence | No |
-| Narrative | Clusters conversation and computes velocity and lifecycle | No |
-| KOL | Scores creators on 8 components | No |
-| Strategist | Turns opportunities into experiments with stop conditions | No |
-| Budget | Measures CPA, stops losers, reallocates unspent budget | No |
-| Attribution | Joins conversion events to campaigns by referral code | No |
-| Operator | Runs the loop and decides what happens next | No |
-| Brief writer | Optional creator drafts, clearly marked as suggestions | Optional (Claude) |
-
-An LLM never sets a score, never computes attribution, and never triggers a payment.
+A Postgres-backed queue (`FOR UPDATE SKIP LOCKED`, leases, retries with backoff, dedupe keys) runs operator cycles, scans, settlement polling, Gateway deposits and cleanup. The worker starts inside the web server. For several instances, run `npm run worker` separately, or call `POST /api/cron/cycle` from an external scheduler with `Authorization: Bearer $CRON_SECRET`.
 
 ---
 
-## Running it as a product
+## Configuration
 
-GrowTendril is multi-tenant. Everything below is per **workspace** (a product being grown).
-
-| Capability | How it works |
-| --- | --- |
-| **Accounts & teams** | Email + password accounts. Workspaces have members with roles: **Owner**, **Admin**, **Member**, **Viewer**. Permissions (`src/server/auth/access.ts`) are checked in every server action and page: e.g. only Owner/Admin can change the spend policy or wallet, Members can operate the agent and approve spend, Viewers are read-only. Invites are single-use links (the token is stored hashed, expires in 7 days, and must be accepted by the invited email). |
-| **Integrations** | Each workspace stores its own provider credentials (X, Reddit, YouTube, GitHub, RSS) under **Integrations**, encrypted at rest with AES-256-GCM (`ENCRYPTION_KEY`). Secrets are write-only in the UI (only a hint is shown). Resolution order: workspace key → platform default from env → keyless provider. Credentials can be tested in place. |
-| **Agent wallet** | One wallet per workspace. With Circle custody, **Create agent wallet** provisions a dedicated Circle developer-controlled EOA on `ARC-TESTNET` for that workspace; an existing Circle wallet can also be attached by id. USDC is moved into Circle Gateway from the Wallet page (approve + deposit run as a background job). |
-| **Autopilot** | Workspaces choose a cadence (off / hourly / every 6h / daily). A durable job queue in Postgres (`FOR UPDATE SKIP LOCKED`, leases, retries with backoff, dedupe keys) runs operator cycles, settlement polling and Gateway deposits. The worker starts inside the web server; for multi-instance deployments run `npm run worker` separately, or call `POST /api/cron/cycle` from an external scheduler. Every run and its log is visible under **Agent runs**. |
-| **Inbound events** | Conversion events are posted to `/api/events`, HMAC-signed with the workspace's webhook secret (rotated from Integrations; shown once). |
-| **Demo** | **See it work** creates a private guest account with its own demo workspace, labelled `DEMO` everywhere. Real workspaces are `LIVE` and never mix with demo data or metrics. |
-
----
-
-## Agent loop
-
-One operator cycle (**Run cycle**, autopilot, `POST /api/cron/cycle`; code in `src/server/domain/agent/operator.ts`), executed by the job worker:
-
-1. **Discover / understand.** Query available providers for the product's search terms, store posts (`LIVE`), and re-run analysis.
-2. **Refresh the catalog** from Circle's Agent Marketplace and the bundled seller; poll in-flight settlements.
-3. **Verify.** For promising customer opportunities below the 80% commit threshold, evaluate whether buying data is worth it, and buy it over x402 if so.
-4. **Decide and spend.** Opportunities at or above 80% confidence become experiments. The first tranche is proposed through the policy engine. A growing product issue **holds paid acquisition**: there's no point buying traffic into friction.
-5. **Measure, attribute, learn, reallocate.** Compute CPA per experiment from the ledger and attribution, stop the ones that hit their stop condition, and move unspent budget to winners (through policy).
-6. **Daily brief.** Assembled from tables, so every number is a count of real rows.
-
-## Customer discovery
-
-`src/server/domain/intel/signals.ts` classifies posts with auditable regex rules into intent signals: recommendation requests, competitor usage, migrations, initiatives, launches, complaints, hiring, funding, technology adoption, GitHub activity and questions. Organizations are attributed only when the source states it (an org-owned GitHub repo, a "Show HN: X" launch). Nothing is guessed from a name.
-
-**Scoring** (`src/server/domain/scoring/intent.ts`), each component 0–100 with its reasons:
-
-| Component | Weight | How |
-| --- | --- | --- |
-| Product fit | 0.25 | Overlap with product keywords and ICP segments |
-| Timing | 0.20 | Recency of the top three signals (7-day half-life) |
-| Buying intent | 0.25 | Noisy-OR over the strongest instance of each signal type |
-| Evidence quality | 0.15 | Independent sources, provider diversity, verified via x402 |
-| Engagement opportunity | 0.15 | A public question to answer, a public thread, a named contact |
-
-**Confidence** rises only when evidence quality or signal diversity rises, so buying verified data can move it and a prompt cannot. Discovery produces evidence, a recommended approach and drafts. Contacting anyone is a human decision.
-
-## Narrative intelligence
-
-`src/server/domain/intel/narratives.ts`: candidate terms (product keywords plus frequent bigrams) map to post sets. Terms whose post sets are ≥75% contained in a larger theme merge into it. Each cluster gets 7-day volume, prior-7-day volume, velocity, relevance (overlap with the product vocabulary) and controversy, and a lifecycle status: `EMERGING`, `ACCELERATING`, `PEAKING`, `DECLINING`, `CONTROVERSIAL`, `UNDEREXPLORED` or `STABLE`. Each narrative shows its important voices, representative evidence, related companies and competitors involved.
-
-**Product mentions** (`mentions.ts`) go beyond sentiment. They extract feature requests, complaints, praise, competitor comparisons, questions, purchase intent, churn risk, confusion and integration requests, and cluster recurring issues week over week. An issue that is frequent and growing fast is flagged as **blocking acquisition**, and the operator holds paid acquisition until it's addressed.
-
-## KOL intelligence
-
-`src/server/domain/scoring/kol.ts` scores eight components: audience fit, topic authority, recent relevance, engagement quality (discussion ratio, not likes), narrative fit, historical product fit, authenticity signals (inflated reach, promo and speculation patterns) and campaign fit. **Follower count is not a component.** It enters only log-damped (at most +10) into topic authority. In the demo, a deeply technical engineer ranks above a 450K-follower account whose audience engagement looks inflated.
-
-The **creator brief** (`kol-brief.ts`) covers objective, why this creator, why now, audience, current narrative, core idea, product proof, a demo worth showing, angles, **claims with sources**, things to avoid, CTA, tracking link and creator freedom. Optional X / thread / video / Reels / YouTube drafts are marked as suggestions for the creator to rewrite in their own voice. GrowTendril never posts as anyone.
-
-## Creator campaigns
-
-Opt-in creator programs where a business can see exactly what it paid for, and a creator can see exactly why they earned (`src/server/domain/growth/creator-campaigns.ts`, `campaign-plan.ts`).
-
-**The business enters three things:** the action it wants (e.g. `sdk_key_created`), the most it can afford per action, and a test budget. The planner proposes a two-week campaign and explains every number instead of applying a fixed percentage split:
-
-| Number | Derived from |
-| --- | --- |
-| Creators (1–10) | Each creator needs room for at least 3 paid actions at the ceiling: `budget ÷ (3 × max cost per action)` |
-| Per-creator ceiling | Budget split evenly, so no one creator can consume the test |
-| Base pay per accepted post | ≤ one action's worth, and fixed pay ≤ 25% of a creator's ceiling |
-| Discussion bonus (capped) | Half of base pay, only for discussion a reviewer rates as useful |
-| Bonus per verified action | 80% of the max cost per action, so results stay under what an action is worth |
-
-The campaign budget is reserved from the active mission and shown as **Paid** (on-chain), **Verified & unpaid** (earned from accepted posts, rated discussion and attributed actions), **Reserved** (held for accepted creators up to their ceilings) and **Available**.
-
-**Creators opt in** through a public link (`/c/<token>`) that shows the rules before they post, including the disclosure requirement: paid posts must clearly disclose the relationship (FTC guidance). Honest opinions remain eligible: creators are paid for accepted posts, not for positive sentiment. Each creator gets a private contribution page (`/creator/<token>`, no account needed) with their tracking link, eligible posts, quality assessment, every reward line with its reason and evidence, and their **observed** mindshare.
-
-**Rules enforced in code:**
-- Posts must be https links on the creator's platform. An undisclosed post can't be accepted.
-- Only the first *N* accepted posts earn base pay.
-- Verified actions are the target conversion, carried by the creator's own tracking link inside the window (plus 7 days), counted once per visitor. Demo events never pay on live campaigns.
-- Every reward is capped by the creator ceiling and the campaign budget, and the reason says when a cap applied.
-- Payouts are standard `send_payment` actions: Zod → policy engine → (by default) the Approval Inbox → App Kit Send to the creator's own address. A denied or failed payout returns the rewards to "earned"; a post whose reward is being paid can't be re-reviewed.
-
-**Observed mindshare** is the share of on-topic posts (and engagement) authored by a creator, among posts GrowTendril collected from connected public sources during the window. Platforms don't expose every post (TikTok, for example, requires approved research access), so it is always labelled *observed* and shown with its sample size and sources.
-
-v1 is deliberately narrow: 5–10 creators, manual review of posts and payouts, one tracked action.
-
-**Budget follows results, with real figures.** Nothing is a fixed percentage guess:
-
-- **Settings → Economics** holds the project's own figures: what a customer is worth, gross margin, the share of margin to spend on acquisition, and the campaign-planning rules (test-phase share, fixed-pay cap, action-bonus share, min actions, max creators, holdback days). Every planner figure is labelled by where it came from — **measured** from the project's own events and ledger (with the sample size), the project's **setting**, or a **starting value** it hasn't reviewed. Missing inputs stay missing; no number is invented.
-- The suggested **max cost per action** = customer value × gross margin × action→customer rate × acquisition share. The action→customer rate is measured from conversion events once there are ≥ 30 linked actions, and the average customer value from ≥ 10 valued `purchase` events; until then the business's own estimate is used, and labelled as such.
-- **Staged release.** Only a test phase (default 50%) is released to creator ceilings at launch. The rest is **held**, and released later only to creators whose *measured* cost per verified action beats the ceiling, in proportion to their verified actions. Every release is audit-logged with the reason per creator.
-- **Holdback.** A verified action becomes payable only after a hold period (default 7 days), so fake or reversed actions can be caught before any payout. The ledger shows in-holdback vs payable separately.
-
-## Growth missions
-
-Templates: **First 100 Developers**, **Find 20 Buyers**, **Own the Narrative**, **KOL Discovery**, each with a goal event, target, timeframe and budget split by category (research, services, KOLs, bounties, content, community). The mission result shows goal, achieved, attributed, budget, spent, cost per qualified conversion, experiments, successes and **growth efficiency**: 50% goal attainment, 30% cost efficiency vs plan, 20% hit rate.
-
-Experiments (`growth/experiments.ts`) carry a hypothesis, target, action, budget, timeframe, success metric, **stop condition** ("CPA > X after Y spent") and the evidence they rest on. They are paid in two tranches; the first is the amount at risk before the stop condition is evaluated. The strategist never commits more than the mission's uncommitted budget.
-
-## Attribution
-
-- Every experiment gets a **campaign ID**, an **experiment ID**, UTM parameters and a **referral code**.
-- `/r/<code>` records a first-party `visit` (rate-limited, bot-filtered, de-duplicated by a visitor cookie) and redirects to the UTM-tagged destination with `gos_ref`.
-- `POST /api/events` ingests `signup`, `wallet_connect`, `sdk_key_created`, `sdk_install`, `demo_request`, `purchase` and `custom` events, HMAC-signed with a 5-minute replay window and idempotent.
-- Attribution is a deterministic join on the referral code. No modelled or LLM-guessed attribution.
-- The budget agent compares CPA against the mission median: SCALE at ≤60% with ≥3 conversions, REDUCE at ≥160%, STOP on the stop condition. Below 10 USDC spent, the result is "insufficient data".
-
-## Autonomous budget
-
-The budget view shows total, spent (settled plus in flight), committed (unspent budget reserved by live experiments) and available, plus the allocation by category. Reallocation is itself a structured `reallocate_budget` action through the policy engine. Only unspent budget can move, and large moves need approval.
-
-## Policy engine
-
-`src/server/domain/agent/policy.ts` is a pure function of (action, policy, state). Free-form text can't reach it: actions are parsed by Zod first (`actions.ts`).
-
-| Rule | Severity |
-| --- | --- |
-| `WALLET_CONFIGURED`, `WALLET_NOT_FROZEN` (founder kill switch) | DENY |
-| `ALLOWED_TOKENS` (USDC), `ALLOWED_CHAINS` | DENY |
-| `FORBIDDEN_ACTIONS` (mass unsolicited messaging, automated DMs, cold email, mentions) | DENY |
-| `HARD_CEILING`, `MISSION_BUDGET`, `MISSION_ACTIVE`, `APPROVED_CATEGORIES` | DENY |
-| `MAX_TRANSACTION`, `DAILY_SPEND`, `CATEGORY_BUDGET` | APPROVAL |
-| `CATEGORY_REQUIRES_APPROVAL` (KOL, sponsorships, bridges by default) | APPROVAL |
-| `KOL_APPROVAL_THRESHOLD`, `BOUNTY_APPROVAL_THRESHOLD`, `APPROVED_SERVICES` | APPROVAL |
-
-Examples (all unit-tested): buy research data for 0.08 USDC → **ALLOW**; pay a KOL 250 USDC → **APPROVAL REQUIRED**; transfer 2,000 USDC → **DENY**, even with founder approval. Approving waives approval-level rules for that single decision. Deny rules are re-checked at approval time.
-
-Transactions follow a state machine (`ledger.ts`): `PROPOSED → (DENIED | AWAITING_APPROVAL → AUTHORIZED | REJECTED) → AUTHORIZED → EXECUTING → SUBMITTED → SETTLED | FAILED`, plus `SIMULATED`. Execution takes a lock with a conditional UPDATE (`AUTHORIZED → EXECUTING`), so the same decision can never be paid twice. Every transition is logged.
-
----
-
-## Circle Agent Stack
-
-All APIs below were verified against the published SDK packages: their READMEs and `.d.ts` types, plus the organizer's [`the-canteen-dev/circle-agent`](https://github.com/the-canteen-dev/circle-agent). The build environment couldn't reach the documentation sites, so nothing here comes from memory.
-
-### Agent Wallets
-
-`src/server/integrations/circle/wallets.ts` and `signer.ts` support two custody modes. **The AI never receives key material in either.**
-
-- **Circle developer-controlled wallets (recommended).** Each workspace gets its own wallet set and EOA on `ARC-TESTNET` (`createWalletSet` + `createWallets({ accountType: "EOA" })`), provisioned from the Wallet page. Keys are custodied by Circle. GrowTendril holds only the platform API key and entity secret, server-side, and signs x402 authorizations through `client.signTypedData({ walletId, data })`. Gateway deposits run as `createContractExecutionTransaction` calls (`approve`, then `deposit`).
-- **Server-side testnet key.** The organizer example's model (`AGENT_PRIVATE_KEY`), for local development. Refused unless `GROWTHOS_NETWORK=testnet`. It is only reachable through the policy engine.
-
-The founder kill switch (Wallet → *Freeze all spending*) makes every spend fail `WALLET_NOT_FROZEN`.
-
-### x402 autonomous purchasing
-
-`src/server/domain/agent/purchase.ts` + `src/server/integrations/circle/x402.ts`:
-
-```
-need identified (confidence < 80%)
- → find a service with the needed capability (Agent Marketplace / bundled seller)
- → live quote: unpaid request → 402 + PAYMENT-REQUIRED (exact price, payTo, Gateway option on eip155:5042002)
- → expected value of information vs price  ("is this worth 0.01 USDC?")
- → purchase_service action → Zod → policy engine
- → BatchEvmScheme signs an EIP-712 TransferWithAuthorization (Circle wallet or testnet key)
- → retry with Payment-Signature → PAYMENT-RESPONSE → Circle settlement ID
- → response stored with a sha256 digest; each returned signal becomes PAID·x402 evidence
- → deterministic re-score → confidence before → after
- → decision receipt
-```
-
-The buyer mirrors `GatewayClient.pay()` from `@circle-fin/x402-batching`, split into **quote then pay**, so policy runs on the seller's actual price. A hard amount cap is enforced again inside the scheme's `onBeforePaymentCreation` hook, so a seller that raises its price between quote and payment can't be paid more than was authorized (tested).
-
-**Value of information** (`information-value.ts`): `EVI = stake × P(decision flips) × loss fraction`, where `P(flip) ≈ min(1, expected lift ÷ gap to the threshold) × reliability`. It buys only if `price × 2 ≤ EVI` and the price is within the per-call cap. Already-confident decisions don't buy.
-
-### Gateway nanopayments
-
-Sub-cent purchases are signed authorizations, not one on-chain transaction each. Circle Gateway batches them. `refreshSettlements` follows each settlement through `GET /v1/x402/transfers/:id` (`received → batched → confirmed/completed`) and then resolves the Arc `submitBatch` transaction. Settlement UUIDs aren't on-chain, so the batch is matched by timestamp, the same heuristic as the organizer's `decode-batch.ts` (labelled as such). The **Arc / Circle Activity** page shows request, price, authorization, settlement ID, status, and the Arc batch tx with an explorer link.
-
-USDC in the wallet is not spendable by x402. It must be deposited into the `GatewayWallet` (`0x0077777d7EBA4688BDeF3E311b846F25870A19B9` on Arc Testnet) first: Wallet → **Deposit to Gateway** (runs as a background job and records both transaction hashes).
-
-### Agent Marketplace
-
-`src/server/integrations/circle/marketplace.ts` queries Circle's keyless Discovery API, `GET https://api.circle.com/v2/x402/discovery/resources?query=&category=&limit=&siwx=false`, the endpoint the official `circle services search` CLI uses. It caches vendors and services, infers capabilities (`company_enrichment`, `creator_audience`, `narrative_pulse`, `research`), and prefers services payable on Arc via Gateway batching. `APPROVED_SERVICES` controls which hosts may be bought from autonomously.
-
-### Bundled x402 seller
-
-`services/signals-api/server.ts` is paywalled with `createGatewayMiddleware({ sellerAddress, networks: ["eip155:5042002"], facilitatorUrl })`, exactly like the organizer's example. It plays an independent data vendor, so the purchase path is real end to end:
-
-- `/v1/company-intel` ($0.01): GitHub org activity and recent HN launches, hiring and funding, read live from public APIs.
-- `/v1/narrative-pulse` ($0.005): weekly HN story volume for a term.
-- `/v1/creator-audience` ($0.02): returns `available: false` for real creators, because no permitted public source exposes audience composition. GrowTendril reports that rather than inventing numbers.
-
-The fictional demo entities get fixtures tagged `dataMode: "DEMO"`.
-
-## Arc App Kit
-
-Used where it solves a GrowTendril problem (`src/server/integrations/circle/appkit.ts`):
-
-| Capability | Used for |
-| --- | --- |
-| **Send** | Approved creator payments, bounties, partner incentives: `kit.send({ from: { adapter, chain: "Arc_Testnet" }, to, amount, token: "USDC" })` |
-| **Bridge** | Moving budget to the chain a payment must land on (e.g. a Base Sepolia bounty): `kit.bridge(...)`, approval-gated as `treasury` |
-| **Unified Balance** | A chain-abstracted view of Gateway capital across Arc, Base Sepolia and Arbitrum Sepolia: `kit.unifiedBalance.getBalances({ sources: { address, chains }, networkType: "testnet" })` |
-| **Onramp** | Optional "Add budget": `@circle-fin/onramp-kit` session route (founder-authorized) and widget |
-| **Earn** | Recommendation only. GrowTendril computes idle capital beyond two weeks of run rate. Execution is not enabled: Earn Kit is marked "coming soon" in its README, and yield decisions are never autonomous. |
-| **Borrow** | Not built. The finance layer (ledger, policy, receipts, attribution history) is where a future "campaign credit" would plug in. |
-
-The adapter is `@circle-fin/adapter-circle-wallets` for Circle custody, or `@circle-fin/adapter-viem-v2` for a testnet key.
-
----
-
-## Security
-
-- **Server-side secrets only.** The Circle API key, entity secret and testnet key are read in server code. The UI and the LLM never see them.
-- **Wallet isolation.** Circle custody or a testnet-only key; a kill switch; a hard ceiling no approval can exceed.
-- **Spending policies** in code, re-checked at approval time.
-- **Schema validation.** Zod on every financial action, form and webhook body.
-- **Idempotency and duplicate-payment protection.** Unique idempotency keys on transactions and events, plus a conditional `AUTHORIZED → EXECUTING` lock.
-- **Transaction state machine** with legal transitions only, and a full trail in `transaction_events`.
-- **Authorization.** Signed httpOnly session cookies (HMAC-SHA256, `SESSION_SECRET`), scrypt password hashing, and workspace membership + role permission checks on every action and page.
-- **Secrets at rest.** Provider credentials are AES-256-GCM encrypted with the workspace and provider bound as additional authenticated data; they are never sent back to the browser. Invite tokens are stored as sha256 hashes.
-- **Rate limits** on login, signup, demo entry, agent cycles, redirects and event ingestion.
-- **Webhook verification.** HMAC with a timestamp window for conversion events; ECDSA verification against Circle's published public key for Circle notifications (`/api/webhooks/circle`).
-- **Audit logs** for logins, policy changes, approvals, freezes and every agent decision.
-- **Tamper-evident receipts** (sha256 of canonical JSON, recomputed on view).
-- Security headers (`X-Frame-Options: DENY`, `nosniff`, `Referrer-Policy`, `Permissions-Policy`); `robots.txt` honored when reading product sites.
-
----
-
-## Setup
-
-Requires Node 20+.
-
-```bash
-npm install
-cp .env.example .env.local     # everything optional for the demo
-npm run dev                    # web on :3000 + x402 seller on :4021
-```
-
-Open http://localhost:3000 and click **See it work**. No keys needed.
-
-| Script | What it does |
-| --- | --- |
-| `npm run dev` | Next.js and the bundled x402 seller |
-| `npm run worker` | Standalone job worker (use with `GROWTHOS_WORKER=off` on web instances) |
-| `npm test` | Unit tests: policy, scoring, narratives, learning, security, offline x402 round-trip |
-| `npm run typecheck` | `tsc --noEmit` |
-| `npm run build && npm start` | Production (set `SESSION_SECRET` and `ENCRYPTION_KEY`) |
-| `npm run db:seed` | Reset and seed the demo project |
-| `npm run demo:run` | Run the 8-step demo headlessly |
-| `npm run wallet:setup` | Platform custody setup: `-- --entity-secret` registers a Circle entity secret, `-- --local` prints a testnet key |
-| `npm run doctor` | **Validate the money path against the real network, step by step.** Read-only by default; `-- --provision` creates a wallet, `-- --deposit 1` deposits, `-- --x402` buys from the bundled seller |
-| `npm run db:generate` | Generate a migration after schema changes |
-
-> PGlite is single-process. Stop the dev server before running `db:seed` / `demo:run` against the same `.data/pglite`, or point `PGLITE_DIR` elsewhere. Use `DATABASE_URL` (Postgres) for multi-process deployments.
-
-## Deploy on Railway
-
-`railway.json` configures the build (`npm run build`), start (`npm start`, binds `$PORT`), a health check on `/api/health` and restart-on-failure.
-
-1. In Railway: **New project → Deploy from GitHub repo** → pick this repo and branch.
-2. **Add a PostgreSQL database** to the project, then on the web service set `DATABASE_URL=${{Postgres.DATABASE_URL}}`. Migrations run automatically on boot. (Without Postgres the app falls back to PGlite, which needs a volume mounted at `/app/.data` and a single replica.)
-3. Set the required variables: `SESSION_SECRET` (≥ 32 chars), `ENCRYPTION_KEY` (`openssl rand -hex 32`), `APP_URL` (the public URL, used in invite links), and `GROWTHOS_NETWORK=mainnet` for a real-money deployment (the code default is `testnet` so a fresh clone is safe; set it explicitly for production — and read [Mainnet](#mainnet) first). For wallets, set `CIRCLE_API_KEY` + `CIRCLE_ENTITY_SECRET` (a **live** Circle key on mainnet). Optional: provider keys, `ANTHROPIC_API_KEY`, `CRON_SECRET`.
-4. **Generate a domain** under Networking and deploy.
-5. Optional: deploy `services/signals-api` as a second service from the same repo (start command `npm run signals`, set `SIGNALS_SELLER_ADDRESS`), and point `SIGNALS_API_URL` on the web service at its private URL.
-
-The job worker runs inside the web service. If you scale to several replicas, set `GROWTHOS_WORKER=off` on the web service and add a worker service with start command `npm run worker`.
-
-## Environment variables
-
-See [`.env.example`](.env.example). In summary:
-
-> **Naming:** the product is GrowTendril, but existing configuration identifiers keep their original `GROWTHOS_` / `x-growthos-*` / `gos_*` names (environment variables, the signed-event headers, tracking cookies and the `gos_ref` link parameter) so deployed `.env` files and webhook senders keep working.
+Copy [`.env.example`](.env.example). Nothing is required to explore the demo. In production, set the first four rows.
 
 | Variable | Purpose |
 | --- | --- |
-| `SESSION_SECRET` | Session signing (required in production) |
-| `APP_URL` | Public base URL (invite links); falls back to the request host |
-| `ENCRYPTION_KEY` | AES-256-GCM key for integration credentials (required in production) |
-| `GROWTHOS_NETWORK` | `testnet` (default) or `mainnet` — selects every chain, contract and Circle endpoint |
-| `ARC_RPC_URL` | Optional Arc RPC override for the selected network |
-| `GATEWAY_API_URL`, `CIRCLE_DISCOVERY_URL`, `ARC_RPC_URL` | Optional endpoint overrides (defaults come from the Circle SDK for the selected network) |
-| `GROWTHOS_CLAUDE_MODEL` | Optional Claude model override for product reading and drafts |
-| `GROWTHOS_WORKER`, `WORKER_INTERVAL_MS` | In-process job worker on/off and poll interval |
-| `DATABASE_URL` | Postgres; empty → embedded PGlite |
-| `CIRCLE_API_KEY`, `CIRCLE_ENTITY_SECRET` | Circle custody for per-workspace agent wallets |
-| `AGENT_PRIVATE_KEY`, `GROWTHOS_NETWORK=testnet` | Alternative: server-side testnet key |
-| `SIGNALS_SELLER_ADDRESS`, `SIGNALS_API_URL` | Bundled x402 seller |
+| `SESSION_SECRET` | Signs sessions (32+ characters). Required in production |
+| `ENCRYPTION_KEY` | AES-256-GCM key for stored integration credentials (`openssl rand -hex 32`). Required in production |
+| `APP_URL` | Public base URL, used in invite links |
+| `DATABASE_URL` | Postgres connection. Empty means embedded PGlite |
+| `GROWTHOS_NETWORK` | `testnet` (default) or `mainnet`. Selects every chain, contract and Circle endpoint |
+| `CIRCLE_API_KEY`, `CIRCLE_ENTITY_SECRET` | Circle custody for per-workspace agent wallets (a live key on mainnet) |
+| `AGENT_PRIVATE_KEY` | Local testnet development key. Refused on mainnet |
+| `ARC_RPC_URL`, `GATEWAY_API_URL`, `CIRCLE_DISCOVERY_URL` | Optional endpoint overrides |
+| `SIGNALS_SELLER_ADDRESS`, `SIGNALS_API_URL` | The sample x402 seller and where the app reaches it |
 | `DEMO_PAYOUT_ADDRESS` | Where demo creator payouts go on testnet |
-| `ONRAMP_API_KEY` | Arc Onramp (optional) |
-| `ANTHROPIC_API_KEY` | Claude for product reading and drafts (optional) |
-| `GITHUB_TOKEN`, `X_BEARER_TOKEN`, `REDDIT_CLIENT_ID/SECRET`, `YOUTUBE_API_KEY`, `RSS_FEEDS` | Platform-default market data credentials (workspaces can bring their own) |
-| `CRON_SECRET` | External scheduler endpoint (`/api/cron/cycle`) |
+| `ONRAMP_API_KEY` | Optional "Add budget" onramp |
+| `ANTHROPIC_API_KEY`, `GROWTHOS_CLAUDE_MODEL` | Optional Claude for product reading and creator drafts |
+| `GITHUB_TOKEN`, `X_BEARER_TOKEN`, `REDDIT_CLIENT_ID`, `REDDIT_CLIENT_SECRET`, `REDDIT_USER_AGENT`, `YOUTUBE_API_KEY`, `RSS_FEEDS` | Platform-default source credentials. Each workspace can store its own under *Integrations*; workspace keys win |
+| `GROWTHOS_WORKER`, `WORKER_INTERVAL_MS` | Turn the in-process worker off, and set its poll interval |
+| `CRON_SECRET` | Authorizes the external scheduler endpoint |
+| `TRUSTED_PROXY_HOPS` | How many proxies to trust when reading the client IP (default 1) |
 
-## Demo
+> **Naming:** the product is GrowTendril, but existing configuration identifiers keep their original `GROWTHOS_`, `x-growthos-*` and `gos_*` names (environment variables, the signed-event headers, tracking cookies and the `gos_ref` link parameter) so deployed `.env` files and webhook senders keep working.
 
-**Mission: First 100 Developers. Budget: 500 test USDC.** Meterline is a fictional AI-agent developer tool. The seeded corpus (44 fictional posts, 3 companies, creators, 3 earlier experiments with fictional conversions) is visibly `DEMO` and links to `/demo/source/*` pages that say so. It is fed through the **same ingest and analysis engine** as live data, so the scores, narratives and rankings you see are computed, not hard-coded.
+### Data sources
 
-The guided demo (`/app/demo`, or `npm run demo:run`) runs the real engine functions:
+| Source | Access | Credentials |
+| --- | --- | --- |
+| Hacker News | Public API | None |
+| GitHub | Official API | Optional token (raises rate limits) |
+| Reddit | Official API, app-only OAuth | Client id and secret |
+| YouTube | Official API | API key |
+| X | Official API | Bearer token on a plan that includes recent search |
+| News and blogs | RSS or Atom feeds you choose | Feed URLs |
+| TikTok, Discord, Telegram | Declared, reported as unavailable | No permitted access path in this build |
 
-1. **Detect.** Acme Labs shows intent (CTO asking about x402, a stablecoin payments initiative), but confidence is 60%, below the 80% threshold. The narrative engine sees x402 *emerging* and agent payments *accelerating*.
-2. **Buy information.** It finds the `company-intel` x402 service, quotes it, and computes EVI ≈ 5.00 USDC against a 0.01 USDC price (500×). Policy: **ALLOW**. It pays through Circle Gateway, receives three hiring, funding and adoption signals, and confidence goes **60% → 90%**.
-3. **Experiment.** The strategist picks @ada_ships (ranked above an account with 5× the followers) and creates experiment #4: 150 USDC, success = 5 SDK keys, stop if CPA > 30 after 75 spent.
-4. **Brief.** An evidence-backed creator brief with sourced claims.
-5. **Payment above the limit.** The 75 USDC first tranche hits `CATEGORY_REQUIRES_APPROVAL`, `MAX_TRANSACTION` and `DAILY_SPEND`, so it goes to the Approval Inbox.
-6. **Founder approves.** Deny rules are re-checked, then App Kit Send runs on Arc.
-7. **Conversion events** arrive through the real attribution path (38 visits, 10 SDK keys, labelled DEMO).
-8. **Learn and reallocate.** @marcus_onchain hit its stop condition (CPA 37.50) and stops. The technical quickstart (CPA 2.21) scales. Its 25 USDC of unspent budget moves by policy, and receipts record the whole history.
+Only official or public APIs are used, within their terms and rate limits. An unavailable source returns nothing; it never returns invented data.
 
-Without a wallet, steps 2 and 6 are recorded as **SIMULATED**: the full decision and policy path runs, nothing moves, and no settlement ID or hash is shown. With a funded testnet wallet and the seller running, the same steps produce real Circle settlement IDs and Arc transactions.
+---
 
-## Testnet instructions
+## Deployment
 
-1. Create a Circle developer account and a **test** API key at console.circle.com and set `CIRCLE_API_KEY`.
-2. `npm run wallet:setup -- --entity-secret` → set `CIRCLE_ENTITY_SECRET` (back up the recovery file).
-3. Sign up, create a workspace, and open **Wallet → Create agent wallet**. GrowTendril provisions a Circle wallet for that workspace. (For local development, `npm run wallet:setup -- --local` → `AGENT_PRIVATE_KEY` instead.)
-4. Fund the wallet address with Arc Testnet USDC at https://faucet.circle.com. On Arc, USDC is also the gas token.
-5. **Wallet → Deposit to Gateway** moves USDC into Gateway for x402. Arc credits deposits in about a second.
-6. Set `SIGNALS_SELLER_ADDRESS` to an Arc Testnet address you control (it receives the x402 payments), and optionally `DEMO_PAYOUT_ADDRESS`.
-7. `npm run dev`, enter the demo, **Reset demo**, then run the loop. Purchases show `TESTNET` with a Circle settlement ID. Use **Refresh settlements** on the Activity page to follow them to the Arc batch tx (a batch can take around 10 minutes on testnet).
+### Railway
 
-**Validate the money path before you rely on it.** `npm run doctor` runs each Circle/Arc call in order — Circle API key and entity secret, Arc RPC balance read, Gateway balance, (with flags) a Gateway deposit and a real x402 purchase — and prints PASS/FAIL per step using the same functions the app uses. It never fabricates a result: a blocked host or a bad key is reported as a failure, not glossed over. Start with `npm run doctor` (read-only), then `npm run doctor -- --provision`, then `-- --deposit 1` and `-- --x402` once the wallet is funded. This is the fastest way to surface the integration details that only appear on a live network (e.g. the account type Circle-signed EIP-712 needs, the exact Gateway chain identifiers, the batch-tx match).
+`railway.json` sets the build (`npm run build`), the start command (`npm start`, which binds `$PORT`), a health check on `/api/health` and restart-on-failure.
 
-## Mainnet
+1. **New project → Deploy from GitHub repo**, and pick this repository and branch.
+2. Add a **PostgreSQL** database and set `DATABASE_URL=${{Postgres.DATABASE_URL}}` on the web service. Migrations run on boot. (Without Postgres the app uses PGlite, which needs a volume at `/app/.data` and a single replica.)
+3. Set `SESSION_SECRET`, `ENCRYPTION_KEY`, `APP_URL` and `GROWTHOS_NETWORK`. Add `CIRCLE_API_KEY` and `CIRCLE_ENTITY_SECRET` when you want real wallets.
+4. Generate a domain under Networking and deploy.
+5. Optional: deploy `services/signals-api` as a second service (start command `npm run signals`, set `SIGNALS_SELLER_ADDRESS`) and point `SIGNALS_API_URL` at its private URL.
 
-One setting switches the whole deployment: `GROWTHOS_NETWORK=mainnet` (default `testnet`). Every network value comes from Circle's SDKs or viem's chain registry, never from hand-copied constants (`src/server/integrations/circle/config.ts`):
+If you run more than one web replica, set `GROWTHOS_WORKER=off` on them and add a worker service with start command `npm run worker`.
 
-| | Testnet | Mainnet |
+### Health and scheduling
+
+`GET /api/health` reports `ok`, the network, the chain id, the custody mode and whether Claude is configured. It never returns secrets.
+
+---
+
+## Testnet and mainnet
+
+One setting switches the whole deployment: `GROWTHOS_NETWORK`. The default is **`testnet`**, so a fresh clone can never move real funds. Every network value comes from Circle's SDKs or viem's chain registry rather than hand-copied constants.
+
+| | Testnet (default) | Mainnet |
 | --- | --- | --- |
 | Arc chain id | 5042002 | 5042 |
 | x402 network | `eip155:5042002` | `eip155:5042` |
 | Circle Wallets blockchain | `ARC-TESTNET` | `ARC` |
 | App Kit chain | `Arc_Testnet` | `Arc` |
-| Gateway API | gateway-api-testnet.circle.com | gateway-api.circle.com |
-| GatewayWallet | from `CHAIN_CONFIGS.arcTestnet` | from `CHAIN_CONFIGS.arc` |
-| Bridge chains | Base/Arbitrum/Ethereum Sepolia | Base/Arbitrum/Ethereum |
+| Gateway API | `gateway-api-testnet.circle.com` | `gateway-api.circle.com` |
+| Funds | Free test USDC from the Circle faucet | Real USDC |
+| Money movements are labelled | `TESTNET` | `LIVE` |
 
-**Safety rails on mainnet:**
-- Development keys (`AGENT_PRIVATE_KEY`) are refused; only Circle developer-controlled wallets can hold funds.
+### Trying it on testnet
+
+1. Create a Circle developer account and a **test** API key; set `CIRCLE_API_KEY`.
+2. Run `npm run wallet:setup -- --entity-secret` and set `CIRCLE_ENTITY_SECRET`. Back up the recovery file it writes.
+3. Sign up, create a workspace, and open **Wallet → Create agent wallet**.
+4. Fund the wallet address with test USDC from <https://faucet.circle.com>. On Arc, USDC is also the gas token.
+5. **Wallet → Deposit to Gateway** moves USDC into Gateway for x402 purchases.
+6. Set `SIGNALS_SELLER_ADDRESS` to an Arc testnet address you control, then run the loop. Purchases show `TESTNET` with a Circle settlement id.
+
+### Validate the payment path
+
+`npm run doctor` exercises each Circle and Arc call in order, using the same functions the app uses, and prints PASS or FAIL per step. It never fabricates a result: a blocked host or a bad key is reported as a failure.
+
+```bash
+npm run doctor                     # configuration, Circle API key and entity secret, Arc RPC, Gateway (read-only)
+npm run doctor -- --provision      # also create a wallet (no funds move)
+npm run doctor -- --deposit 1      # also deposit 1 USDC into Gateway (needs a funded wallet)
+npm run doctor -- --x402           # also buy from the sample seller (needs Gateway balance and the seller running)
+```
+
+### Going live on mainnet
+
+Safety rails that apply automatically on mainnet:
+
+- Development keys are refused. Only Circle developer-controlled wallets can hold funds.
 - New workspace wallets start **frozen**. Anyone who manages the wallet can freeze it; only an owner can resume spending.
-- The default policy runs only paid research autonomously; bounties, content, creators, community and treasury moves need approval.
-- The policy engine denies any chain that isn't on the deployment's network, and payouts to missing or burn addresses.
-- Every money movement is labelled `LIVE` (real funds) instead of `TESTNET`.
+- The default policy runs only paid research autonomously. Bounties, content, creators, community and treasury moves need approval.
+- Chains outside the deployment's network, and payouts to missing or burn addresses, are denied.
+- A balance check runs before a payment is committed; if a balance cannot be read, it goes to approval rather than being allowed.
 
-**Before switching a deployment to mainnet:** use a fresh database, set `GROWTHOS_NETWORK=mainnet`, `SESSION_SECRET`, `ENCRYPTION_KEY`, `APP_URL`, `CIRCLE_API_KEY` (a live key) and `CIRCLE_ENTITY_SECRET`. Then create the workspace wallet, fund it with USDC on Arc, review the spend policy, and resume spending as the owner. Run `npm run doctor` (then `-- --provision`, `-- --deposit`, `-- --x402`) and a small payment end to end before raising limits.
+Checklist: use a fresh database; set `GROWTHOS_NETWORK=mainnet`, `SESSION_SECRET`, `ENCRYPTION_KEY`, `APP_URL`, `CIRCLE_API_KEY` (a live key) and `CIRCLE_ENTITY_SECRET`; create the workspace wallet; fund it with USDC on Arc; review the spend policy; run `npm run doctor` with each flag; make one small real payment; then resume spending as the owner and raise limits gradually.
 
-## Verification status
+---
 
-**Verified in the build environment** (re-run in CI on every push):
+## Security and privacy
 
-- `npm run typecheck`, `npm test` (60 tests) and `npm run build` are clean, and the typecheck and tests also pass under `GROWTHOS_NETWORK=mainnet`.
-- The tests cover policy verdicts (allow / approval / deny, deny-after-approval, balance and recipient rules), schema rejection of free-form actions, scoring, narrative lifecycle, learning and reallocation, experiment tranches, HMAC and rate limits, roles and invites, encrypted credentials, SSRF-safe fetching, the job queue on a real (in-memory) Postgres, creator-campaign planning, rewards, holdback and release, and an **offline x402 round-trip** in which Circle's `BatchEvmScheme` signs against a mock seller using the exact `PAYMENT-REQUIRED` / `Payment-Signature` / `PAYMENT-RESPONSE` wire format.
-- `npm run demo:run` executes the full 8-step agent loop (detect → buy data over x402 → experiment → approval → re-check → App Kit send → conversions → learn → reallocate) end to end in simulation.
-- A browser pass over every page, the signup → onboarding → settings → campaign → public join flow, was done against a production build with no console or server errors.
-- Every `@circle-fin` call was compared with the installed SDK type declarations (method names, parameter shapes, response fields, decimals) and no mismatches were found. Two live-robustness gaps it surfaced (STUCK transactions, a missing Arc RPC URL) are fixed.
+**Security**
+- **Secrets stay server-side.** The Circle API key, entity secret and any development key are read only in server code. The UI and the AI model never see them.
+- **Encryption at rest.** Per-workspace credentials are AES-256-GCM encrypted with the workspace and provider bound as additional authenticated data, and are never sent back to the browser. Invite tokens are stored as sha256 hashes.
+- **Authorization.** Signed httpOnly session cookies (HMAC-SHA256), scrypt password hashing, and membership plus role checks on every action and page. Guest and demo workspaces cannot change integrations.
+- **Validation.** Strict schemas on every financial action, form and webhook body.
+- **Duplicate-payment protection.** Unique idempotency keys and a conditional execution lock.
+- **SSRF protection.** Every user-supplied URL (product pages, feeds) is fetched through a guard that allows only public http and https targets, resolves DNS inside the socket lookup, re-validates each redirect and caps response size.
+- **Rate limits** on login (including a per-email limit), signup, demo entry, agent runs, redirects, event ingestion and public campaign forms.
+- **Webhook verification.** HMAC with a five-minute window for conversion events; signature verification against Circle's published key for Circle notifications.
+- **Headers.** A content security policy, HSTS in production, frame, content-type, referrer and permissions policies.
+- **Audit logs** for logins, policy changes, approvals, freezes and every agent decision. **Receipts** are tamper-evident: the digest is recomputed on view, and finalized receipts are never rewritten.
 
-**Not verified here:** the live calls themselves (Circle Wallets, Gateway, x402 settlement, Discovery API, Arc RPC). The build environment's network policy blocks those hosts, so nothing in this repo has moved real or test funds from here. `npm run doctor` exists to run each step against the real network on a machine that can reach them. The Agent Marketplace discovery response shape is the one call with no SDK to check against; if the live envelope differs, discovery returns no services and the bundled seller still works. GrowTendril records whatever actually happens and never fills the gap with fabricated data.
+**Privacy**
+- GrowTendril reads **public** posts through official or public APIs. It stores the post text, URL, author handle and engagement figures it collected, plus your own conversion events.
+- For creator campaigns it stores the handle, optional name, contact and pitch a creator chooses to give, their payout address, the posts they submit and their reward history. A creator's private link is stored only as a hash. The public join page says what is stored.
+- Product-site reading honors `robots.txt`.
+
+---
+
+## Verification and testing
+
+**Run in CI on every push** (`.github/workflows/ci.yml`): typecheck, the 63 unit and integration tests, a production build and an offline run of the full 8-step agent loop in simulation. Typecheck and tests run again under `GROWTHOS_NETWORK=mainnet`, so network-coupled code is exercised on both networks.
+
+The tests cover policy verdicts (allow, approval, deny, deny-after-approval, balance and recipient rules), schema rejection of free-form actions, scoring, narrative lifecycle, learning and reallocation, experiment tranches, signing and rate limits, roles and invites, encrypted credentials, SSRF-safe fetching, the job queue on a real in-memory Postgres, creator-campaign planning, rewards, holdback and release, and an **offline x402 round-trip** in which Circle's payment scheme signs against a mock seller using the exact `PAYMENT-REQUIRED`, `Payment-Signature` and `PAYMENT-RESPONSE` wire format.
+
+**Also done by hand:** a browser pass over every page and the signup, onboarding, settings, campaign and public-join flows against a production build; and a review that compared every Circle SDK call with the installed type declarations (method names, parameters, response fields and decimals), which found no mismatches.
+
+**Not yet verified from the build environment:** the live Circle and Arc calls (Circle Wallets, Gateway, x402 settlement, the discovery API and the Arc RPC). The environment's network policy blocks those hosts, so nothing here has moved real or test funds from there. `npm run doctor` exists to run each step on a machine that can reach them. The Agent Marketplace discovery response is the one call with no SDK to check against; if its live shape differs, discovery returns no services and the bundled seller still works. GrowTendril records what actually happens and never fills a gap with invented data.
+
+See [`docs/PLAN.md`](docs/PLAN.md) for the design record and the verified SDK table.
+
+---
+
+## Troubleshooting
+
+| Symptom | Likely cause and fix |
+| --- | --- |
+| Pages show no customers, narratives or creators | Nothing has been collected yet. Connect sources under *Integrations*, then **Run scan**. The Overview checklist tracks the steps |
+| Everything is marked **SIMULATED** | No agent wallet can sign. Create the workspace wallet, or configure Circle custody. Demo workspaces are always simulated |
+| **Run scan** vs **Run cycle** | A scan only collects and analyzes. A cycle may also buy data and propose payments within your policy |
+| Autopilot does nothing | Autopilot runs for live workspaces only, and needs the worker running (the web server runs it unless `GROWTHOS_WORKER=off`) |
+| Invite links point to `localhost` | Set `APP_URL` to your public URL |
+| `npm run doctor` fails at the Arc RPC or Gateway step | The host is blocked from where you are running it, or the keys or network are wrong. Check `GROWTHOS_NETWORK`, `CIRCLE_API_KEY` and `ARC_RPC_URL` |
+| A deposit stays pending, then fails with `STUCK` | The on-chain transaction is stuck. Check the wallet on the explorer before retrying |
+| `db:seed` or `demo:run` hangs or errors | Another process holds the embedded database. Stop the dev server or set `PGLITE_DIR` to a different folder |
+| Conversions are not attributed | Your site must keep the `gos_ref` parameter and send it back as `ref`, and the event must be correctly signed. See [Sending conversion events](#sending-conversion-events) |
+| A mainnet wallet will not spend | New mainnet wallets start frozen. An owner resumes spending from the Wallet page |
+
+---
 
 ## Known limitations
 
-- **Live money path not yet run.** See the verification section. Run `npm run doctor` (then `-- --provision`, `-- --deposit`, `-- --x402`) and a small real payment before raising spend limits.
-- **Provider coverage depends on credentials.** Without X, Reddit or YouTube keys, discovery uses GitHub and Hacker News (and RSS if configured). TikTok, Discord and Telegram are declared interfaces that report unavailable, because there's no permitted access path in this build.
-- **Entity resolution is conservative.** Companies come from explicit attribution (GitHub orgs, "Show HN"). Cross-platform creator identity is matched by handle and flagged *unverified*.
-- **Heuristic product analysis without Claude** leaves competitors and use cases for the founder to fill in, by design.
-- **Creator audience composition and mindshare.** There is no permitted public source for audience composition, so GrowTendril reports `available: false`. Campaign mindshare is *observed*: it counts only posts GrowTendril collected from connected sources, never every post.
-- **No outbound email.** Invites produce a one-time link to share, email addresses are not verified, and there is no password reset.
-- **Sessions are stateless**, so logout clears the cookie but a copied token stays valid until it expires.
-- **PGlite is single-process.** Use Postgres (`DATABASE_URL`) for multi-instance deployments and a separate `npm run worker`. The in-memory rate limiter is per-instance.
-- **Batch-tx resolution** for x402 settlements is a timestamp heuristic, as in the organizer's example.
-- **Earn is recommendation-only. Borrow is not built.** The agent does not initiate bridges yet, though the policy engine supports them.
-- **Workspace deletion is blocked** while a workspace has an agent wallet or payments in flight, because no withdraw feature exists to recover funds first.
+- **The live payment path has not been run yet.** Run `npm run doctor` and one small real payment before raising limits.
+- **Payouts are USDC on Arc only.** Creators need a USDC address on Arc. Other payout rails are on the roadmap.
+- **Signal detection reads English.** Rules are language-specific, and the heuristic category detection is coarse. With an Anthropic key, product reading and ICP proposals are richer.
+- **Source coverage depends on credentials.** Without X, Reddit or YouTube keys, discovery uses Hacker News and GitHub, which lean towards technical audiences. TikTok, Discord and Telegram are unavailable.
+- **Entity resolution is conservative.** Companies come only from explicit attribution. Cross-platform creator identity is matched by handle and flagged *unverified*.
+- **Creator audience composition** has no permitted public source, so it is reported as unavailable instead of estimated. **Mindshare** is observed: it counts only posts GrowTendril collected.
+- **No outbound email.** Invites produce a one-time link to share, addresses are not verified and there is no password reset.
+- **Sessions are stateless.** Logout clears the cookie, but a copied token stays valid until it expires.
+- **PGlite is single-process.** Use Postgres and a separate worker for multi-instance deployments. The in-memory rate limiter is per instance.
+- **Settlement-to-batch matching** is a timestamp heuristic, as in the reference implementation.
+- **Earn is recommendation-only and Borrow is not built.** The agent does not initiate bridges yet.
+- **Workspace deletion is blocked** while a workspace has an agent wallet or payments in flight, because there is no withdraw feature yet.
 
 ## Roadmap
 
-- Run and pin a live Arc settlement trace (snapshot the batch, as the organizer's example does) and check the Discovery API response shape.
+- Run and pin a live Arc settlement trace, and confirm the discovery API response shape.
+- Payout rails beyond USDC on Arc, so creators without a crypto wallet can be paid.
 - Email delivery: verification, invites and password reset.
 - Revocable sessions, and a withdraw action so wallets can be emptied before a workspace is deleted.
-- Circle webhook subscriptions for wallet transactions, replacing polling for App Kit transfers.
-- A per-service reliability score learned from purchased-data outcomes (feeding the value-of-information model).
+- Language support beyond English, and richer product reading for non-technical categories.
+- Circle webhook subscriptions for wallet transactions, replacing polling.
+- A per-service reliability score learned from purchased-data outcomes.
 - Multi-touch attribution windows and holdout experiments.
-- Billing and plan limits per workspace; sign-in with Google or GitHub; two-factor authentication.
+- Billing and plan limits per workspace, sign-in with Google or GitHub, and two-factor authentication.
 - Discord and Telegram providers for communities that invite the bot.
-- Earn execution behind explicit founder policy once Earn Kit is GA, then campaign credit backed by attribution history.
+- Earn execution behind explicit founder policy once Earn Kit is generally available.
+
+---
+
+## Contributing
+
+1. Work on a branch. Do not commit secrets; `.env.local` and `.data/` are ignored.
+2. Before pushing, run `npm run typecheck`, `npm test` and `npm run build`. CI runs the same, plus the demo loop and the mainnet configuration.
+3. After a schema change, run `npm run db:generate` and commit the migration.
+4. Follow the conventions the codebase relies on:
+   - Every server action starts with the permission guard for what it does.
+   - Money moves only through the structured-action path (validate, policy, state machine). Never call a payment API from a page or an action directly.
+   - Every user-visible record carries its data mode, and UI copy must describe what the code actually does.
+   - Any user-supplied URL is fetched through the SSRF-safe helper.
+   - Network values come from `src/server/integrations/circle/config.ts`, never hard-coded.
+
+**License:** no license file is included yet. Add one before accepting outside contributions or redistributing.

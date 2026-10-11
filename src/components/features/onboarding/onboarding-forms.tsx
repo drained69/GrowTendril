@@ -88,7 +88,10 @@ export function GenerateIcp() {
 // ───────────────────────────── step 3 ─────────────────────────────
 
 const TEMPLATES = [
-  { key: "first_100_devs", name: "First 100 Developers", goal: 100, days: 14, budget: "500", desc: "Verified SDK users" },
+  { key: "first_100_customers", name: "First 100 Customers", goal: 100, days: 30, budget: "500", desc: "Paying customers from people talking about your category" },
+  { key: "first_100_users", name: "First 100 Users", goal: 100, days: 14, budget: "300", desc: "Signups from people who match your ideal customer" },
+  { key: "qualified_leads", name: "Qualified Leads", goal: 50, days: 21, budget: "300", desc: "Leads that fit your ideal customer profile" },
+  { key: "first_100_devs", name: "First 100 Developers", goal: 100, days: 14, budget: "500", desc: "Verified SDK users (developer products)" },
   { key: "find_buyers", name: "Find 20 Buyers", goal: 20, days: 7, budget: "100", desc: "High-intent qualified companies requesting a demo" },
   { key: "own_narrative", name: "Own the Narrative", goal: 1000, days: 30, budget: "300", desc: "Qualified visits from a target narrative" },
   { key: "kol_discovery", name: "KOL Discovery", goal: 30, days: 14, budget: "50", desc: "Signups from validated creator campaigns" },
