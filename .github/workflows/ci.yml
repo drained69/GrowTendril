@@ -33,7 +33,7 @@ jobs:
   verify-mainnet:
     runs-on: ubuntu-latest
     env:
-      GROWTHOS_NETWORK: mainnet
+      GROWTENDRIL_NETWORK: mainnet
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-node@v4

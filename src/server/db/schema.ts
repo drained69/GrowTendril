@@ -645,7 +645,7 @@ export const vendors = pgTable("vendors", {
   category: text("category"),
   website: text("website"),
   description: text("description"),
-  source: text("source").notNull(), // circle_marketplace | growthos | manual
+  source: text("source").notNull(), // circle_marketplace | growtendril (bundled seller; rows made before the rename say growthos) | manual
   createdAt: createdAt(),
 });
 

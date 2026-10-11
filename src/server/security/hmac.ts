@@ -1,7 +1,7 @@
 import { createHmac, timingSafeEqual } from "node:crypto";
 
 /**
- * Conversion webhook signature: header `x-growthos-signature: t=<unix>,v1=<hex hmac>` where
+ * Conversion webhook signature: header `x-growtendril-signature: t=<unix>,v1=<hex hmac>` where
  * hmac = HMAC-SHA256(secret, `${t}.${rawBody}`). Rejects stale timestamps (replay window 5 min).
  */
 export function signWebhook(secret: string, body: string, t = Math.floor(Date.now() / 1000)): string {

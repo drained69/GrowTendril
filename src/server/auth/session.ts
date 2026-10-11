@@ -7,8 +7,8 @@ import path from "node:path";
  * secure in production. Secret from SESSION_SECRET; in development a random one is generated
  * and stored under .data/ so restarts keep you logged in.
  */
-export const SESSION_COOKIE = "gos_session";
-export const PROJECT_COOKIE = "gos_project";
+export const SESSION_COOKIE = "gt_session";
+export const PROJECT_COOKIE = "gt_project";
 const MAX_AGE_S = 60 * 60 * 24 * 7;
 
 let secret: Buffer | null = null;

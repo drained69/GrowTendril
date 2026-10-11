@@ -23,7 +23,7 @@ export function buildUtmUrl(destination: string, p: { source: string; medium: st
   u.searchParams.set("utm_source", p.source);
   u.searchParams.set("utm_medium", p.medium);
   u.searchParams.set("utm_campaign", p.campaign);
-  u.searchParams.set("gos_ref", p.ref);
+  u.searchParams.set("gt_ref", p.ref);
   return u.toString();
 }
 

@@ -1,4 +1,4 @@
-const BASE = "http://growthos.invalid";
+const BASE = "http://growtendril.invalid";
 
 /**
  * Post-login redirect target: same-origin paths only. Rejects protocol-relative ("//x"),

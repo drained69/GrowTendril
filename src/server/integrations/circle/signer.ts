@@ -1,7 +1,7 @@
 import type { Address, Hex } from "viem";
 import { privateKeyToAccount } from "viem/accounts";
 import { circleClient } from "@/server/integrations/circle/client";
-import { IS_MAINNET } from "@/server/integrations/circle/config";
+import { ARC, IS_MAINNET } from "@/server/integrations/circle/config";
 
 /** Shape required by Circle's BatchEvmScheme (x402-batching). */
 export interface AgentSigner {
@@ -19,6 +19,8 @@ export interface SignableWallet {
   provider: string;
   address: string | null;
   circleWalletId: string | null;
+  /** Circle blockchain id the wallet was created on (ARC-TESTNET / ARC). */
+  blockchain?: string | null;
 }
 
 const jsonSafe = (v: unknown): unknown =>
@@ -67,6 +69,8 @@ function localSigner(): AgentSigner {
 /** The workspace wallet's signer, or null if it cannot sign. Never exposes key material. */
 export function signerFor(w: SignableWallet | null | undefined): AgentSigner | null {
   if (!w) return null;
+  // A wallet made on the other network never signs here (testnet wallet after switching to mainnet, or back).
+  if (w.blockchain && w.blockchain !== ARC.circleBlockchain) return null;
   if (w.provider === "circle_dcw" && w.circleWalletId && w.address) return circleSigner(w.circleWalletId, w.address);
   if (w.provider === "local_testnet" && process.env.AGENT_PRIVATE_KEY && !IS_MAINNET) return localSigner();
   return null;

@@ -20,7 +20,7 @@ parameter shape and response shape to the installed types and found no blocker-l
 | Adapters | `@circle-fin/adapter-circle-wallets`, `@circle-fin/adapter-viem-v2` | `createCircleWalletsAdapter`, `createViemAdapterFromPrivateKey` |
 | Onramp | `@circle-fin/onramp-kit` | `createOnrampServerKit`, `createSessionRouteHandler` |
 
-Networks (selected by `GROWTHOS_NETWORK`, all values from `CHAIN_CONFIGS` and viem's registry):
+Networks (selected by `GROWTENDRIL_NETWORK`, all values from `CHAIN_CONFIGS` and viem's registry):
 
 | | Testnet (default) | Mainnet |
 | --- | --- | --- |
@@ -86,6 +86,6 @@ missing. The doctor reports a blocked host as a failure and never fabricates a r
 
 CI (`.github/workflows/ci.yml`) runs typecheck, the unit tests (policy, scoring, learning, security, workspace, jobs,
 x402 round-trip, campaigns), a production build and an offline run of the 8-step agent loop in simulation; the
-typecheck and tests run again under `GROWTHOS_NETWORK=mainnet`. A browser pass over every page was done by hand against a
+typecheck and tests run again under `GROWTENDRIL_NETWORK=mainnet`. A browser pass over every page was done by hand against a
 production build. The live Circle/Arc paths are validated by `npm run doctor` on a networked machine; they have not
 been run live from the build environment, whose network policy blocks those hosts.

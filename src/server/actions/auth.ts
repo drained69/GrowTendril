@@ -66,7 +66,7 @@ export async function signupAction(_: unknown, form: FormData): Promise<ActionRe
     const c = Creds.parse({ email: form.get("email"), password: form.get("password"), name: form.get("name") || undefined });
     const db = await getDb();
     const email = c.email.toLowerCase();
-    if (email === DEMO_EMAIL || email.endsWith("@guest.growthos.local")) return { ok: false, error: "That address is reserved" };
+    if (email === DEMO_EMAIL || /@guest\.(growtendril|growthos)\.local$/.test(email)) return { ok: false, error: "That address is reserved" };
     const [exists] = await db.select({ id: s.users.id }).from(s.users).where(eq(s.users.email, email));
     if (exists) return { ok: false, error: "An account with this email exists — sign in instead" };
     const invite = form.get("invite");
@@ -105,7 +105,7 @@ export async function enterDemoAction(): Promise<void> {
   let user = await currentUser();
   if (!user) {
     const id = newId();
-    const [g] = await db.insert(s.users).values({ id, email: `guest-${id.slice(0, 12)}@guest.growthos.local`, name: "Guest", passwordHash: "!", isGuest: true, lastLoginAt: new Date() }).returning();
+    const [g] = await db.insert(s.users).values({ id, email: `guest-${id.slice(0, 12)}@guest.growtendril.local`, name: "Guest", passwordHash: "!", isGuest: true, lastLoginAt: new Date() }).returning();
     user = { id: g.id, email: g.email, name: g.name, isGuest: true };
     await startSession(g.id);
   }

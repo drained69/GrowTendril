@@ -287,7 +287,7 @@ Creators opt in through a public link (`/c/<token>`) that shows the exact rules 
 ## Measuring results
 
 - Every experiment gets a **campaign ID**, an **experiment ID**, UTM parameters and a **referral code**.
-- `/r/<code>` records a first-party visit (rate-limited, bot-filtered, de-duplicated by a visitor cookie) and redirects to your UTM-tagged page with a `gos_ref` parameter. Your site needs to keep that reference and send it back with the conversion.
+- `/r/<code>` records a first-party visit (rate-limited, bot-filtered, de-duplicated by a visitor cookie) and redirects to your UTM-tagged page with a `gt_ref` parameter. Your site needs to keep that reference and send it back with the conversion.
 - `POST /api/events` ingests conversion events, signed with your workspace's webhook secret.
 - Attribution is a deterministic join on the referral code. There is no modelled or AI-guessed attribution.
 - The budget agent compares cost per result against the mission median: **SCALE** at 60% of the median or lower with at least 3 conversions, **REDUCE** at 160% or higher, **STOP** when the stop condition is hit. Below 10 USDC spent, the result is "insufficient data".
@@ -302,13 +302,13 @@ Creators opt in through a public link (`/c/<token>`) that shows the exact rules 
 | `custom` | Anything else, with `customName` |
 
 ```bash
-BODY='{"event":"purchase","ref":"<gos_ref>","visitorId":"order_1042","idempotencyKey":"order-1042-purchase","value":"38.00"}'
+BODY='{"event":"purchase","ref":"<gt_ref>","visitorId":"order_1042","idempotencyKey":"order-1042-purchase","value":"38.00"}'
 T=$(date +%s)
 SIG=$(printf '%s' "$T.$BODY" | openssl dgst -sha256 -hmac "$WEBHOOK_SECRET" | sed 's/^.* //')
 curl -X POST https://your-app.example/api/events \
   -H "content-type: application/json" \
-  -H "x-growthos-project: <your project id>" \
-  -H "x-growthos-signature: t=$T,v1=$SIG" \
+  -H "x-growtendril-project: <your project id>" \
+  -H "x-growtendril-signature: t=$T,v1=$SIG" \
   -d "$BODY"
 ```
 
@@ -477,20 +477,20 @@ The web app, `npm run doctor`, `npm run wallet:setup`, `npm run worker` and `npm
 | `ENCRYPTION_KEY` | AES-256-GCM key for stored integration credentials (`openssl rand -hex 32`). Required in production |
 | `APP_URL` | Public base URL, used in invite links |
 | `DATABASE_URL` | Postgres connection. Empty means embedded PGlite |
-| `GROWTHOS_NETWORK` | `testnet` (default) or `mainnet`. Selects every chain, contract and Circle endpoint |
+| `GROWTENDRIL_NETWORK` | `testnet` (default) or `mainnet`. Selects every chain, contract and Circle endpoint. The Circle API key must match: `TEST_API_KEY:…` on testnet, `LIVE_API_KEY:…` on mainnet |
 | `CIRCLE_API_KEY`, `CIRCLE_ENTITY_SECRET` | Circle custody for per-workspace agent wallets (a live key on mainnet) |
 | `AGENT_PRIVATE_KEY` | Local testnet development key. Refused on mainnet |
 | `ARC_RPC_URL`, `GATEWAY_API_URL`, `CIRCLE_DISCOVERY_URL` | Optional endpoint overrides |
 | `SIGNALS_SELLER_ADDRESS`, `SIGNALS_API_URL` | The sample x402 seller and where the app reaches it |
 | `DEMO_PAYOUT_ADDRESS` | Where demo creator payouts go on testnet |
 | `ONRAMP_API_KEY` | Optional "Add budget" onramp |
-| `ANTHROPIC_API_KEY`, `GROWTHOS_CLAUDE_MODEL` | Optional Claude for product reading and creator drafts |
+| `ANTHROPIC_API_KEY`, `GROWTENDRIL_CLAUDE_MODEL` | Optional Claude for product reading and creator drafts |
 | `GITHUB_TOKEN`, `X_BEARER_TOKEN`, `REDDIT_CLIENT_ID`, `REDDIT_CLIENT_SECRET`, `REDDIT_USER_AGENT`, `YOUTUBE_API_KEY`, `RSS_FEEDS` | Platform-default source credentials. Each workspace can store its own under *Integrations*; workspace keys win |
-| `GROWTHOS_WORKER`, `WORKER_INTERVAL_MS` | Turn the in-process worker off, and set its poll interval |
+| `GROWTENDRIL_WORKER`, `WORKER_INTERVAL_MS` | Turn the in-process worker off, and set its poll interval |
 | `CRON_SECRET` | Authorizes the external scheduler endpoint |
 | `TRUSTED_PROXY_HOPS` | How many proxies to trust when reading the client IP (default 1) |
 
-> **Naming:** the product is GrowTendril, but existing configuration identifiers keep their original `GROWTHOS_`, `x-growthos-*` and `gos_*` names (environment variables, the signed-event headers, tracking cookies and the `gos_ref` link parameter) so deployed `.env` files and webhook senders keep working.
+> **Renamed identifiers:** configuration now uses `GROWTENDRIL_*` environment variables, `x-growtendril-*` event headers, `gt_*` cookies and the `gt_ref` link parameter. For compatibility, the pre-rename `GROWTHOS_*` variables are still read when the new ones are unset, and `/api/events` still accepts `x-growthos-*` headers. Two things change on upgrade: everyone signs in again once (the session cookie was renamed), and tracked links now carry `gt_ref` instead of `gos_ref`, so a site that reads the parameter should read `gt_ref` (falling back to `gos_ref` for older links).
 
 ### Data sources
 
@@ -516,11 +516,11 @@ Only official or public APIs are used, within their terms and rate limits. An un
 
 1. **New project → Deploy from GitHub repo**, and pick this repository and branch.
 2. Add a **PostgreSQL** database and set `DATABASE_URL=${{Postgres.DATABASE_URL}}` on the web service. Migrations run on boot. (Without Postgres the app uses PGlite, which needs a volume at `/app/.data` and a single replica.)
-3. Set `SESSION_SECRET`, `ENCRYPTION_KEY`, `APP_URL` and `GROWTHOS_NETWORK`. Add `CIRCLE_API_KEY` and `CIRCLE_ENTITY_SECRET` when you want real wallets.
+3. Set `SESSION_SECRET`, `ENCRYPTION_KEY`, `APP_URL` and `GROWTENDRIL_NETWORK`. Add `CIRCLE_API_KEY` and `CIRCLE_ENTITY_SECRET` when you want real wallets.
 4. Generate a domain under Networking and deploy.
 5. Optional: deploy `services/signals-api` as a second service (start command `npm run signals`, set `SIGNALS_SELLER_ADDRESS`) and point `SIGNALS_API_URL` at its private URL.
 
-If you run more than one web replica, set `GROWTHOS_WORKER=off` on them and add a worker service with start command `npm run worker`.
+If you run more than one web replica, set `GROWTENDRIL_WORKER=off` on them and add a worker service with start command `npm run worker`.
 
 ### Health and scheduling
 
@@ -530,7 +530,7 @@ If you run more than one web replica, set `GROWTHOS_WORKER=off` on them and add 
 
 ## Testnet and mainnet
 
-One setting switches the whole deployment: `GROWTHOS_NETWORK`. The default is **`testnet`**, so a fresh clone can never move real funds. Every network value comes from Circle's SDKs or viem's chain registry rather than hand-copied constants.
+One setting switches the whole deployment: `GROWTENDRIL_NETWORK`. The default is **`testnet`**, so a fresh clone can never move real funds. Every network value comes from Circle's SDKs or viem's chain registry rather than hand-copied constants.
 
 | | Testnet (default) | Mainnet |
 | --- | --- | --- |
@@ -571,8 +571,9 @@ Safety rails that apply automatically on mainnet:
 - The default policy runs only paid research autonomously. Bounties, content, creators, community and treasury moves need approval.
 - Chains outside the deployment's network, and payouts to missing or burn addresses, are denied.
 - A balance check runs before a payment is committed; if a balance cannot be read, it goes to approval rather than being allowed.
+- A Circle key for the wrong network is refused up front (a `TEST_API_KEY` on mainnet, or a `LIVE_API_KEY` on testnet), and a workspace wallet created on the other network never signs: the Wallet page asks you to create one on the current network.
 
-Checklist: use a fresh database; set `GROWTHOS_NETWORK=mainnet`, `SESSION_SECRET`, `ENCRYPTION_KEY`, `APP_URL`, `CIRCLE_API_KEY` (a live key) and `CIRCLE_ENTITY_SECRET`; create the workspace wallet; fund it with USDC on Arc; review the spend policy; run `npm run doctor` with each flag; make one small real payment; then resume spending as the owner and raise limits gradually.
+Checklist: use a fresh database; set `GROWTENDRIL_NETWORK=mainnet`, `SESSION_SECRET`, `ENCRYPTION_KEY`, `APP_URL`, `CIRCLE_API_KEY` (a `LIVE_API_KEY:…` key) and an entity secret registered for that live key (`npm run wallet:setup -- --entity-secret`; test-key secrets and wallets do not carry over); create the workspace wallet; fund it with USDC on Arc; review the spend policy; run `npm run doctor` with each flag; make one small real payment; then resume spending as the owner and raise limits gradually.
 
 ---
 
@@ -599,7 +600,7 @@ Checklist: use a fresh database; set `GROWTHOS_NETWORK=mainnet`, `SESSION_SECRET
 
 ## Verification and testing
 
-**Run in CI on every push** (`.github/workflows/ci.yml`): typecheck, the 63 unit and integration tests, a production build and an offline run of the full 8-step agent loop in simulation. Typecheck and tests run again under `GROWTHOS_NETWORK=mainnet`, so network-coupled code is exercised on both networks.
+**Run in CI on every push** (`.github/workflows/ci.yml`): typecheck, the 67 unit and integration tests, a production build and an offline run of the full 8-step agent loop in simulation. Typecheck and tests run again under `GROWTENDRIL_NETWORK=mainnet`, so network-coupled code is exercised on both networks.
 
 The tests cover policy verdicts (allow, approval, deny, deny-after-approval, balance and recipient rules), schema rejection of free-form actions, scoring, narrative lifecycle, learning and reallocation, experiment tranches, signing and rate limits, roles and invites, encrypted credentials, SSRF-safe fetching, the job queue on a real in-memory Postgres, creator-campaign planning, rewards, holdback and release, and an **offline x402 round-trip** in which Circle's payment scheme signs against a mock seller using the exact `PAYMENT-REQUIRED`, `Payment-Signature` and `PAYMENT-RESPONSE` wire format.
 
@@ -618,12 +619,12 @@ See [`docs/PLAN.md`](docs/PLAN.md) for the design record and the verified SDK ta
 | Pages show no customers, narratives or creators | Nothing has been collected yet. Connect sources under *Integrations*, then **Run scan**. The Overview checklist tracks the steps |
 | Everything is marked **SIMULATED** | No agent wallet can sign. Create the workspace wallet, or configure Circle custody. Demo workspaces are always simulated |
 | **Run scan** vs **Run cycle** | A scan only collects and analyzes. A cycle may also buy data and propose payments within your policy |
-| Autopilot does nothing | Autopilot runs for live workspaces only, and needs the worker running (the web server runs it unless `GROWTHOS_WORKER=off`) |
+| Autopilot does nothing | Autopilot runs for live workspaces only, and needs the worker running (the web server runs it unless `GROWTENDRIL_WORKER=off`) |
 | Invite links point to `localhost` | Set `APP_URL` to your public URL |
-| `npm run doctor` fails at the Arc RPC or Gateway step | The host is blocked from where you are running it, or the keys or network are wrong. Check `GROWTHOS_NETWORK`, `CIRCLE_API_KEY` and `ARC_RPC_URL` |
+| `npm run doctor` fails at the Arc RPC or Gateway step | The host is blocked from where you are running it, or the keys or network are wrong. Check `GROWTENDRIL_NETWORK`, `CIRCLE_API_KEY` and `ARC_RPC_URL` |
 | A deposit stays pending, then fails with `STUCK` | The on-chain transaction is stuck. Check the wallet on the explorer before retrying |
 | `db:seed` or `demo:run` hangs or errors | Another process holds the embedded database. Stop the dev server or set `PGLITE_DIR` to a different folder |
-| Conversions are not attributed | Your site must keep the `gos_ref` parameter and send it back as `ref`, and the event must be correctly signed. See [Sending conversion events](#sending-conversion-events) |
+| Conversions are not attributed | Your site must keep the `gt_ref` parameter and send it back as `ref`, and the event must be correctly signed. See [Sending conversion events](#sending-conversion-events) |
 | A mainnet wallet will not spend | New mainnet wallets start frozen. An owner resumes spending from the Wallet page |
 
 ---

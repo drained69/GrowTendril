@@ -10,7 +10,7 @@ export type DB = PgliteDatabase<typeof schema>;
 
 type Holder = { db?: DB; ready?: Promise<DB> };
 // Survive Next.js dev hot reloads: one database handle per process.
-const holder = ((globalThis as unknown as { __growthosDb?: Holder }).__growthosDb ??= {});
+const holder = ((globalThis as unknown as { __growtendrilDb?: Holder }).__growtendrilDb ??= {});
 
 const MIGRATIONS = path.join(process.cwd(), "drizzle");
 

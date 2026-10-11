@@ -8,7 +8,7 @@ import type { z } from "zod";
  * or a call fails, every caller falls back to deterministic logic and says so.
  */
 
-export const CLAUDE_MODEL = process.env.GROWTHOS_CLAUDE_MODEL ?? "claude-opus-5-5";
+export const CLAUDE_MODEL = process.env.GROWTENDRIL_CLAUDE_MODEL ?? process.env.GROWTHOS_CLAUDE_MODEL ?? "claude-opus-5-5";
 
 let client: Anthropic | null = null;
 

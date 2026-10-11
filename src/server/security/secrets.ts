@@ -28,7 +28,7 @@ function loadKey(): Buffer {
   return (key = Buffer.from(readFileSync(file, "utf8").trim(), "hex"));
 }
 
-export function encryptJson(value: Record<string, string>, aad = "growthos"): string {
+export function encryptJson(value: Record<string, string>, aad = "growtendril"): string {
   const iv = randomBytes(12);
   const c = createCipheriv("aes-256-gcm", loadKey(), iv);
   c.setAAD(Buffer.from(aad));
@@ -36,7 +36,7 @@ export function encryptJson(value: Record<string, string>, aad = "growthos"): st
   return Buffer.concat([iv, c.getAuthTag(), ct]).toString("base64");
 }
 
-export function decryptJson(blob: string, aad = "growthos"): Record<string, string> {
+export function decryptJson(blob: string, aad = "growtendril"): Record<string, string> {
   const buf = Buffer.from(blob, "base64");
   const d = createDecipheriv("aes-256-gcm", loadKey(), buf.subarray(0, 12));
   d.setAAD(Buffer.from(aad));

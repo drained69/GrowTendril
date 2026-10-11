@@ -55,15 +55,15 @@ export default async function Integrations() {
   const errors = connections.filter((c) => c.status === "error").length;
   const ordered = [...connections].sort((a, b) => Number(a.source === "restricted") - Number(b.source === "restricted"));
 
-  // "ref" must be a real gos_ref (6–16 lowercase letters/digits) from the visitor's tracked link; this sample has the valid shape.
+  // "ref" must be a real gt_ref (6–16 lowercase letters/digits) from the visitor's tracked link; this sample has the valid shape.
   const curl = `BODY='{"event":"signup","ref":"k7m2xq9p","visitorId":"user_123","idempotencyKey":"signup-user_123"}'
 T=$(date +%s)
-SIG=$(printf '%s' "$T.$BODY" | openssl dgst -sha256 -hmac "$GROWTHOS_WEBHOOK_SECRET" | sed 's/^.* //')
+SIG=$(printf '%s' "$T.$BODY" | openssl dgst -sha256 -hmac "$GROWTENDRIL_WEBHOOK_SECRET" | sed 's/^.* //')
 
 curl -X POST ${endpoint} \\
   -H "content-type: application/json" \\
-  -H "x-growthos-project: ${project.id}" \\
-  -H "x-growthos-signature: t=$T,v1=$SIG" \\
+  -H "x-growtendril-project: ${project.id}" \\
+  -H "x-growtendril-signature: t=$T,v1=$SIG" \\
   -d "$BODY"`;
 
   return (
@@ -156,7 +156,7 @@ curl -X POST ${endpoint} \\
       <Card id="events">
         <CardHeader
           title="Inbound events"
-          description="Report conversions (signups, SDK keys, demo requests…) with the visitor's gos_ref so they are attributed to the experiment that produced them."
+          description="Report conversions (signups, SDK keys, demo requests…) with the visitor's gt_ref so they are attributed to the experiment that produced them."
           icon={<Webhook />}
         />
         <div className="grid gap-0 lg:grid-cols-[minmax(0,1fr)_minmax(0,1.3fr)] lg:divide-x lg:divide-line">
@@ -172,7 +172,7 @@ curl -X POST ${endpoint} \\
               <div className="label mb-1.5">Project ID</div>
               <CopyField value={project.id} />
               <p className="mt-1.5 text-[11.5px] text-ink-3">
-                Sent as <code className="num text-ink-2">x-growthos-project</code>.
+                Sent as <code className="num text-ink-2">x-growtendril-project</code>.
               </p>
             </div>
             <div>
@@ -185,8 +185,8 @@ curl -X POST ${endpoint} \\
               <div className="label mb-1.5">Headers</div>
               <KeyValue
                 items={[
-                  { k: <code className="num">x-growthos-project</code>, v: <span className="text-ink-2">your project ID</span> },
-                  { k: <code className="num">x-growthos-signature</code>, v: <code className="num text-ink-2">t=&lt;unix&gt;,v1=&lt;hex&gt;</code> },
+                  { k: <code className="num">x-growtendril-project</code>, v: <span className="text-ink-2">your project ID</span> },
+                  { k: <code className="num">x-growtendril-signature</code>, v: <code className="num text-ink-2">t=&lt;unix&gt;,v1=&lt;hex&gt;</code> },
                 ]}
               />
               <p className="mt-2 text-[11.5px] leading-snug text-ink-3">
@@ -212,7 +212,7 @@ curl -X POST ${endpoint} \\
                 ))}
               </div>
               <p className="mt-2 text-[11.5px] leading-snug text-ink-3">
-                <code className="num">ref</code> is the visitor&apos;s <code className="num">gos_ref</code> (6–16 lowercase letters/digits) — replace the sample value. Optional fields: <code className="num">customName</code>, <code className="num">visitorId</code>, <code className="num">occurredAt</code> (ISO 8601), <code className="num">value</code> (USDC), <code className="num">metadata</code>.
+                <code className="num">ref</code> is the visitor&apos;s <code className="num">gt_ref</code> (6–16 lowercase letters/digits) — replace the sample value. Optional fields: <code className="num">customName</code>, <code className="num">visitorId</code>, <code className="num">occurredAt</code> (ISO 8601), <code className="num">value</code> (USDC), <code className="num">metadata</code>.
               </p>
             </div>
           </CardBody>

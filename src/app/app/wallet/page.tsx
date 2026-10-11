@@ -7,7 +7,7 @@ import { schema as s } from "@/server/db/client";
 import { activeMission, missionSummary } from "@/server/queries/missions";
 import { spentTodayMicro } from "@/server/queries/activity";
 import { getWallet, walletBalances, walletIsLive } from "@/server/integrations/circle/wallets";
-import { ACTIVE_CHAINS, ARC, IS_MAINNET, addressExplorerUrl, chainLabel, platformCustody, txExplorerUrl } from "@/server/integrations/circle/config";
+import { ACTIVE_CHAINS, ARC, IS_MAINNET, addressExplorerUrl, chainLabel, custodyProblem, platformCustody, txExplorerUrl } from "@/server/integrations/circle/config";
 import { unifiedBalance } from "@/server/integrations/circle/appkit";
 import { recentJobs } from "@/server/jobs/queue";
 import { provisionWalletAction, refreshSettlementsAction, toggleFreezeAction } from "@/server/actions/wallet";
@@ -39,6 +39,7 @@ export default async function WalletPage() {
   // Anyone who manages the wallet may freeze it; on mainnet only an owner may resume spending.
   const canResume = manage && (!IS_MAINNET || role === "owner");
   const custody = platformCustody();
+  const problem = custodyProblem();
 
   const [wallet, spentToday, [policy], mission, jobs] = await Promise.all([
     getWallet(db, pid),
@@ -106,7 +107,7 @@ export default async function WalletPage() {
       )}
 
       {!address ? (
-        <WalletSetup custody={custody} manage={manage} demo={demo} />
+        <WalletSetup custody={custody} problem={problem} manage={manage} demo={demo} />
       ) : (
         <div className="grid gap-4 lg:grid-cols-[1.35fr_1fr]">
           <div className="space-y-4">
@@ -132,11 +133,19 @@ export default async function WalletPage() {
                     { k: "Created", v: relTime(wallet!.createdAt) },
                   ]}
                 />
-                {!live && (
-                  <Callout tone="warn" title="This deployment can’t sign for this wallet">
-                    The wallet is recorded but its custody isn’t available here ({custody ? `custody is “${custody}”` : "no custody configured"}). Payments fall back to SIMULATED until <Code>CIRCLE_API_KEY</Code> and <Code>CIRCLE_ENTITY_SECRET</Code> are set.
+                {!live && wallet!.blockchain !== ARC.circleBlockchain ? (
+                  <Callout
+                    tone="warn"
+                    title={`This wallet is on ${wallet!.blockchain}; this deployment runs on ${ARC.circleBlockchain}`}
+                    action={manage && custody ? <ActionButton action={provisionWalletAction} label={`Create wallet on ${ARC.name}`} icon={<CircleDollarSign />} size="xs" /> : undefined}
+                  >
+                    Wallets don’t carry across networks, so it can’t sign here and payments fall back to SIMULATED. Create a {ARC.name} wallet for this workspace{IS_MAINNET ? "; it starts frozen until an owner resumes spending" : ""}.{problem ? ` ${problem}` : ""}
                   </Callout>
-                )}
+                ) : !live ? (
+                  <Callout tone="warn" title="This deployment can’t sign for this wallet">
+                    The wallet is recorded but its custody isn’t available here ({problem ?? (custody ? `custody is “${custody}”` : "no custody configured")}). Payments fall back to SIMULATED until <Code>CIRCLE_API_KEY</Code> and <Code>CIRCLE_ENTITY_SECRET</Code> are set{problem ? " correctly" : ""}.
+                  </Callout>
+                ) : null}
               </CardBody>
               <CardFooter>
                 <span className="flex items-center gap-1.5">
@@ -289,7 +298,7 @@ export default async function WalletPage() {
   );
 }
 
-function WalletSetup({ custody, manage, demo }: { custody: "circle" | "local" | null; manage: boolean; demo: boolean }) {
+function WalletSetup({ custody, problem, manage, demo }: { custody: "circle" | "local" | null; problem: string | null; manage: boolean; demo: boolean }) {
   if (demo)
     return (
       <EmptyState
@@ -310,6 +319,10 @@ function WalletSetup({ custody, manage, demo }: { custody: "circle" | "local" | 
           ) : custody === "local" ? (
             <Callout tone="warn" title="Development key (testnet only)">
               This deployment signs with a single server-side development key (<Code>AGENT_PRIVATE_KEY</Code>). It is never sent to the browser or the LLM, and is refused outside testnet. Use Circle custody for anything shared.
+            </Callout>
+          ) : problem ? (
+            <Callout tone="danger" title="Circle credentials don’t match this network">
+              {problem} Until then, every payment runs as SIMULATED and moves nothing.
             </Callout>
           ) : (
             <Callout tone="danger" title="No custody configured on this deployment">

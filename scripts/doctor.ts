@@ -46,7 +46,7 @@ function skip(name: string, why: string) {
 }
 
 async function main() {
-  const { ARC, GATEWAY_API, DISCOVERY_API, platformCustody, networkInfo } = await import("../src/server/integrations/circle/config");
+  const { ARC, GATEWAY_API, DISCOVERY_API, platformCustody, custodyProblem, circleKeyEnvironment, networkInfo } = await import("../src/server/integrations/circle/config");
   const net = networkInfo();
   console.log(`\nGrowTendril money-path doctor — ${net.name} (chain ${net.chainId})`);
   if (net.mainnet) console.log(`${Y}  MAINNET: real funds. --deposit and --x402 move real USDC.${X}`);
@@ -55,7 +55,10 @@ async function main() {
   const custody = platformCustody();
   console.log("Configuration");
   await step("custody configured", async () => {
+    const problem = custodyProblem();
+    if (problem) throw new Error(problem);
     if (!custody) throw new Error("no custody — set CIRCLE_API_KEY + CIRCLE_ENTITY_SECRET (or AGENT_PRIVATE_KEY on testnet)");
+    if (custody === "circle" && circleKeyEnvironment() === "unknown") return "Circle developer-controlled wallets (API key prefix not recognised — expected TEST_API_KEY: or LIVE_API_KEY:)";
     return custody === "circle" ? "Circle developer-controlled wallets" : "server-side testnet key";
   });
 

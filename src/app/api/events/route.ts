@@ -27,7 +27,8 @@ export async function POST(req: Request) {
   // 120/min sustained (2/s) with bursts up to 120 — what the Integrations page documents.
   const rl = rateLimit(`events:${ip}`, { capacity: 120, refillPerSec: 2 });
   if (!rl.ok) return NextResponse.json({ error: "rate limited" }, { status: 429, headers: { "Retry-After": String(rl.retryAfter) } });
-  const projectId = req.headers.get("x-growthos-project");
+  // x-growtendril-*; the pre-rename x-growthos-* headers are still accepted so existing integrations keep working.
+  const projectId = req.headers.get("x-growtendril-project") ?? req.headers.get("x-growthos-project");
   // Reject oversized bodies before buffering them when the sender declares a length.
   const declared = Number(req.headers.get("content-length") ?? 0);
   if (!projectId || declared > 20_000) return NextResponse.json({ error: "bad request" }, { status: declared > 20_000 ? 413 : 400 });
@@ -36,7 +37,7 @@ export async function POST(req: Request) {
   const db = await getDb();
   const [project] = await db.select().from(s.projects).where(eq(s.projects.id, projectId));
   if (!project) return NextResponse.json({ error: "unauthorized" }, { status: 401 });
-  const sig = verifyWebhook(project.webhookSecret, raw, req.headers.get("x-growthos-signature"));
+  const sig = verifyWebhook(project.webhookSecret, raw, req.headers.get("x-growtendril-signature") ?? req.headers.get("x-growthos-signature"));
   if (!sig.ok) return NextResponse.json({ error: `unauthorized: ${sig.reason}` }, { status: 401 });
   let body: z.infer<typeof Body>;
   try {

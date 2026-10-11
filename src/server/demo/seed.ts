@@ -24,8 +24,8 @@ import { utmSlug } from "@/server/domain/growth/attribution-links";
  * pages that say so. The seeded corpus is fed through the *real* ingest + analysis engine.
  */
 
-export const DEMO_EMAIL = "demo@growthos.dev";
-export const DEMO_PASSWORD = "growthos-demo";
+export const DEMO_EMAIL = "demo@growtendril.dev";
+export const DEMO_PASSWORD = "growtendril-demo";
 
 type P = { id: string; provider: string; handle: string; name?: string; followers?: number; company?: string; days: number; text: string; eng: FetchedPost["engagement"]; title?: string };
 

@@ -2,7 +2,7 @@
  * GrowTendril Signals — a small x402 seller, paywalled with Circle Gateway batching.
  *
  * It plays the role of an independent data vendor so the agent's purchase path is
- * exercised end-to-end on Arc (testnet or mainnet, per GROWTHOS_NETWORK): 402 → EIP-712 signature → Circle facilitator
+ * exercised end-to-end on Arc (testnet or mainnet, per GROWTENDRIL_NETWORK): 402 → EIP-712 signature → Circle facilitator
  * settles → Gateway batches on-chain. Pattern from the-canteen-dev/circle-agent.
  *
  * Real entities are enriched from public APIs (GitHub, HN Algolia) at request time.

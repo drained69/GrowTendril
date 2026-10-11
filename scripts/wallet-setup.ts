@@ -7,12 +7,13 @@
  */
 import "./env";
 import { randomBytes } from "node:crypto";
+import { isMainnetEnv } from "../src/server/integrations/circle/network-env";
 import { generatePrivateKey, privateKeyToAccount } from "viem/accounts";
 
 const args = process.argv.slice(2);
 
 if (args.includes("--local")) {
-  if ((process.env.GROWTHOS_NETWORK ?? "testnet") === "mainnet") {
+  if (isMainnetEnv()) {
     console.error("Development keys are testnet-only. On mainnet use Circle developer-controlled wallets (--entity-secret).");
     process.exit(1);
   }
@@ -24,7 +25,7 @@ if (args.includes("--local")) {
 } else if (args.includes("--entity-secret")) {
   const apiKey = process.env.CIRCLE_API_KEY;
   if (!apiKey) {
-    console.error("Set CIRCLE_API_KEY (TEST_API_KEY:…) from https://console.circle.com first.");
+    console.error(`Set CIRCLE_API_KEY (${isMainnetEnv() ? "LIVE_API_KEY:… for mainnet" : "TEST_API_KEY:… for testnet"}) from https://console.circle.com first.`);
     process.exit(1);
   }
   const { registerEntitySecretCiphertext } = await import("@circle-fin/developer-controlled-wallets");

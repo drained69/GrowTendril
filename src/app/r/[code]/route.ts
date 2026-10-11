@@ -8,7 +8,7 @@ import { rateLimit, clientIp } from "@/server/security/ratelimit";
 
 export const dynamic = "force-dynamic";
 
-/** Tracked short link: records a first-party "visit" for the campaign, then redirects with UTM + gos_ref. */
+/** Tracked short link: records a first-party "visit" for the campaign, then redirects with UTM + gt_ref. */
 export async function GET(req: Request, { params }: { params: Promise<{ code: string }> }) {
   const { code } = await params;
   if (!/^[a-z0-9]{6,16}$/.test(code)) return new NextResponse("Not found", { status: 404 });
@@ -22,11 +22,11 @@ export async function GET(req: Request, { params }: { params: Promise<{ code: st
   // Rate-limited and de-duplicated per visitor cookie so refreshes and bots don't inflate visits.
   const ip = clientIp(req.headers);
   if (rateLimit(`r:${ip}`, { capacity: 30, refillPerSec: 0.5 }).ok && !/bot|crawl|spider|preview/i.test(req.headers.get("user-agent") ?? "")) {
-    const cookie = req.headers.get("cookie")?.match(/gos_vid=([a-f0-9-]{36})/)?.[1];
+    const cookie = req.headers.get("cookie")?.match(/(?:gt|gos)_vid=([a-f0-9-]{36})/)?.[1];
     const visitor = cookie ?? randomUUID();
     // A click on a DEMO workspace's link is still labelled DEMO: its campaign and results are fictional.
     await recordConversion(db, { projectId: exp.projectId, eventType: "visit", referralCode: code, visitorId: visitor, idempotencyKey: `visit:${code}:${visitor}`, source: "redirect", dataMode: exp.mode === "DEMO" ? "DEMO" : "LIVE" });
-    if (!cookie) res.cookies.set("gos_vid", visitor, { httpOnly: true, sameSite: "lax", maxAge: 60 * 60 * 24 * 90, path: "/" });
+    if (!cookie) res.cookies.set("gt_vid", visitor, { httpOnly: true, sameSite: "lax", maxAge: 60 * 60 * 24 * 90, path: "/" });
   }
   return res;
 }

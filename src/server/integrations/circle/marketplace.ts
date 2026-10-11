@@ -56,7 +56,7 @@ export async function searchMarketplace(query: string, opts: { category?: string
   });
 }
 
-export async function upsertService(db: DB, svc: { vendor: string; vendorSource: "circle_marketplace" | "growthos"; vendorCategory?: string | null; website?: string | null; resourceUrl: string; method: string; description: string; category?: string | null; priceMicro?: number | null; network?: string | null; payTo?: string | null; capabilities: string[] }) {
+export async function upsertService(db: DB, svc: { vendor: string; vendorSource: "circle_marketplace" | "growtendril"; vendorCategory?: string | null; website?: string | null; resourceUrl: string; method: string; description: string; category?: string | null; priceMicro?: number | null; network?: string | null; payTo?: string | null; capabilities: string[] }) {
   const [v] = await db
     .insert(s.vendors)
     .values({ id: newId(), name: svc.vendor, category: svc.vendorCategory ?? null, website: svc.website ?? null, source: svc.vendorSource })
@@ -123,7 +123,7 @@ export async function registerBundledSignalsService(db: DB) {
   for (const d of defs) {
     await upsertService(db, {
       vendor: "GrowTendril Signals (bundled seller)",
-      vendorSource: "growthos",
+      vendorSource: "growtendril",
       vendorCategory: "DATA",
       website: base,
       resourceUrl: `${base}${d.path}`,

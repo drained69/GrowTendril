@@ -1,8 +1,9 @@
 import { CHAIN_CONFIGS } from "@circle-fin/x402-batching/client";
 import { arbitrum, arbitrumSepolia, base, baseSepolia, mainnet, sepolia, type Chain } from "viem/chains";
+import { networkSetting } from "@/server/integrations/circle/network-env";
 
 /**
- * One switch for the whole deployment: GROWTHOS_NETWORK=testnet (default) | mainnet.
+ * One switch for the whole deployment: GROWTENDRIL_NETWORK=testnet (default) | mainnet.
  * Every chain id, token/contract address, Gateway endpoint and explorer comes from Circle's
  * own SDK (CHAIN_CONFIGS in @circle-fin/x402-batching) or viem's chain registry - nothing is
  * hand-copied. App Kit and Circle Wallets identifiers match the enums in their published types.
@@ -10,8 +11,8 @@ import { arbitrum, arbitrumSepolia, base, baseSepolia, mainnet, sepolia, type Ch
 export type NetworkName = "testnet" | "mainnet";
 
 export function networkName(): NetworkName {
-  const v = (process.env.GROWTHOS_NETWORK ?? "testnet").trim().toLowerCase();
-  if (v !== "testnet" && v !== "mainnet") throw new Error(`GROWTHOS_NETWORK must be "testnet" or "mainnet" (got "${v}")`);
+  const v = networkSetting();
+  if (v !== "testnet" && v !== "mainnet") throw new Error(`GROWTENDRIL_NETWORK must be "testnet" or "mainnet" (got "${v}")`);
   return v;
 }
 
@@ -79,8 +80,29 @@ export type WalletProvider = "circle_dcw" | "local_testnet" | "unconfigured";
  *    refused on mainnet. Never sent to the browser or the LLM.
  */
 export function platformCustody(): "circle" | "local" | null {
-  if (process.env.CIRCLE_API_KEY && process.env.CIRCLE_ENTITY_SECRET) return "circle";
+  if (process.env.CIRCLE_API_KEY && process.env.CIRCLE_ENTITY_SECRET) return custodyProblem() ? null : "circle";
   if (process.env.AGENT_PRIVATE_KEY && !IS_MAINNET) return "local";
+  return null;
+}
+
+/** Circle API keys say which environment they belong to: TEST_API_KEY:… (testnets) or LIVE_API_KEY:… (mainnets). */
+export function circleKeyEnvironment(key = process.env.CIRCLE_API_KEY): "test" | "live" | "unknown" | null {
+  if (!key) return null;
+  if (key.startsWith("TEST_API_KEY:")) return "test";
+  if (key.startsWith("LIVE_API_KEY:")) return "live";
+  return "unknown";
+}
+
+/**
+ * Why the configured Circle credentials can't be used on this network, or null when they can.
+ * A TEST key can only create testnet wallets and a LIVE key only mainnet ones, so a mismatch would
+ * fail at the first Circle call; it is refused up front with a message that says what to change.
+ */
+export function custodyProblem(): string | null {
+  const env = circleKeyEnvironment();
+  if (!env || !process.env.CIRCLE_ENTITY_SECRET) return null;
+  if (IS_MAINNET && env === "test") return "CIRCLE_API_KEY is a TEST key but GROWTENDRIL_NETWORK=mainnet. Create a LIVE API key in console.circle.com and register an entity secret for it (npm run wallet:setup -- --entity-secret).";
+  if (!IS_MAINNET && env === "live") return "CIRCLE_API_KEY is a LIVE key but the network is testnet. Set GROWTENDRIL_NETWORK=mainnet, or use a TEST key.";
   return null;
 }
 

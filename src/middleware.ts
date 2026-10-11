@@ -6,7 +6,7 @@ import { NextResponse, type NextRequest } from "next/server";
  */
 export function middleware(req: NextRequest) {
   const { pathname, search } = req.nextUrl;
-  if ((pathname.startsWith("/app") || pathname.startsWith("/onboarding")) && !req.cookies.get("gos_session")) {
+  if ((pathname.startsWith("/app") || pathname.startsWith("/onboarding")) && !req.cookies.get("gt_session")) {
     const url = req.nextUrl.clone();
     url.pathname = "/login";
     url.search = "";
