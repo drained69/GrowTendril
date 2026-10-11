@@ -6,8 +6,9 @@ import { syncProjectCampaigns } from "@/server/domain/growth/creator-campaigns";
 import { refreshSettlements } from "@/server/domain/agent/execute";
 import { transition } from "@/server/domain/agent/ledger";
 import { updateDecision, writeReceipt } from "@/server/domain/agent/decisions";
-import { getWallet, depositToGateway } from "@/server/integrations/circle/wallets";
-import { ARC, txExplorerUrl } from "@/server/integrations/circle/config";
+import { getWallet, depositToGateway, walletIsLive } from "@/server/integrations/circle/wallets";
+import { txExplorerUrl } from "@/server/integrations/circle/config";
+import { microToDecimal } from "@/lib/money";
 import type { Job } from "@/server/jobs/queue";
 
 /** One handler per job kind. Handlers must be idempotent: a retried job may run again. */
@@ -37,17 +38,26 @@ export const HANDLERS: Record<string, (db: DB, job: Job) => Promise<Record<strin
     return { ...r };
   },
 
+  /**
+   * Wallet → Gateway deposit. Runs at most once per transaction: a run that finds the transaction
+   * already EXECUTING (worker crashed or lease expired mid-deposit) does not deposit again, since the
+   * first attempt may have reached the chain. Errors fail the job so they show up as failed, not done.
+   */
   async gateway_deposit(db, job) {
     const txId = String(job.payload.transactionId);
     const [tx] = await db.select().from(s.transactions).where(eq(s.transactions.id, txId));
     if (!tx) throw new Error("deposit transaction not found");
-    if (tx.state !== "AUTHORIZED" && tx.state !== "EXECUTING") return { skipped: `already ${tx.state}` };
-    if (tx.state === "AUTHORIZED" && !(await transition(db, tx.id, "EXECUTING", {}, "deposit started"))) return { skipped: "locked" };
+    if (tx.kind !== "gateway_deposit") throw new Error(`transaction ${txId} is not a Gateway deposit`);
+    if (tx.state === "EXECUTING") throw new Error("Deposit was interrupted after it started — not re-running to avoid a double deposit. Check the wallet on the explorer before depositing again.");
+    if (tx.state !== "AUTHORIZED") return { skipped: `already ${tx.state}` };
+    if (!(await transition(db, tx.id, "EXECUTING", {}, "deposit started"))) return { skipped: "locked" };
     const wallet = await getWallet(db, tx.projectId);
     try {
-      if (!wallet) throw new Error("no wallet");
-      const r = await depositToGateway(wallet, String(job.payload.amount));
-      await transition(db, tx.id, "SETTLED", { txHash: r.depositTx, explorerUrl: txExplorerUrl(ARC.appKitChain, r.depositTx) }, `approve ${r.approveTx ?? "(existing allowance)"}; deposit ${r.depositTx}`);
+      if (!wallet || !walletIsLive(wallet)) throw new Error("The workspace wallet cannot sign on this deployment");
+      // Re-check the kill switch at execution time: the wallet may have been frozen after the deposit was queued.
+      if (wallet.frozen) throw new Error("Wallet frozen (kill switch on) — deposit not sent");
+      const r = await depositToGateway(wallet, microToDecimal(tx.amountMicro));
+      await transition(db, tx.id, "SETTLED", { txHash: r.depositTx, explorerUrl: txExplorerUrl(tx.chain, r.depositTx) }, `approve ${r.approveTx ?? "(existing allowance)"}; deposit ${r.depositTx}`);
       await updateDecision(db, tx.decisionId, { status: "executed", result: { ...r } });
       await writeReceipt(db, tx.decisionId);
       return r;
@@ -56,7 +66,7 @@ export const HANDLERS: Record<string, (db: DB, job: Job) => Promise<Record<strin
       await transition(db, tx.id, "FAILED", { error: msg }, msg);
       await updateDecision(db, tx.decisionId, { status: "failed", result: { error: msg } });
       await writeReceipt(db, tx.decisionId);
-      return { failed: msg };
+      throw e;
     }
   },
 

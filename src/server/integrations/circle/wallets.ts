@@ -114,14 +114,18 @@ export async function depositToGateway(w: Wallet, amount: string): Promise<{ app
     const tx = await client.createContractExecutionTransaction({ walletId: w.circleWalletId!, contractAddress: contract, abiFunctionSignature: sig, abiParameters: params, fee: { type: "level", config: { feeLevel: "MEDIUM" } } });
     const id = tx.data?.id;
     if (!id) throw new Error(`${sig}: Circle returned no transaction id`);
+    // Only an on-chain hash is returned — never Circle's internal transaction id in its place.
+    let confirmed = false;
     for (let i = 0; i < 90; i++) {
       const t = await client.getTransaction({ id });
       const st = t.data?.transaction?.state;
-      if (st === "COMPLETE" || st === "CONFIRMED") return t.data?.transaction?.txHash ?? id;
+      const hash = t.data?.transaction?.txHash;
+      if ((st === "COMPLETE" || st === "CONFIRMED") && hash) return hash;
+      confirmed ||= st === "COMPLETE" || st === "CONFIRMED";
       if (st === "FAILED" || st === "CANCELLED" || st === "DENIED") throw new Error(`${sig}: ${st}`);
       await new Promise((r) => setTimeout(r, 2000));
     }
-    throw new Error(`${sig}: timed out waiting for confirmation`);
+    throw new Error(confirmed ? `${sig}: Circle reports it confirmed but returned no tx hash (Circle tx ${id})` : `${sig}: timed out waiting for confirmation (Circle tx ${id})`);
   };
   const approveTx = await run("approve(address,uint256)", [arc.gatewayWallet, atomic], arc.usdc);
   const depositTx = await run("deposit(address,uint256)", [arc.usdc, atomic], arc.gatewayWallet);

@@ -9,12 +9,14 @@ process.env.ENCRYPTION_KEY = "11".repeat(32);
 let db: DB;
 let s: typeof import("@/server/db/schema");
 let m: typeof import("@/server/domain/workspace/members");
+let vault: typeof import("@/server/integrations/vault");
 
 beforeAll(async () => {
   const client = await import("@/server/db/client");
   db = await client.getDb();
   s = client.schema;
   m = await import("@/server/domain/workspace/members");
+  vault = await import("@/server/integrations/vault");
   await db.insert(s.users).values([
     { id: "u_owner", email: "owner@example.com", name: "Owner", passwordHash: "x" },
     { id: "u_bob", email: "bob@example.com", name: "Bob", passwordHash: "x" },
@@ -70,5 +72,37 @@ describe("invites and membership", () => {
     await expect(m.removeMember(db, { projectId: "p1", userId: "u_owner", actorId: "u_owner", actorRole: "owner" })).rejects.toThrow(/at least one owner/);
     await m.changeRole(db, { projectId: "p1", userId: "u_bob", role: "admin", actorId: "u_owner", actorRole: "owner" });
     expect((await m.listMembers(db, "p1")).find((x) => x.userId === "u_bob")?.role).toBe("admin");
+  });
+});
+
+describe("integration credentials", () => {
+  it("keeps a stored secret when its field is left blank, and refuses empty saves", async () => {
+    const { providerById } = await import("@/server/integrations/providers");
+    const reddit = providerById("reddit")!;
+    expect(() => vault.mergeCredentialFields(reddit, { clientId: "", clientSecret: "", userAgent: "" }, { clientId: "id", clientSecret: "s3" })).toThrow(/Client ID is required|Nothing to save/);
+    expect(vault.mergeCredentialFields(reddit, { clientId: "id2", clientSecret: "", userAgent: "" }, { clientSecret: "s3" })).toEqual({ secret: { clientSecret: "s3" }, config: { clientId: "id2" } });
+    expect(() => vault.mergeCredentialFields(reddit, { clientId: "id2", clientSecret: "" }, null)).toThrow(/Client secret is required/);
+
+    const github = providerById("github")!;
+    expect(() => vault.mergeCredentialFields(github, { token: "" }, null)).toThrow(/Nothing to save/);
+    await vault.saveIntegration(db, { projectId: "p1", providerId: "reddit", fields: { clientId: "cid", clientSecret: "first-secret" }, userId: "u_owner" });
+    await vault.saveIntegration(db, { projectId: "p1", providerId: "reddit", fields: { clientId: "cid-renamed", clientSecret: "" }, userId: "u_owner" });
+    const { creds, source } = await vault.resolveCredentials(db, "p1", reddit);
+    expect(source).toBe("workspace");
+    expect(creds).toMatchObject({ clientId: "cid-renamed", clientSecret: "first-secret" });
+  });
+
+  it("rejects RSS feeds on private addresses", async () => {
+    await expect(vault.saveIntegration(db, { projectId: "p1", providerId: "rss", fields: { feeds: "http://169.254.169.254/latest/meta-data" }, userId: "u_owner" })).rejects.toThrow(/private|reserved/);
+    await expect(vault.saveIntegration(db, { projectId: "p1", providerId: "rss", fields: { feeds: "file:///etc/passwd" }, userId: "u_owner" })).rejects.toThrow(/http/);
+  });
+});
+
+describe("invite single use", () => {
+  it("can't be accepted twice even by the right address", async () => {
+    await db.insert(s.users).values({ id: "u_dan", email: "dan@example.com", name: "Dan", passwordHash: "x" });
+    const { token } = await m.createInvite(db, { projectId: "p1", email: "dan@example.com", role: "viewer", invitedBy: "u_owner", actorRole: "owner" });
+    const [a, b] = await Promise.allSettled([m.acceptInvite(db, { token, userId: "u_dan", userEmail: "dan@example.com" }), m.acceptInvite(db, { token, userId: "u_dan", userEmail: "dan@example.com" })]);
+    expect([a.status, b.status].filter((x) => x === "fulfilled")).toHaveLength(1);
   });
 });

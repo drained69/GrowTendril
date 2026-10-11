@@ -1,5 +1,6 @@
 import { notFound } from "next/navigation";
 import { and, eq } from "drizzle-orm";
+import Link from "next/link";
 import { Braces, CheckCircle2, FileCheck2, Fingerprint, Lightbulb, Route, ShieldCheck, XCircle } from "lucide-react";
 import { requireProject } from "@/server/auth/current";
 import { schema as s } from "@/server/db/client";
@@ -18,12 +19,14 @@ type Body = {
   costMicro: number | null;
   why: { rationale: string; reasons: string[] };
   policy: { verdict: string; checks: { rule: string; passed: boolean; detail: string }[] } | null;
+  approvalRecheck?: { verdict: string; checks: { rule: string; passed: boolean; detail: string }[]; at: string; amountMicro: number; modified: boolean } | null;
+  prevDigest?: string | null;
   approval: { status: string; resolvedAt: string | null; approvedMicro: number | null; note: string | null } | null;
   status: string;
   autonomous: boolean;
   result: Record<string, unknown> | null;
   confidence: { before: number; after: number | null } | null;
-  payment: { rail: string; network: string; destination: string | null; state: string; settlementId: string | null; settlementStatus: string | null; txHash: string | null; batchTxHash: string | null; explorerUrl: string | null; responseDigest: string | null; trail: { from: string | null; to: string; at: string; note: string | null }[] } | null;
+  payment: { rail: string; chain?: string; network: string; recipient?: string | null; destination: string | null; state: string; settlementId: string | null; settlementStatus: string | null; txHash: string | null; batchTxHash: string | null; explorerUrl: string | null; responseDigest: string | null; trail: { from: string | null; to: string; at: string; note: string | null }[] } | null;
   dataMode: string;
   createdAt: string;
 };
@@ -41,7 +44,9 @@ export default async function ReceiptPage({ params }: { params: Promise<{ id: st
   const intact = sha256(canonicalJson(r.body)) === r.digest;
   const status = b.payment?.state ?? b.status;
   const p = b.payment;
-  const chainKey = p ? (NETWORK_KEY[p.network] ?? p.network) : ARC.appKitChain;
+  const chainKey = p ? (p.chain ?? NETWORK_KEY[p.network] ?? p.network) : ARC.appKitChain;
+  // Hash chain: a finalized receipt names the digest of the workspace's previous finalized receipt.
+  const prev = b.prevDigest ? (await db.select({ decisionId: s.decisionReceipts.decisionId, body: s.decisionReceipts.body }).from(s.decisionReceipts).where(and(eq(s.decisionReceipts.projectId, project.id), eq(s.decisionReceipts.digest, b.prevDigest))))[0] : undefined;
   const txUrl = p?.txHash ? (p.explorerUrl ?? txExplorerUrl(chainKey, p.txHash)) : null;
   const passed = b.policy?.checks.filter((c) => c.passed).length ?? 0;
 
@@ -93,7 +98,7 @@ export default async function ReceiptPage({ params }: { params: Promise<{ id: st
                   ...(b.service?.resource ? [{ k: "Resource", v: <span className="num block max-w-[420px] truncate text-[11.5px] text-ink-2">{b.service.resource}</span> }] : []),
                   ...(b.costMicro != null ? [{ k: "Cost", v: <span className="num">{fmtUsdc(b.costMicro)}</span> }] : []),
                   { k: "Status", v: b.payment ? <TxStateBadge state={status} /> : <StatusBadge status={status} /> },
-                  { k: "Autonomy", v: b.autonomous ? "Autonomously approved by policy" : b.approval ? `Founder ${b.approval.status}` : "Human-initiated" },
+                  { k: "Autonomy", v: b.autonomous ? "Autonomously approved by policy" : b.approval ? (b.approval.status === "denied" ? "Founder approved — denied at re-check" : `Founder ${b.approval.status}`) : "Human-initiated" },
                   ...(b.approval?.approvedMicro != null ? [{ k: "Approved amount", v: <span className="num">{fmtUsdc(b.approval.approvedMicro)}</span> }] : []),
                   ...(b.approval?.note ? [{ k: "Approver note", v: <span className="text-ink-2">{b.approval.note}</span> }] : []),
                   ...(b.confidence ? [{ k: "Confidence", v: <span className="num">{Math.round(b.confidence.before * 100)}% → {b.confidence.after != null ? `${Math.round(b.confidence.after * 100)}%` : "…"}</span> }] : []),
@@ -122,9 +127,29 @@ export default async function ReceiptPage({ params }: { params: Promise<{ id: st
 
           {b.policy && (
             <Card>
-              <CardHeader title="Policy evaluation" description={`${passed} of ${b.policy.checks.length} rules passed`} icon={<ShieldCheck />} action={<VerdictBadge verdict={b.policy.verdict} />} />
+              <CardHeader title="Policy evaluation" description={`At proposal · ${passed} of ${b.policy.checks.length} rules passed`} icon={<ShieldCheck />} action={<VerdictBadge verdict={b.policy.verdict} />} />
               <ul className="divide-y divide-line">
                 {b.policy.checks.map((c) => (
+                  <li key={c.rule} className="grid grid-cols-[16px_minmax(0,200px)_1fr] items-start gap-3 px-4 py-2 text-[12px]">
+                    {c.passed ? <CheckCircle2 className="mt-px size-3.5 text-good" /> : <XCircle className="mt-px size-3.5 text-warning" />}
+                    <span className="num truncate text-ink">{c.rule}</span>
+                    <span className="text-ink-3">{c.detail}</span>
+                  </li>
+                ))}
+              </ul>
+            </Card>
+          )}
+
+          {b.approvalRecheck && (
+            <Card>
+              <CardHeader
+                title="Re-check at approval"
+                description={`${b.approvalRecheck.at.replace("T", " ").slice(0, 19)} UTC · deny rules re-run with approval-level rules waived${b.approvalRecheck.modified ? ` · amount reduced to ${fmtUsdc(b.approvalRecheck.amountMicro)}` : ""}`}
+                icon={<ShieldCheck />}
+                action={<VerdictBadge verdict={b.approvalRecheck.verdict} />}
+              />
+              <ul className="divide-y divide-line">
+                {b.approvalRecheck.checks.map((c) => (
                   <li key={c.rule} className="grid grid-cols-[16px_minmax(0,200px)_1fr] items-start gap-3 px-4 py-2 text-[12px]">
                     {c.passed ? <CheckCircle2 className="mt-px size-3.5 text-good" /> : <XCircle className="mt-px size-3.5 text-warning" />}
                     <span className="num truncate text-ink">{c.rule}</span>
@@ -152,10 +177,11 @@ export default async function ReceiptPage({ params }: { params: Promise<{ id: st
                   items={[
                     { k: "Rail", v: RAIL[p.rail] ?? p.rail },
                     { k: "Network", v: `${p.network}${p.destination ? ` → ${p.destination}` : ""}` },
+                    ...(p.recipient ? [{ k: p.rail === "gateway_x402" ? "Seller (payTo)" : "Recipient", v: <span className="num break-all text-[11.5px]">{p.recipient}</span> }] : []),
                     { k: "Settlement ID", v: p.settlementId ? <span className="num text-[11.5px]" title={p.settlementId}>{shortHash(p.settlementId, 6)}</span> : "—" },
                     { k: "Gateway status", v: p.settlementStatus ?? "—" },
                     { k: "Tx hash", v: p.txHash && txUrl ? <ExternalLink href={txUrl} className="num text-[11.5px]">{shortHash(p.txHash)}</ExternalLink> : "—" },
-                    { k: "Arc batch tx", v: p.batchTxHash ? <ExternalLink href={txExplorerUrl(ARC.appKitChain, p.batchTxHash)} className="num text-[11.5px]">{shortHash(p.batchTxHash)}</ExternalLink> : "—" },
+                    { k: "Arc batch tx", v: p.batchTxHash ? <ExternalLink href={txExplorerUrl(chainKey, p.batchTxHash)} className="num text-[11.5px]">{shortHash(p.batchTxHash)}</ExternalLink> : "—" },
                     ...(p.responseDigest ? [{ k: "Response sha256", v: <span className="num text-[11px]" title={p.responseDigest}>{shortHash(p.responseDigest, 8)}</span> }] : []),
                   ]}
                 />
@@ -180,17 +206,36 @@ export default async function ReceiptPage({ params }: { params: Promise<{ id: st
                 )}
                 {status === "SIMULATED" && (
                   <Callout tone="warn" title="Simulated">
-                    No wallet was configured, so no funds moved and there is no settlement ID or hash. Set up the workspace wallet to run this for real.
+                    No funds moved and there is no settlement ID or hash.{" "}
+                    {p.trail.find((t) => t.to === "SIMULATED")?.note ? <>Reason: {p.trail.find((t) => t.to === "SIMULATED")?.note}.</> : null}
                   </Callout>
                 )}
               </CardBody>
             </Card>
           )}
           <Card>
-            <CardHeader title="Integrity" description="sha256 of the canonical receipt body, recomputed on every view" icon={<Fingerprint />} action={<Badge tone={intact ? "good" : "bad"}>{intact ? "Verified" : "Mismatch"}</Badge>} />
+            <CardHeader title="Integrity" description="sha256 digest recomputed on view; detects edits to the stored receipt" icon={<Fingerprint />} action={<Badge tone={intact ? "good" : "bad"}>{intact ? "Digest matches" : "Mismatch"}</Badge>} />
             <CardBody className="space-y-2">
               <CopyField value={r.digest} />
-              <p className="text-[11.5px] text-ink-3">{r.finalizedAt ? "Finalized — the payment reached a terminal state." : "Open — the receipt is rewritten as the payment progresses."}</p>
+              <p className="text-[11.5px] text-ink-3">{r.finalizedAt ? "Finalized — no longer rewritten." : "Open — rewritten as the payment progresses, until it reaches a final state."}</p>
+              {b.prevDigest !== undefined && (
+                <p className="text-[11.5px] text-ink-3">
+                  {b.prevDigest === null ? (
+                    "First finalized receipt in this workspace."
+                  ) : prev ? (
+                    <>
+                      Chained to the previous finalized receipt,{" "}
+                      <Link href={`/app/receipts/${prev.decisionId}`} className="text-s1 hover:underline">
+                        #{String((prev.body as { decision?: number }).decision ?? "")}
+                      </Link>{" "}
+                      ({shortHash(b.prevDigest, 5)}).
+                    </>
+                  ) : (
+                    <span className="text-critical">Previous receipt {shortHash(b.prevDigest, 5)} not found — it was altered or removed.</span>
+                  )}
+                </p>
+              )}
+              <p className="text-[11px] leading-relaxed text-ink-4">Detects edits that don’t also recompute the stored digest. It is not a signature: someone with database write access could rewrite both.</p>
             </CardBody>
           </Card>
         </div>

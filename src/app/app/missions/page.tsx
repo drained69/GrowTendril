@@ -99,7 +99,7 @@ export default async function Missions() {
                 <div className="grid grid-cols-2 gap-x-4 gap-y-4 sm:grid-cols-4">
                   <Stat size="sm" label="Attributed" value={sum.attributed} sub="to experiments" />
                   <Stat size="sm" label="Budget" value={fmtUsdc(m.budgetMicro, { unit: false })} sub="USDC" />
-                  <Stat size="sm" label="Spent" value={fmtUsdc(sum.spent, { unit: false })} sub="settled + in flight" />
+                  <Stat size="sm" label="Spent" value={fmtUsdc(sum.spent, { unit: false })} sub="committed: authorized → settled" />
                   <Stat size="sm" label="Cost / qualified" value={sum.costPerQualified ? fmtUsdc(sum.costPerQualified, { unit: false }) : "—"} sub="USDC, measured" />
                   <Stat size="sm" label="Experiments" value={sum.experiments} sub={`${sum.successful} successful`} />
                   <Stat size="sm" label="Committed" value={fmtUsdc(sum.committed, { unit: false })} sub="reserved by live tests" />

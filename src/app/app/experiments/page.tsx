@@ -104,7 +104,7 @@ export default async function Experiments() {
               };
             })}
           />
-          <CardFooter>Spend and conversions are measured for the active mission only; CPA is settled spend ÷ attributed conversions.</CardFooter>
+          <CardFooter>Spend and conversions are measured for the active mission only; CPA is committed spend (authorized through settled; simulated in DEMO) ÷ attributed goal conversions.</CardFooter>
         </Card>
       ) : (
         <EmptyState

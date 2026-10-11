@@ -40,9 +40,11 @@ function dotTone(c: ProviderConnection): "good" | "warn" | "bad" | "idle" {
 }
 
 export default async function Integrations() {
-  const { project, role, db } = await requireProject();
+  const { project, role, db, user } = await requireProject();
   const connections = await listConnections(db, project.id);
-  const canManage = can(role, "manage_integrations");
+  // Guest accounts and DEMO workspaces can't store credentials or feed URLs (enforced in the actions too).
+  const sandboxed = user.isGuest || project.dataMode === "DEMO";
+  const canManage = can(role, "manage_integrations") && !sandboxed;
   const h = await headers();
   const origin = `${h.get("x-forwarded-proto") ?? "http"}://${h.get("host") ?? "localhost:3000"}`;
   const endpoint = `${origin}/api/events`;
@@ -53,7 +55,8 @@ export default async function Integrations() {
   const errors = connections.filter((c) => c.status === "error").length;
   const ordered = [...connections].sort((a, b) => Number(a.source === "restricted") - Number(b.source === "restricted"));
 
-  const curl = `BODY='{"event":"signup","ref":"<gos_ref>","visitorId":"user_123","idempotencyKey":"signup-user_123"}'
+  // "ref" must be a real gos_ref (6–16 lowercase letters/digits) from the visitor's tracked link; this sample has the valid shape.
+  const curl = `BODY='{"event":"signup","ref":"k7m2xq9p","visitorId":"user_123","idempotencyKey":"signup-user_123"}'
 T=$(date +%s)
 SIG=$(printf '%s' "$T.$BODY" | openssl dgst -sha256 -hmac "$GROWTHOS_WEBHOOK_SECRET" | sed 's/^.* //')
 
@@ -71,7 +74,11 @@ curl -X POST ${endpoint} \\
         meta={<span>Official and public APIs only, within their terms and rate limits. Unavailable sources return nothing — never invented data.</span>}
       />
 
-      {!canManage && <Callout tone="info" title="Read-only">Your role can test connections but not change credentials. Owners and admins manage integrations.</Callout>}
+      {sandboxed ? (
+        <Callout tone="info" title="Demo workspace">Integrations can't be changed here. Create an account and set up your own workspace to connect sources.</Callout>
+      ) : (
+        !canManage && <Callout tone="info" title="Read-only">Your role can test connections but not change credentials. Owners and admins manage integrations.</Callout>
+      )}
 
       <StatStrip className="grid-cols-2 sm:grid-cols-4">
         <Stat label="Sources ready" value={`${ready} / ${connections.length}`} tone={ready ? "good" : "warn"} />
@@ -115,7 +122,10 @@ curl -X POST ${endpoint} \\
                     <KeyValue
                       items={[
                         { k: "Credentials", v: c.hint ? <span className="num text-ink-2">{c.hint}</span> : <span className="text-ink-3">{c.source === "keyless" ? "None needed" : c.source === "platform" ? "Platform default" : "Not stored"}</span> },
-                        { k: "Last checked", v: c.lastCheckedAt ? relTime(c.lastCheckedAt) : <span className="text-ink-3">Never</span> },
+                        {
+                          k: "Last checked",
+                          v: c.lastCheckedAt ? relTime(c.lastCheckedAt) : <span className="text-ink-3">{c.source === "workspace" ? "Never" : "Not recorded — Test shows the result"}</span>,
+                        },
                       ]}
                     />
                     {c.lastError && <Callout tone="danger">{c.lastError}</Callout>}
@@ -155,7 +165,7 @@ curl -X POST ${endpoint} \\
               <div className="label mb-1.5">Endpoint</div>
               <CopyField value={endpoint} />
               <p className="mt-1.5 text-[11.5px] text-ink-3">
-                <span className="num">POST</span> · JSON body · max 20 KB · 120 req/min per IP
+                <span className="num">POST</span> · JSON body · max 20 KB · about 120 req/min per IP (bursts up to 120)
               </p>
             </div>
             <div>
@@ -202,7 +212,7 @@ curl -X POST ${endpoint} \\
                 ))}
               </div>
               <p className="mt-2 text-[11.5px] leading-snug text-ink-3">
-                Optional fields: <code className="num">customName</code>, <code className="num">visitorId</code>, <code className="num">occurredAt</code> (ISO 8601), <code className="num">value</code> (USDC), <code className="num">metadata</code>.
+                <code className="num">ref</code> is the visitor&apos;s <code className="num">gos_ref</code> (6–16 lowercase letters/digits) — replace the sample value. Optional fields: <code className="num">customName</code>, <code className="num">visitorId</code>, <code className="num">occurredAt</code> (ISO 8601), <code className="num">value</code> (USDC), <code className="num">metadata</code>.
               </p>
             </div>
           </CardBody>

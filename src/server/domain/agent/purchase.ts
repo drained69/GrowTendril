@@ -114,7 +114,14 @@ export async function purchaseCompanyIntel(db: DB, p: { projectId: string; compa
   });
   if (!parsed.success) throw new Error(`Action failed schema validation: ${parsed.error.message}`);
   const action = parsed.data;
-  const pstate = await loadPolicyState(db, { projectId: p.projectId, missionId: mission.id, category: "research", serviceKnown: true });
+  // Duplicate check before any decision is recorded, so a repeat leaves no orphan decision.
+  const idempotencyKey = sha256(`x402:${p.projectId}:${company.id}:${pick.svc.id}:${new Date().toISOString().slice(0, 13)}`);
+  const [dup] = await db.select().from(s.transactions).where(eq(s.transactions.idempotencyKey, idempotencyKey));
+  if (dup) {
+    log("operator", "Same purchase already made this hour — idempotency key matched; not paying twice");
+    return { decisionId: dup.decisionId, bought: false, state: dup.state, confidenceBefore: before, confidenceAfter: null, priceMicro, settlementId: dup.settlementId, message: "Duplicate purchase prevented" };
+  }
+  const pstate = await loadPolicyState(db, { projectId: p.projectId, missionId: mission.id, category: "research", serviceKnown: true, chain: ARC.appKitChain });
   const verdict = evaluatePolicy(action, policy, pstate);
   log("policy", `purchase_service ${fmtUsdc(priceMicro)} → ${verdict.verdict}`);
 
@@ -142,10 +149,13 @@ export async function purchaseCompanyIntel(db: DB, p: { projectId: string; compa
     amountMicro: priceMicro,
     chain: ARC.appKitChain,
     recipient: liveQuote?.kind === "quote" ? liveQuote.quote.payTo : pick.svc.payTo,
-    idempotencyKey: sha256(`x402:${p.projectId}:${company.id}:${pick.svc.id}:${new Date().toISOString().slice(0, 13)}`),
+    idempotencyKey,
     dataMode: simulated ? "SIMULATED" : ARC.dataMode,
   });
   if (duplicate) {
+    // Lost a race with a concurrent purchase: close this decision instead of leaving it open.
+    await updateDecision(db, decision.id, { status: "duplicate", result: { duplicateOf: tx.decisionId } });
+    await writeReceipt(db, decision.id);
     log("operator", "Same purchase already made this hour — idempotency key matched; not paying twice");
     return { decisionId: tx.decisionId, bought: false, state: tx.state, confidenceBefore: before, confidenceAfter: null, priceMicro, settlementId: tx.settlementId, message: "Duplicate purchase prevented" };
   }
@@ -185,6 +195,7 @@ export async function executePurchase(
 
   const wallet = await getWallet(db, a.projectId);
   const signer = walletIsLive(wallet) && !wallet!.frozen ? signerFor(wallet) : null;
+  const noSigner = !wallet ? "No agent wallet configured" : wallet.frozen ? "Wallet frozen (kill switch on)" : "Wallet cannot sign on this deployment";
   if (signer && a.liveQuote?.kind === "quote") {
     try {
       log("operator", `Signing x402 authorization for ${fmtUsdc(a.priceMicro)} (EIP-712, ${signer.kind === "circle_dcw" ? "Circle wallet" : "server development key"})`);
@@ -206,9 +217,9 @@ export async function executePurchase(
       // seller's demo fixture and record the payment as SIMULATED — no id, no hash, no funds.
       data = demoCompanyIntel(company.name) ?? { dataMode: "DEMO", signals: [] };
       finalState = "SIMULATED";
-      failure = signer ? `Seller unreachable: ${a.liveQuote?.kind === "unsupported" ? a.liveQuote.reason : "no quote"}` : "No agent wallet configured";
+      failure = signer ? `Seller unreachable: ${a.liveQuote?.kind === "unsupported" ? a.liveQuote.reason : a.liveQuote?.kind === "free" ? "endpoint did not require payment" : "no quote"}` : noSigner;
       log("operator", `SIMULATED payment (${failure}). Nothing moved on-chain.`);
-    } else failure = signer ? "No payable quote from seller" : "No agent wallet configured";
+    } else failure = signer ? "No payable quote from seller" : noSigner;
   }
 
   const digest = data ? sha256(canonicalJson(data)) : null;

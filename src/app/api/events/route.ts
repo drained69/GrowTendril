@@ -24,10 +24,15 @@ const Body = z.object({
 /** Signed conversion-event ingestion. HMAC verified against the raw body, 5-minute replay window, idempotent. */
 export async function POST(req: Request) {
   const ip = clientIp(req.headers);
-  if (!rateLimit(`events:${ip}`, { capacity: 120, refillPerSec: 10 }).ok) return NextResponse.json({ error: "rate limited" }, { status: 429 });
+  // 120/min sustained (2/s) with bursts up to 120 — what the Integrations page documents.
+  const rl = rateLimit(`events:${ip}`, { capacity: 120, refillPerSec: 2 });
+  if (!rl.ok) return NextResponse.json({ error: "rate limited" }, { status: 429, headers: { "Retry-After": String(rl.retryAfter) } });
   const projectId = req.headers.get("x-growthos-project");
+  // Reject oversized bodies before buffering them when the sender declares a length.
+  const declared = Number(req.headers.get("content-length") ?? 0);
+  if (!projectId || declared > 20_000) return NextResponse.json({ error: "bad request" }, { status: declared > 20_000 ? 413 : 400 });
   const raw = await req.text();
-  if (!projectId || raw.length > 20_000) return NextResponse.json({ error: "bad request" }, { status: 400 });
+  if (raw.length > 20_000) return NextResponse.json({ error: "payload too large" }, { status: 413 });
   const db = await getDb();
   const [project] = await db.select().from(s.projects).where(eq(s.projects.id, projectId));
   if (!project) return NextResponse.json({ error: "unauthorized" }, { status: 401 });
@@ -51,7 +56,8 @@ export async function POST(req: Request) {
       valueMicro: body.value ? toMicro(body.value) : 0,
       metadata: body.metadata,
       source: "webhook",
-      dataMode: "LIVE",
+      // Events sent to a DEMO workspace stay labelled DEMO, never mixed into live metrics.
+      dataMode: project.dataMode === "DEMO" ? "DEMO" : "LIVE",
     });
     return NextResponse.json({ ok: true, ...r });
   } catch (e) {

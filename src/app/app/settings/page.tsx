@@ -5,12 +5,12 @@ import { requireProject } from "@/server/auth/current";
 import { can, ROLE_LABEL } from "@/server/auth/access";
 import { schema as s } from "@/server/db/client";
 import { listMembers } from "@/server/domain/workspace/members";
-import { CHAINS } from "@/server/integrations/circle/config";
+import { ACTIVE_CHAINS, chainLabel } from "@/server/integrations/circle/config";
 import { AUTOPILOT_LABEL } from "@/server/jobs/scheduler";
 import { microToDecimal } from "@/lib/money";
 import { relTime } from "@/lib/time";
 import { Badge, Callout, Card, CardHeader, CardBody, CardFooter, EmptyState, LinkButton, ModeBadge, PageHeader } from "@/components/ui";
-import { AutopilotControl, IcpForm, LeaveWorkspace, PolicyForm, ProfileForm, WorkspaceForm } from "@/components/features/settings/settings-forms";
+import { AutopilotControl, DeleteWorkspace, IcpForm, LeaveWorkspace, PolicyForm, ProfileForm, ReprofileButton, WorkspaceForm } from "@/components/features/settings/settings-forms";
 
 const SECTIONS = [
   { id: "workspace", label: "Workspace", icon: <Building2 /> },
@@ -24,17 +24,24 @@ const SECTIONS = [
 export default async function Settings() {
   const { project, role, db, user } = await requireProject();
   const pid = project.id;
-  const [[profile], icps, [policy], members] = await Promise.all([
+  const [[profile], icps, [policy], members, [wallet]] = await Promise.all([
     db.select().from(s.productProfiles).where(eq(s.productProfiles.projectId, pid)),
     db.select().from(s.icps).where(eq(s.icps.projectId, pid)),
     db.select().from(s.policies).where(eq(s.policies.projectId, pid)),
     listMembers(db, pid),
+    db.select({ provider: s.wallets.provider, address: s.wallets.address }).from(s.wallets).where(eq(s.wallets.projectId, pid)),
   ]);
   const canWorkspace = can(role, "manage_workspace");
   const canPolicy = can(role, "manage_policy");
   const demo = project.dataMode === "DEMO";
   const owners = members.filter((m) => m.role === "owner").length;
   const leaveBlocked = role === "owner" && owners <= 1 ? "You are the only owner — promote another member to owner first." : undefined;
+  const isOwner = role === "owner";
+  // Mirrors deleteWorkspaceAction, which re-checks (including in-flight payments).
+  const deleteBlocked =
+    wallet && (wallet.address || wallet.provider !== "unconfigured") ? "This workspace has an agent wallet; deleting it would lose GrowthOS's record of that wallet and any USDC in it. Freeze the wallet instead." : undefined;
+  const hasSources = !!(project.website || project.docsUrl || project.githubUrl);
+  const reprofileBlocked = demo ? "Demo workspaces are fictional and aren't re-read" : !hasSources ? "Add a website, docs or GitHub URL above first" : undefined;
 
   return (
     <div>
@@ -89,6 +96,7 @@ export default async function Settings() {
                   <>
                     <Badge>{profile.generatedBy}</Badge>
                     {profile.founderEdited && <Badge tone="info">edited</Badge>}
+                    {canWorkspace && <ReprofileButton disabled={!!reprofileBlocked} reason={reprofileBlocked} />}
                   </>
                 )
               }
@@ -113,13 +121,17 @@ export default async function Settings() {
               </>
             ) : (
               <CardBody>
-                <EmptyState title="No product profile" description="The profile is created during onboarding from your product's public pages." action={<LinkButton href="/onboarding">Open onboarding</LinkButton>} />
+                <EmptyState
+                  title="No product profile"
+                  description="Draft one from the website, docs and GitHub links above."
+                  action={canWorkspace ? <ReprofileButton disabled={!!reprofileBlocked} reason={reprofileBlocked} /> : undefined}
+                />
               </CardBody>
             )}
           </Card>
 
           <Card id="icp" className="scroll-mt-4">
-            <CardHeader title="Ideal customer profile" description="Who the operator qualifies companies against." icon={<Target />} />
+            <CardHeader title="Ideal customer profile" description="Segments are matched against public posts to score companies and creators for ICP fit. The other fields are notes for your team." icon={<Target />} />
             {icps.length ? (
               <IcpForm icps={icps} disabled={!canWorkspace} />
             ) : (
@@ -138,7 +150,7 @@ export default async function Settings() {
               <>
                 <PolicyForm
                   disabled={!canPolicy}
-                  chains={Object.entries(CHAINS).map(([id, c]) => ({ id, label: c.label }))}
+                  chains={ACTIVE_CHAINS.map((id) => ({ id, label: chainLabel(id) }))}
                   p={{
                     maxTransaction: microToDecimal(policy.maxTransactionMicro),
                     dailySpend: microToDecimal(policy.dailySpendMicro),
@@ -191,6 +203,15 @@ export default async function Settings() {
               </div>
               <LeaveWorkspace workspace={project.name} blocked={leaveBlocked} />
             </div>
+            {isOwner && (
+              <div className="flex flex-wrap items-center justify-between gap-4 border-t border-line px-4 py-3.5">
+                <div className="min-w-0">
+                  <div className="text-[12.5px] font-medium text-ink">Delete this workspace</div>
+                  <p className="mt-0.5 text-[12px] text-ink-3">{deleteBlocked ?? `Permanently deletes ${project.name} and all of its data for every member. Owners only.`}</p>
+                </div>
+                <DeleteWorkspace workspace={project.name} blocked={deleteBlocked} />
+              </div>
+            )}
           </Card>
         </div>
       </div>

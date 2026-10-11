@@ -1,8 +1,8 @@
 "use client";
 import { useActionState, useEffect, useState, useTransition, type ReactNode } from "react";
 import { useRouter } from "next/navigation";
-import { LogOut, Save } from "lucide-react";
-import { saveProfileAction, updatePolicyAction, saveIcpAction, updateWorkspaceAction, setAutopilotAction } from "@/server/actions/workspace";
+import { LogOut, RefreshCw, Save, Trash2 } from "lucide-react";
+import { saveProfileAction, updatePolicyAction, saveIcpAction, updateWorkspaceAction, setAutopilotAction, reprofileAction, deleteWorkspaceAction } from "@/server/actions/workspace";
 import { leaveWorkspaceAction } from "@/server/actions/team";
 import type { ActionResult } from "@/server/actions/_common";
 import { Badge, Button, Checkbox, Field, Input, Textarea, cn } from "@/components/ui";
@@ -45,7 +45,7 @@ export function WorkspaceForm({ w, disabled }: { w: Workspace; disabled?: boolea
         <Field label="Workspace name" htmlFor="ws-name" required className="sm:col-span-2">
           <Input id="ws-name" name="name" defaultValue={w.name} required maxLength={80} />
         </Field>
-        <Field label="Website" htmlFor="ws-web" hint="Full URL, read when re-profiling the product">
+        <Field label="Website" htmlFor="ws-web" hint="Full URL. Read again when you use “Re-read public pages” on the product profile">
           <Input id="ws-web" name="website" type="url" defaultValue={w.website ?? ""} placeholder="https://…" />
         </Field>
         <Field label="Docs" htmlFor="ws-docs">
@@ -65,6 +65,8 @@ export function WorkspaceForm({ w, disabled }: { w: Workspace; disabled?: boolea
 
 // ───────────────────────────── product profile ─────────────────────────────
 
+const NOTE = "Reference only — not used for discovery or scoring.";
+
 type Profile = { summary: string; category: string; targetUsers: string[]; competitors: string[]; valueProps: string[]; integrations: string[]; useCases: string[]; pricing: string | null; terminology: string[]; keywords: string[] };
 
 export function ProfileForm({ p, disabled }: { p: Profile; disabled?: boolean }) {
@@ -78,21 +80,21 @@ export function ProfileForm({ p, disabled }: { p: Profile; disabled?: boolean })
   return (
     <form action={action}>
       <fieldset disabled={disabled} className="space-y-4 p-4">
-        <Field label="What the product does" htmlFor="pf-summary">
+        <Field label="What the product does" htmlFor="pf-summary" hint={NOTE}>
           <Textarea id="pf-summary" name="summary" defaultValue={p.summary} rows={3} />
         </Field>
         <div className="grid gap-4 sm:grid-cols-2">
           <Field label="Category" htmlFor="pf-category">
             <Input id="pf-category" name="category" defaultValue={p.category} />
           </Field>
-          <Field label="Pricing" htmlFor="pf-pricing" hint="Only if public">
+          <Field label="Pricing" htmlFor="pf-pricing" hint={`Only if public. ${NOTE}`}>
             <Input id="pf-pricing" name="pricing" defaultValue={p.pricing ?? ""} />
           </Field>
           {list("targetUsers", "Target users")}
           {list("competitors", "Competitors")}
           {list("valueProps", "Value propositions")}
           {list("useCases", "Use cases")}
-          {list("integrations", "Integrations")}
+          {list("integrations", "Integrations", 3, `One per line. ${NOTE}`)}
           {list("terminology", "Important terminology")}
         </div>
         {list("keywords", "Discovery search terms", 4, "One per line — these drive what GrowthOS searches for across every connected source")}
@@ -119,20 +121,20 @@ export function IcpForm({ icps, disabled }: { icps: Icp[]; disabled?: boolean })
               <Badge tone={i.tier === "primary" ? "accent" : "neutral"}>{i.tier}</Badge>
               <span className="label">ideal customer</span>
             </div>
-            <Field label="Title" htmlFor={`icp-t-${i.id}`}>
+            <Field label="Title" htmlFor={`icp-t-${i.id}`} hint="Note for your team">
               <Input id={`icp-t-${i.id}`} name={`title:${i.id}`} defaultValue={i.title} className="font-medium" />
             </Field>
-            <Field label="Description" htmlFor={`icp-d-${i.id}`}>
+            <Field label="Description" htmlFor={`icp-d-${i.id}`} hint="Note for your team">
               <Textarea id={`icp-d-${i.id}`} name={`description:${i.id}`} defaultValue={i.description} rows={2} />
             </Field>
             <div className="grid gap-3 sm:grid-cols-3">
-              <Field label="Company size" htmlFor={`icp-s-${i.id}`}>
+              <Field label="Company size" htmlFor={`icp-s-${i.id}`} hint="Note — not enforced">
                 <Input id={`icp-s-${i.id}`} name={`companySize:${i.id}`} defaultValue={i.companySize ?? ""} placeholder="e.g. 10–200" />
               </Field>
-              <Field label="Segments" htmlFor={`icp-g-${i.id}`} hint="Comma-separated">
+              <Field label="Segments" htmlFor={`icp-g-${i.id}`} hint="Comma-separated. Matched against public posts to score ICP fit">
                 <Input id={`icp-g-${i.id}`} name={`segments:${i.id}`} defaultValue={i.segments.join(", ")} />
               </Field>
-              <Field label="In-market signals" htmlFor={`icp-n-${i.id}`} hint="Comma-separated">
+              <Field label="In-market signals" htmlFor={`icp-n-${i.id}`} hint="Comma-separated. Notes — not yet used in scoring">
                 <Input id={`icp-n-${i.id}`} name={`signals:${i.id}`} defaultValue={i.signals.join(", ")} />
               </Field>
             </div>
@@ -172,26 +174,27 @@ export function PolicyForm({ p, chains, disabled }: { p: Policy; chains: { id: s
     <form action={action}>
       <fieldset disabled={disabled} className="space-y-4 p-4">
         <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
-          {num("maxTransaction", "Max autonomous transaction", "Above this, spend needs approval")}
-          {num("dailySpend", "Daily autonomous spend", "Per UTC day; above → approval")}
-          {num("hardCeiling", "Hard ceiling", "Above this, always denied")}
-          {num("kolThreshold", "Creator payment threshold", "Creator payments above need approval")}
-          {num("bountyThreshold", "Bounty threshold", "Bounties above need approval")}
+          {/* Hints mirror evaluatePolicy (src/server/domain/agent/policy.ts). */}
+          {num("maxTransaction", "Max autonomous transaction", "Any single spend above this needs approval")}
+          {num("dailySpend", "Daily spend", "A spend taking today's total (UTC) above this needs approval; bridges excluded")}
+          {num("hardCeiling", "Hard ceiling", "Any single action above this is denied, even with approval")}
+          {num("kolThreshold", "Creator payment threshold", "Creator payments above need approval. Only matters if “kol” is autonomous")}
+          {num("bountyThreshold", "Bounty threshold", "Bounties above need approval. Only matters if “bounty” is autonomous")}
         </div>
         <div className="grid gap-3 lg:grid-cols-2">
           {group(
             "Autonomous categories",
-            "The agent may spend in these without asking (within limits).",
+            "The agent may spend in these without asking — only while every limit above also passes.",
             CATS.map((c) => <Checkbox key={c} name="autonomous" value={c} defaultChecked={p.autonomous.includes(c)} label={c} />),
           )}
           {group(
             "Approval-gated categories",
-            "Every spend here lands in the Approval Inbox.",
+            "Every spend here lands in the Approval Inbox. A category in neither list is denied.",
             CATS.map((c) => <Checkbox key={c} name="approval" value={c} defaultChecked={p.approval.includes(c)} label={c} />),
           )}
           {group(
             "Allowed chains",
-            "At least one. Transfers to other chains are denied.",
+            "At least one. Payments and bridges touching any other chain are denied.",
             chains.map((c) => <Checkbox key={c.id} name="chains" value={c.id} defaultChecked={p.chains.includes(c.id)} label={c.label} />),
           )}
           <div className="rounded-[8px] border border-line p-3 text-[12px]">
@@ -308,6 +311,83 @@ export function LeaveWorkspace({ workspace, blocked }: { workspace: string; bloc
           </>
         }
       />
+    </>
+  );
+}
+
+// ───────────────────────────── re-profile ─────────────────────────────
+
+export function ReprofileButton({ disabled, reason }: { disabled?: boolean; reason?: string }) {
+  const [pending, start] = useTransition();
+  const router = useRouter();
+  return (
+    <Button
+      size="xs"
+      variant="secondary"
+      icon={<RefreshCw />}
+      loading={pending}
+      disabled={disabled}
+      title={reason}
+      onClick={() => {
+        if (!window.confirm("Re-read the website, docs and GitHub README and replace this profile with a fresh draft? Your edits to the profile (including search terms) will be overwritten.")) return;
+        start(async () => {
+          const r = await reprofileAction();
+          if (!r.ok) toast.error("Couldn’t re-read pages", r.error);
+          else toast.success("Profile redrafted", r.message);
+          router.refresh();
+        });
+      }}
+    >
+      {pending ? "Reading pages…" : "Re-read public pages"}
+    </Button>
+  );
+}
+
+// ───────────────────────────── delete workspace ─────────────────────────────
+
+export function DeleteWorkspace({ workspace, blocked }: { workspace: string; blocked?: string }) {
+  const [open, setOpen] = useState(false);
+  const [typed, setTyped] = useState("");
+  const [pending, start] = useTransition();
+  return (
+    <>
+      <Button variant="danger" size="sm" icon={<Trash2 />} disabled={!!blocked} title={blocked} onClick={() => setOpen(true)}>
+        Delete workspace
+      </Button>
+      <Dialog
+        open={open}
+        onClose={() => {
+          setOpen(false);
+          setTyped("");
+        }}
+        size="sm"
+        title={`Delete ${workspace}?`}
+        description="Permanently deletes the workspace and everything in it — profile, missions, intelligence, receipts, audit log and memberships. This cannot be undone."
+        footer={
+          <>
+            <Button variant="ghost" onClick={() => setOpen(false)}>
+              Cancel
+            </Button>
+            <Button
+              variant="danger"
+              loading={pending}
+              disabled={typed.trim() !== workspace}
+              onClick={() =>
+                start(async () => {
+                  const r = await deleteWorkspaceAction(typed);
+                  if (r && !r.ok) toast.error("Couldn’t delete workspace", r.error);
+                })
+              }
+            >
+              Delete forever
+            </Button>
+          </>
+        }
+      >
+        <Field label={`Type “${workspace}” to confirm`} htmlFor="del-ws">
+          <Input id="del-ws" value={typed} onChange={(e) => setTyped(e.target.value)} autoComplete="off" spellCheck={false} />
+        </Field>
+      </Dialog>
     </>
   );
 }

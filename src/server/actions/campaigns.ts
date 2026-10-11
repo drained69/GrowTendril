@@ -6,7 +6,10 @@ import { toMicro } from "@/lib/money";
 import { getDb } from "@/server/db/client";
 import { CONVERSION_EVENTS } from "@/server/domain/growth/attribution-links";
 import { PLATFORMS, planCampaign, type CampaignPlan } from "@/server/domain/growth/campaign-plan";
-import { closeCampaign, createCampaign, decideParticipant, getCampaign, joinCampaign, proposePayout, reviewPost, submitPost, syncActionRewards } from "@/server/domain/growth/creator-campaigns";
+import { closeCampaign, createCampaign, decideParticipant, getCampaign, joinCampaign, proposePayout, releaseHeldBudget, reviewPost, submitPost, syncActionRewards } from "@/server/domain/growth/creator-campaigns";
+import { getEconomics, measureEconomics, planRules, suggestCeiling, type CeilingSuggestion, type Measured } from "@/server/domain/growth/economics";
+import { audit } from "@/server/db/helpers";
+import { schema as s } from "@/server/db/client";
 import { fail, guard, limited, type ActionResult } from "@/server/actions/_common";
 
 const usdc = z.string().trim().regex(/^\d{1,7}(\.\d{1,6})?$/, "Enter a USDC amount like 25 or 2.5");
@@ -35,14 +38,81 @@ function readCampaignForm(form: FormData) {
   });
 }
 
-/** Live preview of the planner for the create form — pure, no writes. */
+/** Live preview of the planner for the create form — uses the project's own Economics rules; no writes. */
 export async function previewPlanAction(input: { budget: string; maxCpa: string; days: number; postsPerCreator: number; creators?: number; actionLabel?: string }): Promise<ActionResult<CampaignPlan>> {
   try {
-    await guard("view");
+    const { project, db } = await guard("view");
     const budget = toMicro(usdc.parse(input.budget));
     const maxCpa = toMicro(usdc.parse(input.maxCpa));
     if (budget <= 0 || maxCpa <= 0) return { ok: false, error: "Enter a budget and a max cost per action" };
-    return { ok: true, data: planCampaign({ budgetMicro: budget, maxCostPerActionMicro: maxCpa, days: input.days, postsPerCreator: input.postsPerCreator, creators: input.creators, actionLabel: input.actionLabel }) };
+    const econ = await getEconomics(db, project.id);
+    return { ok: true, data: planCampaign({ budgetMicro: budget, maxCostPerActionMicro: maxCpa, days: input.days, postsPerCreator: input.postsPerCreator, creators: input.creators, actionLabel: input.actionLabel, rules: planRules(econ.values), rulesSource: econ.saved ? "setting" : "starting" }) };
+  } catch (e) {
+    return fail(e);
+  }
+}
+
+/** What the project's own data says about an action, and the max cost per action it supports. */
+export async function economicsForAction(targetEvent: string): Promise<ActionResult<{ measured: Measured; suggestion: CeilingSuggestion; saved: boolean }>> {
+  try {
+    const { project, db } = await guard("view");
+    const ev = z.enum(CONVERSION_EVENTS).parse(targetEvent);
+    const econ = await getEconomics(db, project.id);
+    const measured = await measureEconomics(db, project.id, ev);
+    return { ok: true, data: { measured, suggestion: suggestCeiling(econ, measured), saved: econ.saved } };
+  } catch (e) {
+    return fail(e);
+  }
+}
+
+const EconomicsForm = z.object({
+  customerValue: z.union([z.literal(""), usdc]).default(""),
+  grossMarginPct: z.union([z.literal(""), z.coerce.number().int().min(1).max(100)]).default(""),
+  acquisitionSharePct: z.coerce.number().int().min(1).max(100),
+  conversionRatePct: z.union([z.literal(""), z.coerce.number().min(0.01).max(100)]).default(""),
+  fixedPaySharePct: z.coerce.number().int().min(0).max(60),
+  actionBonusSharePct: z.coerce.number().int().min(10).max(100),
+  minActionsPerCreator: z.coerce.number().int().min(1).max(20),
+  maxCreators: z.coerce.number().int().min(1).max(25),
+  testPhaseSharePct: z.coerce.number().int().min(10).max(100),
+  holdbackDays: z.coerce.number().int().min(0).max(60),
+});
+
+export async function saveEconomicsAction(_: unknown, form: FormData): Promise<ActionResult> {
+  try {
+    const { project, db, user } = await guard("manage_policy");
+    const f = EconomicsForm.parse(Object.fromEntries(form.entries()));
+    const values = {
+      customerValueMicro: f.customerValue === "" ? null : toMicro(f.customerValue),
+      grossMarginPct: f.grossMarginPct === "" ? null : f.grossMarginPct,
+      acquisitionSharePct: f.acquisitionSharePct,
+      conversionRateBps: f.conversionRatePct === "" ? null : Math.round(f.conversionRatePct * 100),
+      fixedPaySharePct: f.fixedPaySharePct,
+      actionBonusSharePct: f.actionBonusSharePct,
+      minActionsPerCreator: f.minActionsPerCreator,
+      maxCreators: f.maxCreators,
+      testPhaseSharePct: f.testPhaseSharePct,
+      holdbackDays: f.holdbackDays,
+      updatedBy: user.id,
+      updatedAt: new Date(),
+    };
+    await db.insert(s.projectEconomics).values({ projectId: project.id, ...values }).onConflictDoUpdate({ target: s.projectEconomics.projectId, set: values });
+    await audit(db, { projectId: project.id, actorType: "user", actorId: user.id, action: "economics.update", data: values as unknown as Record<string, unknown> });
+    revalidatePath("/app/settings");
+    revalidatePath("/app/campaigns", "layout");
+    return { ok: true, message: "Economics saved — new campaigns use these figures" };
+  } catch (e) {
+    return fail(e);
+  }
+}
+
+export async function releaseHeldBudgetAction(campaignId: string): Promise<ActionResult> {
+  try {
+    const { project, db, user } = await guard("operate");
+    const r = await releaseHeldBudget(db, { projectId: project.id, campaignId, userId: user.id });
+    revalidatePath(`/app/campaigns/${campaignId}`);
+    if (!r.released) return { ok: false, error: r.skipped.length ? `No creator qualifies yet: ${r.skipped.map((x) => x.reason).join("; ")}` : "No accepted creators with results yet" };
+    return { ok: true, message: `Released ${(r.released / 1e6).toFixed(2)} USDC to ${r.grants.length} creator${r.grants.length === 1 ? "" : "s"} whose results beat the ceiling` };
   } catch (e) {
     return fail(e);
   }

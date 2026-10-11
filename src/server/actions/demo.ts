@@ -5,11 +5,14 @@ import { revalidatePath } from "next/cache";
 import { sessionCookieOptions, PROJECT_COOKIE } from "@/server/auth/session";
 import { seedDemo } from "@/server/demo/seed";
 import { runDemoStep, type DemoStepResult } from "@/server/demo/script";
+import { can } from "@/server/auth/access";
 import { fail, guard, limited, type ActionResult } from "@/server/actions/_common";
 
 export async function runDemoStepAction(step: number): Promise<ActionResult<DemoStepResult>> {
   try {
-    const { project, db, user } = await guard("operate");
+    const { project, db, user, role } = await guard("operate");
+    // Step 6 approves a spend, so it needs the same permission as the Approval Inbox.
+    if (step === 6 && !can(role, "approve")) return { ok: false, error: `Your role (${role}) cannot approve spend — ask an owner or admin to run step 6` };
     await limited(`demo-step:${user.id}`, 20, 1);
     const r = await runDemoStep(db, project.id, step, user.id);
     revalidatePath("/app", "layout");

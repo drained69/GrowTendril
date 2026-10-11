@@ -69,9 +69,10 @@ export function ConnectionForm({
                 type={f.secret ? "password" : "text"}
                 autoComplete={f.secret ? "new-password" : "off"}
                 spellCheck={false}
-                required={!f.optional}
+                // A stored secret is never sent back; leaving its field blank keeps it.
+                required={!f.optional && !(f.secret && connected)}
                 defaultValue={f.secret ? "" : (config[f.key] ?? "")}
-                placeholder={f.secret && connected ? "Enter a new value to replace the stored one" : f.placeholder}
+                placeholder={f.secret && connected ? "Leave blank to keep the stored value" : f.placeholder}
                 className={f.secret ? "num" : undefined}
               />
             </Field>

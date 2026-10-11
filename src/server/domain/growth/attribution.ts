@@ -50,7 +50,7 @@ export async function recordConversion(
   return { id: row.id, attributed: !!campaign, duplicate: false };
 }
 
-/** Measured performance per experiment: settled spend (ledger) and attributed conversions (events). */
+/** Measured performance per experiment: committed spend (ledger SPENT_STATES) and attributed conversions (events). */
 export async function missionPerformance(db: DB, missionId: string): Promise<ExperimentPerformance[]> {
   const [mission] = await db.select().from(s.missions).where(eq(s.missions.id, missionId));
   const exps = await db.select().from(s.experiments).where(eq(s.experiments.missionId, missionId));

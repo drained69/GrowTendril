@@ -1,12 +1,14 @@
 import Link from "next/link";
-import { desc, eq } from "drizzle-orm";
+import { desc, eq, inArray } from "drizzle-orm";
 import { ArrowUpRight, CheckCircle2, Inbox, Lock, ShieldAlert } from "lucide-react";
 import { requireProject } from "@/server/auth/current";
 import { can } from "@/server/auth/access";
 import { schema as s } from "@/server/db/client";
+import { addressExplorerUrl, chainLabel } from "@/server/integrations/circle/config";
+import { isBlockedRecipient } from "@/server/domain/agent/policy";
 import { fmtUsdc, microToDecimal } from "@/lib/money";
 import { relTime } from "@/lib/time";
-import { Badge, Callout, Card, CardBody, CardHeader, Confidence, EmptyState, ModeBadge, PageHeader, Stat, StatStrip, StatusBadge } from "@/components/ui";
+import { Badge, Callout, Card, CardBody, CardHeader, Confidence, EmptyState, ExternalLink, KeyValue, ModeBadge, PageHeader, Stat, StatStrip, StatusBadge } from "@/components/ui";
 import { DataTable } from "@/components/ui/data-table";
 import { ApprovalControls } from "@/components/features/approvals/approval-controls";
 
@@ -17,7 +19,10 @@ type Details = {
   evidence?: { url: string; title: string }[];
   confidence?: number;
   policy?: { rule: string; detail: string }[];
+  service?: string;
 };
+
+const RAIL: Record<string, string> = { gateway_x402: "x402 · Circle Gateway", app_kit_send: "App Kit Send", app_kit_bridge: "App Kit Bridge (CCTP)", gateway_deposit: "Gateway deposit" };
 
 const humanize = (k: string) => k.replace(/_/g, " ").toLowerCase().replace(/^\w/, (c) => c.toUpperCase());
 
@@ -31,6 +36,9 @@ export default async function Approvals() {
     .where(eq(s.approvals.projectId, project.id))
     .orderBy(desc(s.approvals.createdAt));
   const pending = rows.filter((r) => r.a.status === "pending");
+  const txIds = pending.map((r) => r.a.transactionId).filter((x): x is string => !!x);
+  const txs = txIds.length ? await db.select().from(s.transactions).where(inArray(s.transactions.id, txIds)) : [];
+  const txById = new Map(txs.map((t) => [t.id, t]));
   const done = rows.filter((r) => r.a.status !== "pending");
   const pendingTotal = pending.reduce((n, r) => n + r.a.requestedMicro, 0);
   const approvedTotal = done.filter((r) => r.a.status === "approved").reduce((n, r) => n + (r.a.approvedMicro ?? r.a.requestedMicro), 0);
@@ -51,7 +59,7 @@ export default async function Approvals() {
       <StatStrip className="grid-cols-2 lg:grid-cols-4">
         <Stat label="Waiting" value={pending.length} tone={pending.length ? "warn" : undefined} sub="pending decisions" />
         <Stat label="Requested" value={fmtUsdc(pendingTotal, { unit: false })} sub="USDC awaiting you" />
-        <Stat label="Resolved" value={done.length} sub={`${done.filter((r) => r.a.status === "approved").length} approved · ${done.filter((r) => r.a.status === "rejected").length} rejected`} />
+        <Stat label="Resolved" value={done.length} sub={`${done.filter((r) => r.a.status === "approved").length} approved · ${done.filter((r) => r.a.status === "rejected").length} rejected${done.some((r) => r.a.status === "denied") ? ` · ${done.filter((r) => r.a.status === "denied").length} denied` : ""}`} />
         <Stat label="Approved spend" value={fmtUsdc(approvedTotal, { unit: false })} sub="USDC, all time" />
       </StatStrip>
 
@@ -91,6 +99,7 @@ export default async function Approvals() {
                         <span className="ml-1 text-[13px] text-ink-3">USDC</span>
                       </div>
                     </div>
+                    <PaymentFacts tx={a.transactionId ? txById.get(a.transactionId) : undefined} action={d.action as Record<string, unknown>} service={det.service} demo={d.dataMode === "DEMO" || d.dataMode === "SIMULATED"} />
                     {det.rationale && <p className="text-[12.5px] leading-relaxed text-ink-2">{det.rationale}</p>}
                     {det.expectedOutcome && (
                       <div className="rounded-[8px] border border-line bg-bg/50 px-3 py-2 text-[12.5px]">
@@ -151,7 +160,7 @@ export default async function Approvals() {
                     )}
                     <div className="border-t border-line pt-4">
                       {canApprove ? (
-                        <ApprovalControls id={a.id} requested={microToDecimal(a.requestedMicro)} />
+                        <ApprovalControls id={a.id} requested={microToDecimal(a.requestedMicro)} canReduce={!!a.transactionId && ["send", "bridge"].includes(txById.get(a.transactionId)?.kind ?? "")} />
                       ) : (
                         <p className="flex items-center gap-2 text-[12px] text-ink-3">
                           <Lock className="size-3.5" /> Owner or admin required to resolve.
@@ -191,14 +200,14 @@ export default async function Approvals() {
               title: <span className="block max-w-[340px] truncate">{a.title}</span>,
               decision: <span className="num text-ink-3">#{d.number}</span>,
               amount: (
-                <span className="num">
+                <span className={a.status === "approved" ? "num" : "num text-ink-3"}>
                   {fmtUsdc(a.approvedMicro ?? a.requestedMicro)}
                   {a.approvedMicro != null && a.approvedMicro !== a.requestedMicro && <span className="ml-1 text-[11px] text-ink-4 line-through">{fmtUsdc(a.requestedMicro, { unit: false })}</span>}
                 </span>
               ),
               status: (
                 <span className="flex items-center gap-1.5">
-                  <StatusBadge status={a.status} />
+                  {a.status === "denied" ? <Badge tone="bad">Denied at re-check</Badge> : <StatusBadge status={a.status} />}
                   <ModeBadge mode={d.dataMode} />
                 </span>
               ),
@@ -212,5 +221,39 @@ export default async function Approvals() {
         />
       </Card>
     </div>
+  );
+}
+
+/** Where the money would go: rail, chain, recipient and vendor — shown before anyone approves. */
+function PaymentFacts({ tx, action, service, demo }: { tx?: typeof s.transactions.$inferSelect; action: Record<string, unknown>; service?: string; demo: boolean }) {
+  if (!tx) return <p className="rounded-[8px] border border-line bg-bg/50 px-3 py-2 text-[12px] text-ink-3">Budget reallocation between experiments — no funds leave the wallet.</p>;
+  const resource = typeof action.resourceUrl === "string" ? action.resourceUrl : null;
+  const blocked = tx.kind === "send" && isBlockedRecipient(tx.recipient);
+  return (
+    <KeyValue
+      items={[
+        { k: "Rail", v: RAIL[tx.rail] ?? tx.rail },
+        { k: "Chain", v: `${chainLabel(tx.chain)}${tx.destChain ? ` → ${chainLabel(tx.destChain)}` : ""}` },
+        ...(tx.kind !== "bridge"
+          ? [
+              {
+                k: tx.kind === "x402_purchase" ? "Pays (seller)" : "Recipient",
+                v: tx.recipient ? (
+                  <span className="flex flex-wrap items-center justify-end gap-1.5">
+                    <ExternalLink href={addressExplorerUrl(tx.chain, tx.recipient)} className="num break-all text-[11.5px]">
+                      {tx.recipient}
+                    </ExternalLink>
+                    {blocked && <Badge tone={demo ? "warn" : "bad"}>{demo ? "DEMO placeholder — simulated" : "placeholder — will be denied"}</Badge>}
+                  </span>
+                ) : (
+                  <Badge tone="bad">No recipient</Badge>
+                ),
+              },
+            ]
+          : []),
+        ...(service ? [{ k: "Vendor", v: service }] : []),
+        ...(resource ? [{ k: "Service", v: <span className="num block max-w-[360px] truncate text-[11.5px]" title={resource}>{resource}</span> }] : []),
+      ]}
+    />
   );
 }

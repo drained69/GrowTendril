@@ -99,10 +99,19 @@ export async function runDemoStep(db: DB, projectId: string, step: number, userI
       break;
     }
     case 6: {
-      const [ap] = await db.select().from(s.approvals).where(and(eq(s.approvals.projectId, projectId), eq(s.approvals.status, "pending"))).orderBy(desc(s.approvals.createdAt));
-      if (!ap) throw new Error("Nothing pending — run step 5 first (or approve it in the inbox)");
+      // Only the guided demo's own creator payment — never some other pending approval in the inbox.
+      const exp = await spotlightKolExperiment(db, projectId);
+      if (!exp) throw new Error("Run step 3 first");
+      const [ap] = await db
+        .select({ a: s.approvals })
+        .from(s.approvals)
+        .innerJoin(s.transactions, eq(s.approvals.transactionId, s.transactions.id))
+        .where(and(eq(s.approvals.projectId, projectId), eq(s.approvals.status, "pending"), eq(s.transactions.experimentId, exp.id)))
+        .orderBy(desc(s.approvals.createdAt))
+        .then((rows) => rows.map((r) => r.a));
+      if (!ap) throw new Error("Nothing pending for this experiment — run step 5 first (or approve it in the inbox)");
       const r = await resolveApproval(db, { approvalId: ap.id, userId, resolution: "approve", log: L, note: "Approved in guided demo" });
-      L("operator", `Founder approved → ${"state" in r ? r.state : r.status}`);
+      L("operator", r.status === "approved" ? `Founder approved → ${r.state ?? "approved"}` : `Not executed (${r.status})${r.reason ? `: ${r.reason}` : ""}`);
       links.push({ label: "Activity", href: "/app/activity" }, { label: "Receipt", href: `/app/receipts/${ap.decisionId}` });
       break;
     }

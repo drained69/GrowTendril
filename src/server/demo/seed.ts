@@ -2,6 +2,7 @@ import { ARC } from "@/server/integrations/circle/config";
 import { and, eq } from "drizzle-orm";
 import type { DB } from "@/server/db/client";
 import * as s from "@/server/db/schema";
+import { randomBytes } from "node:crypto";
 import { newId, shortCode, sha256 } from "@/server/lib/ids";
 import { toMicro } from "@/lib/money";
 import { DAY_MS } from "@/lib/time";
@@ -129,7 +130,8 @@ export async function seedDemo(db: DB, opts: { reset?: boolean; ownerId?: string
     xHandle: "meterline",
     githubUrl: "https://github.com/meterline-demo/sdk",
     description: DEMO_PROFILE.summary,
-    webhookSecret: sha256(`demo-webhook-${projectId}`),
+    // Random, like live workspaces: a secret derived from the (visible) project ID would let anyone sign events.
+    webhookSecret: randomBytes(32).toString("hex"),
     onboardingStep: 5,
     dataMode: "DEMO",
   });

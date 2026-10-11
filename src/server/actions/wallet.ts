@@ -32,6 +32,7 @@ export async function provisionWalletAction(): Promise<ActionResult> {
 export async function attachWalletAction(circleWalletId: string): Promise<ActionResult> {
   try {
     const { project, db, user } = await guard("manage_wallet");
+    if (project.dataMode === "DEMO") return { ok: false, error: "Demo workspaces run in simulation — create a real workspace to attach a wallet" };
     if (!/^[0-9a-f-]{36}$/i.test(circleWalletId.trim())) return { ok: false, error: "Enter a Circle wallet ID (UUID)" };
     const w = await attachCircleWallet(db, { projectId: project.id, userId: user.id, circleWalletId: circleWalletId.trim() });
     revalidatePath("/app", "layout");
@@ -67,6 +68,7 @@ export async function depositToGatewayAction(amount: string): Promise<ActionResu
     const a = z.string().regex(/^\d{1,7}(\.\d{1,6})?$/, "Enter an amount like 5 or 2.5").parse(amount.trim());
     const micro = toMicro(a);
     if (micro <= 0) return { ok: false, error: "Amount must be positive" };
+    if (project.dataMode === "DEMO") return { ok: false, error: "Demo workspaces run in simulation — nothing can be deposited" };
     const w = await getWallet(db, project.id);
     if (!walletIsLive(w)) return { ok: false, error: "Create the workspace wallet first" };
     if (w!.frozen) return { ok: false, error: "The wallet is frozen" };

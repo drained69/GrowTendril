@@ -810,6 +810,10 @@ export const creatorCampaigns = pgTable(
     disclosureText: text("disclosure_text").notNull(),
     platforms: jsonb("platforms").$type<string[]>().notNull().default([]),
     plan: jsonb("plan").$type<Record<string, unknown>>().notNull().default({}),
+    /** Budget released to creator ceilings so far. Starts at the test phase; grows only by reallocation to measured winners. */
+    releasedMicro: micro("released_micro").notNull().default(0),
+    /** Verified actions become payable only after this many days (time to catch fake or reversed actions). */
+    holdbackDays: integer("holdback_days").notNull().default(7),
     joinToken: text("join_token").notNull().unique(),
     status: text("status").notNull().default("open"), // open | closed
     startsAt: timestamp("starts_at", { withTimezone: true }).notNull(),
@@ -835,6 +839,8 @@ export const campaignParticipants = pgTable(
     payoutAddress: text("payout_address").notNull(),
     pitch: text("pitch"),
     accessTokenHash: text("access_token_hash").notNull().unique(),
+    /** Per-creator ceiling; null means the campaign's base ceiling. Raised only by results-based reallocation. */
+    ceilingMicro: micro("ceiling_micro"),
     trackingCampaignId: text("tracking_campaign_id").references(() => campaigns.id, { onDelete: "set null" }),
     kolId: text("kol_id").references(() => kols.id, { onDelete: "set null" }),
     status: text("status").notNull().default("applied"), // applied | accepted | declined | removed
@@ -896,3 +902,26 @@ export const campaignRewards = pgTable(
   },
   (t) => [uniqueIndex("campaign_rewards_source_uq").on(t.campaignId, t.sourceKey), index("campaign_rewards_participant_idx").on(t.participantId)],
 );
+
+/**
+ * Per-project campaign economics. Every planner figure is either one of these settings, a value the
+ * business typed into a campaign, or a figure measured from the project's own events and ledger.
+ */
+export const projectEconomics = pgTable("project_economics", {
+  projectId: text("project_id").primaryKey().references(() => projects.id, { onDelete: "cascade" }),
+  /** What one paying customer is worth (e.g. first-year revenue). Null = not set. */
+  customerValueMicro: micro("customer_value_micro"),
+  grossMarginPct: integer("gross_margin_pct"),
+  /** Share of a customer's margin the business will spend to acquire one. */
+  acquisitionSharePct: integer("acquisition_share_pct").notNull().default(30),
+  /** Manual override for the action→customer rate (basis points), used when not enough data is measured. */
+  conversionRateBps: integer("conversion_rate_bps"),
+  fixedPaySharePct: integer("fixed_pay_share_pct").notNull().default(25),
+  actionBonusSharePct: integer("action_bonus_share_pct").notNull().default(80),
+  minActionsPerCreator: integer("min_actions_per_creator").notNull().default(3),
+  maxCreators: integer("max_creators").notNull().default(10),
+  testPhaseSharePct: integer("test_phase_share_pct").notNull().default(50),
+  holdbackDays: integer("holdback_days").notNull().default(7),
+  updatedBy: text("updated_by").references(() => users.id, { onDelete: "set null" }),
+  updatedAt: updatedAt(),
+});

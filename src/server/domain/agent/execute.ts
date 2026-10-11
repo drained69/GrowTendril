@@ -21,8 +21,8 @@ import { applyReallocation } from "@/server/domain/growth/learning-run";
 type Mode = (typeof s.dataMode.enumValues)[number];
 
 export interface ProposalOutcome {
-  /** Null when nothing was proposed (duplicate, or no valid recipient). */
-  decisionId: string | null;
+  /** For a prevented duplicate: the decision that already proposed this payment. */
+  decisionId: string;
   verdict: "ALLOW" | "APPROVAL_REQUIRED" | "DENY" | "NOT_PROPOSED";
   state: string;
   approvalId?: string;

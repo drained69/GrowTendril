@@ -5,7 +5,7 @@ import { requireProject } from "@/server/auth/current";
 import { schema as s } from "@/server/db/client";
 import { recentDecisions, recentTransactions } from "@/server/queries/activity";
 import { ARC, chainLabel, txExplorerUrl } from "@/server/integrations/circle/config";
-import { DEMO_PAYOUT_FALLBACK } from "@/server/domain/growth/experiments";
+import { isBlockedRecipient } from "@/server/domain/agent/policy";
 import { refreshSettlementsAction } from "@/server/actions/wallet";
 import { fmtUsdc } from "@/lib/money";
 import { relTime } from "@/lib/time";
@@ -32,7 +32,8 @@ export default async function Activity() {
     db.select().from(s.agentRuns).where(eq(s.agentRuns.projectId, pid)).orderBy(desc(s.agentRuns.startedAt)).limit(5),
   ]);
   const purchaseByTx = new Map(purchases.map((p) => [p.txId, p.p]));
-  const real = txs.filter((t) => t.dataMode === "TESTNET" || t.dataMode === "LIVE");
+  // On-chain = actually reached the chain (submitted or settled), not merely proposed on a real network.
+  const real = txs.filter((t) => (t.dataMode === "TESTNET" || t.dataMode === "LIVE") && (t.state === "SUBMITTED" || t.state === "SETTLED"));
 
   return (
     <div className="space-y-4">
@@ -54,7 +55,7 @@ export default async function Activity() {
         <Stat label="x402 purchases" value={purchases.length} sub="paid API calls" />
         <Stat label="Gateway settlements" value={txs.filter((t) => t.settlementId).length} sub="with a settlement ID" />
         <Stat label="Arc transfers" value={txs.filter((t) => t.rail === "app_kit_send" && t.txHash).length} sub="App Kit Send with tx hash" />
-        <Stat label={`On-chain · ${ARC.name}`} value={real.length} sub={`of ${txs.length} payment rows`} />
+        <Stat label={`On-chain · ${ARC.name}`} value={real.length} sub={`submitted or settled, of ${txs.length} payment rows`} />
       </StatStrip>
 
       <Card>
@@ -79,8 +80,8 @@ export default async function Activity() {
               ? purchase.purpose
               : t.kind === "bridge"
                 ? `${chainLabel(t.chain)} → ${t.destChain ? chainLabel(t.destChain) : "—"}`
-                : t.recipient === DEMO_PAYOUT_FALLBACK
-                  ? "Placeholder payout address (set the creator’s)"
+                : t.kind === "send" && t.recipient && isBlockedRecipient(t.recipient)
+                  ? "Placeholder payout address (DEMO only — never paid)"
                   : t.recipient
                     ? `to ${shortHash(t.recipient, 4)}`
                     : humanize(t.kind);
@@ -115,7 +116,7 @@ export default async function Activity() {
                   </span>
                 ),
                 tx: t.batchTxHash ? (
-                  <ExternalLink href={txExplorerUrl(ARC.appKitChain, t.batchTxHash)} className="num whitespace-nowrap text-[11.5px]">
+                  <ExternalLink href={txExplorerUrl(t.chain, t.batchTxHash)} className="num whitespace-nowrap text-[11.5px]">
                     batch {shortHash(t.batchTxHash, 4)}
                   </ExternalLink>
                 ) : t.txHash ? (

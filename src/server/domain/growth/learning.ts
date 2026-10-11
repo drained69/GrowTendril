@@ -1,8 +1,8 @@
 import { fmtUsdc, microToDecimal } from "@/lib/money";
 
 /**
- * Learning & reallocation engine. Inputs are *measured* numbers only: settled spend from
- * the transactions table and conversions joined through attribution. No LLM touches these.
+ * Learning & reallocation engine. Inputs are *measured* numbers only: committed spend from
+ * the transactions table (authorized, in flight, settled or simulated) and conversions joined through attribution. No LLM touches these.
  */
 
 export interface ExperimentPerformance {

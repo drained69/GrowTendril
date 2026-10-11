@@ -12,7 +12,7 @@ import { AgentLog } from "@/components/features/agent/agent-log";
 type Log = { agent: string; message: string }[];
 
 /** Approve (optionally at a reduced amount) or reject one spend approval. Server re-checks deny rules. */
-export function ApprovalControls({ id, requested }: { id: string; requested: string }) {
+export function ApprovalControls({ id, requested, canReduce = true }: { id: string; requested: string; canReduce?: boolean }) {
   const [amount, setAmount] = useState(requested);
   const [modify, setModify] = useState(false);
   const [note, setNote] = useState("");
@@ -35,7 +35,10 @@ export function ApprovalControls({ id, requested }: { id: string; requested: str
         setError(r.error);
         toast.error("Couldn’t resolve approval", r.error);
       } else {
-        toast.success(r.message ?? (resolution === "approve" ? "Approved" : "Rejected"));
+        const out = (r.data ?? {}) as { status?: string; state?: string };
+        // Approval is not execution: a denied re-check or a failed payment is reported as such.
+        if (out.status === "denied" || out.state === "FAILED") toast.error(r.message ?? "Not executed");
+        else toast.success(r.message ?? (resolution === "approve" ? "Approved" : "Rejected"));
         if (r.log?.length) setLog(r.log);
       }
       setWhich(null);
@@ -63,17 +66,19 @@ export function ApprovalControls({ id, requested }: { id: string; requested: str
         <Button variant="danger" icon={<X />} loading={pending && which === "reject"} disabled={pending} onClick={() => go("reject")}>
           Reject
         </Button>
-        <Button
-          variant="ghost"
-          icon={<Pencil />}
-          disabled={pending}
-          onClick={() => {
-            setModify((m) => !m);
-            setAmount(requested);
-          }}
-        >
-          {modify ? "Keep requested" : "Reduce amount"}
-        </Button>
+        {canReduce && (
+          <Button
+            variant="ghost"
+            icon={<Pencil />}
+            disabled={pending}
+            onClick={() => {
+              setModify((m) => !m);
+              setAmount(requested);
+            }}
+          >
+            {modify ? "Keep requested" : "Reduce amount"}
+          </Button>
+        )}
       </div>
       {error && <p className="text-[11.5px] text-critical">{error}</p>}
       <Dialog open={!!log} onClose={() => setLog(null)} title="What happened" description="Each line is a step the agents took after your decision." size="lg">

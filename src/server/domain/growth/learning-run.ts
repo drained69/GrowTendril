@@ -50,7 +50,7 @@ export async function runLearning(db: DB, p: { projectId: string; missionId: str
   if (!parsed.success) throw new Error(parsed.error.message);
   const remaining = Object.fromEntries(perf.map((x) => [x.experimentId, Math.max(0, x.budgetMicro - x.spentMicro)]));
   const policy = await loadPolicy(db, p.projectId);
-  const pstate = await loadPolicyState(db, { projectId: p.projectId, missionId: p.missionId, category: "treasury", experimentRemainingMicro: remaining });
+  const pstate = await loadPolicyState(db, { projectId: p.projectId, missionId: p.missionId, category: "treasury", experimentRemainingMicro: remaining, balances: false });
   const verdict = evaluatePolicy(parsed.data, policy, pstate);
   const total = moves.reduce((sum, m) => sum + m.amountMicro, 0);
   const decision = await recordDecision(db, {

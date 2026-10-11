@@ -26,7 +26,7 @@ export default async function Receipts() {
     <div className="space-y-4">
       <PageHeader
         title="Receipts"
-        description="A tamper-evident receipt for every agent decision: what it did, why, which policy rules ran, and the payment trace. Each body is hashed (sha256) and re-verified when opened."
+        description="A receipt for every agent decision: what it did, why, which policy rules ran, and the payment trace. Each body carries a sha256 digest that is recomputed on view, which detects edits to the stored receipt; finalized receipts are never rewritten."
         meta={
           <>
             <ModeBadge mode={project.dataMode} />
@@ -94,7 +94,7 @@ export default async function Receipts() {
           })}
           empty={<p className="text-center text-[12.5px] text-ink-3">No receipts yet. Every decision the agents make — buying data, proposing spend, reallocating budget — writes one. Run a cycle to start.</p>}
         />
-        <CardFooter>Digests are computed over the canonical JSON body; a mismatch on the detail page means the record was altered after it was written.</CardFooter>
+        <CardFooter>Digests are computed over the canonical JSON body; a mismatch on the detail page means the stored body was edited without updating its digest. Finalized receipts also record the previous finalized receipt’s digest.</CardFooter>
       </Card>
     </div>
   );

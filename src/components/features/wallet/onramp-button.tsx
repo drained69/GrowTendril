@@ -4,7 +4,7 @@ import { CreditCard } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { toast } from "@/components/ui/toast";
 
-/** "Add budget" → Arc Onramp widget → USDC to the workspace wallet address. */
+/** "Add budget" → Arc Onramp widget → USDC on Arc to the workspace wallet address. */
 export function OnrampButton({ address, userId, disabled }: { address: string; userId: string; disabled?: boolean }) {
   const ref = useRef<HTMLDivElement>(null);
   const [state, setState] = useState<"idle" | "loading" | "open" | "error">("idle");
@@ -14,7 +14,8 @@ export function OnrampButton({ address, userId, disabled }: { address: string; u
     setMsg("");
     try {
       const { createOnrampKit, fetchOnrampSession } = await import("@circle-fin/onramp-kit");
-      const session = await fetchOnrampSession({ url: "/api/onramp/sessions", body: { appUserId: userId, destinationAddress: address } });
+      // The server rebuilds this request (its own wallet, Arc, USDC); these values only pre-fill the widget.
+      const session = await fetchOnrampSession({ url: "/api/onramp/sessions", body: { appUserId: userId, destinationAddress: address, destinationChain: "Arc", assets: { pairs: [{ token: "USDC", chain: "arc" }] } } });
       createOnrampKit().mountIframe({
         session,
         container: ref.current!,

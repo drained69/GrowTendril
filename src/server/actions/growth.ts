@@ -30,7 +30,8 @@ export async function launchExperimentAction(experimentId: string, tranche: "fir
     const { log, push } = collector();
     const r = await launchExperiment(db, { projectId: project.id, experimentId, tranche, log: push });
     revalidatePath("/app", "layout");
-    return { ok: true, data: r, log, message: `${r.verdict === "APPROVAL_REQUIRED" ? "Sent to the Approval Inbox" : r.verdict === "DENY" ? "Denied by policy" : `Payment ${r.state.toLowerCase()}`}` };
+    if (r.verdict === "NOT_PROPOSED") return { ok: false, error: r.message };
+    return { ok: true, data: r, log, message: r.verdict === "APPROVAL_REQUIRED" ? "Sent to the Approval Inbox" : r.verdict === "DENY" ? `Denied by policy: ${r.message}` : `Payment ${r.state.toLowerCase()}` };
   } catch (e) {
     return fail(e);
   }

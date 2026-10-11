@@ -12,6 +12,7 @@ import { PROJECT_COOKIE } from "@/server/auth/session";
 import { analyzeProduct, ProductProfileSchema } from "@/server/domain/intel/product-analyst";
 import { BudgetCategory } from "@/server/domain/agent/actions";
 import { ACTIVE_CHAINS, chainLabel } from "@/server/integrations/circle/config";
+import { newId } from "@/server/lib/ids";
 import { toMicro } from "@/lib/money";
 import { fail, guard, limited, type ActionResult } from "@/server/actions/_common";
 
@@ -168,10 +169,8 @@ export async function reprofileAction(): Promise<ActionResult> {
     await limited(`reprofile:${project.id}`, 3, 0.01);
     if (!project.website && !project.docsUrl && !project.githubUrl) return { ok: false, error: "Add a website, docs or GitHub URL first, and save the workspace." };
     const analysis = await analyzeProduct({ name: project.name, website: project.website, docsUrl: project.docsUrl, xHandle: project.xHandle, githubUrl: project.githubUrl, description: project.description || project.name });
-    await db
-      .update(s.productProfiles)
-      .set({ ...analysis.profile, crawledSources: analysis.crawled, generatedBy: analysis.generatedBy, founderEdited: false, updatedAt: new Date() })
-      .where(eq(s.productProfiles.projectId, project.id));
+    const values = { ...analysis.profile, crawledSources: analysis.crawled, generatedBy: analysis.generatedBy, founderEdited: false, updatedAt: new Date() };
+    await db.insert(s.productProfiles).values({ id: newId(), projectId: project.id, ...values }).onConflictDoUpdate({ target: s.productProfiles.projectId, set: values });
     await audit(db, { projectId: project.id, actorType: "user", actorId: user.id, action: "profile.reprofile", data: { generatedBy: analysis.generatedBy, sources: analysis.crawled.length } });
     revalidatePath("/app", "layout");
     return { ok: true, message: analysis.note };

@@ -1,5 +1,5 @@
 import Link from "next/link";
-import { and, eq, gte, inArray, sql } from "drizzle-orm";
+import { and, eq, gte, inArray, ne, sql } from "drizzle-orm";
 import { ArrowLeftRight, ArrowUpRight, CircleDollarSign, Layers, Lock, PiggyBank, RefreshCw, Send, ShieldCheck, Snowflake, Unlock, Wallet as WalletIcon } from "lucide-react";
 import { requireProject } from "@/server/auth/current";
 import { can } from "@/server/auth/access";
@@ -7,7 +7,7 @@ import { schema as s } from "@/server/db/client";
 import { activeMission, missionSummary } from "@/server/queries/missions";
 import { spentTodayMicro } from "@/server/queries/activity";
 import { getWallet, walletBalances, walletIsLive } from "@/server/integrations/circle/wallets";
-import { ARC, addressExplorerUrl, platformCustody, txExplorerUrl } from "@/server/integrations/circle/config";
+import { ACTIVE_CHAINS, ARC, IS_MAINNET, addressExplorerUrl, chainLabel, platformCustody, txExplorerUrl } from "@/server/integrations/circle/config";
 import { unifiedBalance } from "@/server/integrations/circle/appkit";
 import { recentJobs } from "@/server/jobs/queue";
 import { provisionWalletAction, refreshSettlementsAction, toggleFreezeAction } from "@/server/actions/wallet";
@@ -36,6 +36,8 @@ export default async function WalletPage() {
   const pid = project.id;
   const demo = project.dataMode === "DEMO";
   const manage = can(role, "manage_wallet");
+  // Anyone who manages the wallet may freeze it; on mainnet only an owner may resume spending.
+  const canResume = manage && (!IS_MAINNET || role === "owner");
   const custody = platformCustody();
 
   const [wallet, spentToday, [policy], mission, jobs] = await Promise.all([
@@ -50,14 +52,21 @@ export default async function WalletPage() {
   const address = wallet?.address ?? null;
   const [balances, ub] = await Promise.all([walletBalances(wallet), address ? attempt(() => unifiedBalance(address)) : Promise.resolve(null)]);
   const deposits = jobs.filter((j) => j.kind === "gateway_deposit").slice(0, 8);
+  const depositTxIds = deposits.map((j) => String((j.payload as { transactionId?: string }).transactionId ?? "")).filter(Boolean);
+  const depositChain = new Map(
+    depositTxIds.length ? (await db.select({ id: s.transactions.id, chain: s.transactions.chain }).from(s.transactions).where(inArray(s.transactions.id, depositTxIds))).map((r) => [r.id, r.chain]) : [],
+  );
 
   // Earn recommendation input: 7-day run rate of spend that actually moved (or would have).
+  // Treasury moves (Gateway deposits, bridges) are our own funds changing place, not spend.
   const [rate] = await db
     .select({ n: sql<string>`coalesce(sum(${s.transactions.amountMicro}),0)` })
     .from(s.transactions)
-    .where(and(eq(s.transactions.projectId, pid), inArray(s.transactions.state, ["SUBMITTED", "SETTLED", "SIMULATED"]), gte(s.transactions.createdAt, new Date(Date.now() - 7 * DAY_MS))));
+    .where(and(eq(s.transactions.projectId, pid), inArray(s.transactions.state, ["SUBMITTED", "SETTLED", "SIMULATED"]), ne(s.transactions.budgetCategory, "treasury"), gte(s.transactions.createdAt, new Date(Date.now() - 7 * DAY_MS))));
   const weekly = Number(rate?.n ?? 0);
-  const idle = sum ? Math.max(0, sum.available - weekly * 2) : 0;
+  // Idle = funds actually held (wallet + Gateway) beyond two weeks of run-rate; unknown if a balance read failed.
+  const held = balances.walletMicro != null && balances.gatewayMicro != null ? balances.walletMicro + balances.gatewayMicro : null;
+  const idle = held != null ? Math.max(0, held - weekly * 2) : null;
 
   const statusBadge = !address ? <Badge tone="warn">Not set up</Badge> : wallet?.frozen ? <Badge tone="bad" dot>Frozen</Badge> : live ? <Badge tone="good" dot>Active</Badge> : <Badge tone="warn">Cannot sign</Badge>;
 
@@ -81,7 +90,7 @@ export default async function WalletPage() {
         <Stat label="Wallet USDC · Arc" value={balances.walletMicro != null ? fmtUsdc(balances.walletMicro, { unit: false }) : "—"} sub={!address ? "no wallet" : balances.walletMicro == null ? "RPC unreachable" : "on-chain balance"} />
         <Stat label="Gateway available" value={balances.gatewayMicro != null ? fmtUsdc(balances.gatewayMicro, { unit: false }) : "—"} sub={!address ? "no wallet" : balances.gatewayMicro == null ? "Gateway API unreachable" : "spendable via x402"} />
         <Stat label="Spent today" value={fmtUsdc(spentToday, { unit: false })} sub={`limit ${fmtUsdc(policy?.dailySpendMicro, { unit: false })} USDC`} tone={policy && spentToday >= policy.dailySpendMicro ? "warn" : undefined} />
-        <Stat label="Mission remaining" value={sum && mission ? fmtUsdc(mission.budgetMicro - sum.spent, { unit: false }) : "—"} sub={sum ? `${fmtUsdc(sum.available, { unit: false })} uncommitted` : "no active mission"} />
+        <Stat label="Mission budget left" value={sum && mission ? fmtUsdc(mission.budgetMicro - sum.spent, { unit: false }) : "—"} sub={sum ? `budget, not funds · ${fmtUsdc(sum.available, { unit: false })} uncommitted` : "no active mission"} />
       </StatStrip>
 
       {balances.errors.length > 0 && (
@@ -91,8 +100,8 @@ export default async function WalletPage() {
       )}
 
       {wallet?.frozen && (
-        <Callout tone="danger" title="Kill switch is on" action={manage ? <ActionButton action={toggleFreezeAction} label="Resume spending" icon={<Unlock />} size="xs" /> : undefined}>
-          Every spend is denied by the policy engine until a wallet manager resumes spending.
+        <Callout tone="danger" title="Kill switch is on" action={canResume ? <ActionButton action={toggleFreezeAction} label="Resume spending" icon={<Unlock />} size="xs" /> : undefined}>
+          Every spend is denied by the policy engine until {IS_MAINNET ? "a workspace owner" : "a wallet manager"} resumes spending.
         </Callout>
       )}
 
@@ -175,7 +184,7 @@ export default async function WalletPage() {
                           <td className="whitespace-nowrap text-ink-3">{relTime(j.createdAt)}</td>
                           <td className="max-w-[220px] truncate text-[11.5px]">
                             {r.depositTx ? (
-                              <ExternalLink href={txExplorerUrl(ARC.appKitChain, r.depositTx)} className="num">
+                              <ExternalLink href={txExplorerUrl(depositChain.get(String((j.payload as { transactionId?: string }).transactionId)) ?? ARC.appKitChain, r.depositTx)} className="num">
                                 {shortHash(r.depositTx, 4)}
                               </ExternalLink>
                             ) : j.lastError ? (
@@ -206,11 +215,11 @@ export default async function WalletPage() {
                     <div className="text-[12.5px] font-medium text-ink">Kill switch</div>
                     <div className="text-[11.5px] text-ink-3">{wallet!.frozen ? "On — every spend is denied by policy" : "Off — spending allowed within policy"}</div>
                   </div>
-                  {manage ? (
+                  {manage && (!wallet!.frozen || canResume) ? (
                     <ActionButton action={toggleFreezeAction} label={wallet!.frozen ? "Resume spending" : "Freeze spending"} icon={wallet!.frozen ? <Unlock /> : <Snowflake />} variant={wallet!.frozen ? "secondary" : "danger"} confirm={wallet!.frozen ? undefined : "Freeze all agent spending? Every spend will be denied until resumed."} />
                   ) : (
                     <Badge tone="muted">
-                      <Lock className="size-3" /> Owner / admin
+                      <Lock className="size-3" /> {wallet!.frozen && IS_MAINNET ? "Owner" : "Owner / admin"}
                     </Badge>
                   )}
                 </div>
@@ -223,14 +232,20 @@ export default async function WalletPage() {
                 </div>
                 <div className="border-t border-line pt-3">
                   <div className="mb-2 text-[12.5px] font-medium text-ink">Add budget</div>
-                  {process.env.ONRAMP_API_KEY ? (
+                  {process.env.ONRAMP_API_KEY && IS_MAINNET && !demo ? (
                     <OnrampButton address={address} userId={user.id} disabled={!manage} />
                   ) : (
                     <p className="text-[11.5px] text-ink-3">
-                      Arc Onramp is optional — set <Code>ONRAMP_API_KEY</Code> to buy USDC straight into this wallet.{" "}
+                      {IS_MAINNET ? (
+                        <>
+                          Arc Onramp is optional — set <Code>ONRAMP_API_KEY</Code> to buy USDC on {ARC.name} straight into this wallet.{" "}
+                        </>
+                      ) : (
+                        <>Arc Onramp delivers mainnet USDC, so it is off on {ARC.name}. </>
+                      )}
                       {ARC.faucet ? (
                         <>
-                          Otherwise fund it from <ExternalLink href={ARC.faucet}>faucet.circle.com</ExternalLink>.
+                          Fund it from <ExternalLink href={ARC.faucet}>faucet.circle.com</ExternalLink>.
                         </>
                       ) : (
                         <>Otherwise send USDC on {ARC.name} to the address above.</>
@@ -333,8 +348,8 @@ function WalletSetup({ custody, manage, demo }: { custody: "circle" | "local" | 
 
 function AppKitCard() {
   const caps = [
-    { icon: <Send />, label: "Send", detail: "USDC transfers on Arc — used for creator payouts after policy and approval." },
-    { icon: <ArrowLeftRight />, label: "Bridge", detail: "Move USDC between Arc, Base Sepolia and Arbitrum Sepolia via CCTP." },
+    { icon: <Send />, label: "Send", detail: `USDC transfers on ${ARC.name} — used for creator payouts after policy and approval.` },
+    { icon: <ArrowLeftRight />, label: "Bridge", detail: `Available through the policy engine for ${ACTIVE_CHAINS.map(chainLabel).join(", ")} (CCTP) — not used by the agent yet.` },
     { icon: <Layers />, label: "Unified balance", detail: "Read one Gateway balance across chains (read-only, no signing)." },
   ];
   return (
@@ -355,17 +370,17 @@ function AppKitCard() {
   );
 }
 
-function EarnCard({ weekly, idle }: { weekly: number; idle: number }) {
+function EarnCard({ weekly, idle }: { weekly: number; idle: number | null }) {
   return (
     <Card>
       <CardHeader title="Idle funds · Earn" description="Recommendation only — never executed" icon={<PiggyBank />} action={<Badge tone="muted">Advisory</Badge>} />
       <CardBody className="space-y-3">
         <div className="grid grid-cols-2 gap-4">
-          <Stat size="sm" label="7-day run-rate" value={fmtUsdc(weekly, { unit: false })} sub="USDC spent" />
-          <Stat size="sm" label="Idle beyond 2 weeks" value={fmtUsdc(idle, { unit: false })} sub="uncommitted" tone={idle >= 1_000_000_000 ? "good" : undefined} />
+          <Stat size="sm" label="7-day run-rate" value={fmtUsdc(weekly, { unit: false })} sub="USDC spent, excl. treasury moves" />
+          <Stat size="sm" label="Idle beyond 2 weeks" value={idle != null ? fmtUsdc(idle, { unit: false }) : "—"} sub={idle != null ? "wallet + Gateway balance" : "balances unavailable"} tone={idle != null && idle >= 1_000_000_000 ? "good" : undefined} />
         </div>
         <p className="text-[12px] leading-relaxed text-ink-2">
-          {idle >= 1_000_000_000 ? "GrowthOS would recommend placing part of this in a supported App Kit Earn vault — only with explicit founder approval." : "Not enough idle capital to justify moving funds."}
+          {idle == null ? "Needs live wallet and Gateway balances." : idle >= 1_000_000_000 ? "GrowthOS would recommend placing part of this in a supported App Kit Earn vault — only with explicit founder approval." : "Not enough idle capital to justify moving funds."}
         </p>
         <p className="text-[11.5px] leading-relaxed text-ink-3">GrowthOS never makes yield decisions autonomously; Circle’s Earn Kit is marked “coming soon”, so execution is not enabled in this build. Borrow is intentionally not built.</p>
       </CardBody>

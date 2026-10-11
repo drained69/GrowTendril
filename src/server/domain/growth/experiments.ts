@@ -1,4 +1,4 @@
-import { and, eq, inArray } from "drizzle-orm";
+import { and, asc, eq, inArray } from "drizzle-orm";
 import type { DB } from "@/server/db/client";
 import * as s from "@/server/db/schema";
 import { nextNumber } from "@/server/db/helpers";
@@ -7,9 +7,13 @@ import { fmtUsdc, microToDecimal, toMicro } from "@/lib/money";
 import { recordDecision, writeReceipt } from "@/server/domain/agent/decisions";
 import { experimentSpend, missionSpend } from "@/server/domain/agent/ledger";
 import { proposeFinancialAction, type ProposalOutcome } from "@/server/domain/agent/execute";
+import { isBlockedRecipient } from "@/server/domain/agent/policy";
 import type { Logger } from "@/server/domain/intel/analyze";
 import { utmSlug } from "@/server/domain/growth/attribution-links";
-import { ARC } from "@/server/integrations/circle/config";
+import { missionPerformance } from "@/server/domain/growth/attribution";
+import { cpa, type ExperimentPerformance } from "@/server/domain/growth/learning";
+import { ARC, IS_MAINNET } from "@/server/integrations/circle/config";
+import { getWallet, walletIsLive } from "@/server/integrations/circle/wallets";
 
 /**
  * STRATEGIST — turns an opportunity into a measurable experiment:
@@ -19,8 +23,80 @@ import { ARC } from "@/server/integrations/circle/config";
 
 export const DEMO_PAYOUT_FALLBACK = "0x000000000000000000000000000000000000dEaD";
 
-export function payoutAddressFor(kolPayout?: string | null): string {
-  return kolPayout ?? process.env.DEMO_PAYOUT_ADDRESS ?? process.env.SIGNALS_SELLER_ADDRESS ?? DEMO_PAYOUT_FALLBACK;
+/**
+ * Where a payment goes. The creator's own payout address always wins. A placeholder (DEMO_PAYOUT_ADDRESS,
+ * the bundled seller, or the burn address) is allowed only when `placeholderOk` — the payment will be
+ * SIMULATED in a DEMO workspace — so a real send can never reach it. Otherwise: null, nothing is proposed.
+ */
+export function payoutAddressFor(kolPayout: string | null | undefined, opts: { placeholderOk: boolean }): string | null {
+  if (kolPayout && !isBlockedRecipient(kolPayout)) return kolPayout;
+  if (!opts.placeholderOk) return null;
+  return process.env.DEMO_PAYOUT_ADDRESS || process.env.SIGNALS_SELLER_ADDRESS || DEMO_PAYOUT_FALLBACK;
+}
+
+type Experiment = typeof s.experiments.$inferSelect;
+type Tx = typeof s.transactions.$inferSelect;
+
+/** The payee for an experiment's payments, or why there is none. */
+export async function experimentPayee(db: DB, exp: Experiment) {
+  const [campaign] = await db.select().from(s.campaigns).where(eq(s.campaigns.experimentId, exp.id));
+  const kol = campaign?.kolId ? (await db.select().from(s.kols).where(eq(s.kols.id, campaign.kolId)))[0] : undefined;
+  const [project] = await db.select({ dataMode: s.projects.dataMode }).from(s.projects).where(eq(s.projects.id, exp.projectId));
+  const wallet = await getWallet(db, exp.projectId);
+  // DEMO workspaces simulate (no live wallet); a testnet DEMO wallet may still use the configured demo payee.
+  const placeholderOk = project?.dataMode === "DEMO" && (!walletIsLive(wallet) || !IS_MAINNET);
+  const recipient = payoutAddressFor(kol?.payoutAddress, { placeholderOk });
+  const placeholder = !!recipient && recipient !== kol?.payoutAddress;
+  const reason = recipient
+    ? null
+    : kol
+      ? `@${kol.handle} has no payout address — add one on the creator page before paying`
+      : `No payee for this ${exp.channel} experiment — GrowthOS only pays to a creator's saved payout address`;
+  return { kol, recipient, placeholder, reason };
+}
+
+const PAID: string[] = ["SUBMITTED", "SETTLED", "SIMULATED"];
+const DEAD: string[] = ["DENIED", "REJECTED"];
+
+/**
+ * Tranche bookkeeping for an experiment: which payments are tranche 1 and 2 (by payoutRef; older
+ * sends without one count in creation order), whether the stop condition has been hit, and whether
+ * the second tranche may be released.
+ */
+export async function trancheState(db: DB, exp: Experiment) {
+  const rows = await db
+    .select({ tx: s.transactions, action: s.agentDecisions.action })
+    .from(s.transactions)
+    .innerJoin(s.agentDecisions, eq(s.transactions.decisionId, s.agentDecisions.id))
+    .where(and(eq(s.transactions.experimentId, exp.id), eq(s.transactions.kind, "send")))
+    .orderBy(asc(s.transactions.createdAt));
+  const by: Record<1 | 2, Tx[]> = { 1: [], 2: [] };
+  rows.forEach((r, i) => {
+    const ref = (r.action as { payoutRef?: string }).payoutRef;
+    by[ref === "tranche:2" || (!ref && i > 0) ? 2 : 1].push(r.tx);
+  });
+  const pick = (list: Tx[]) => [...list].reverse().find((t) => !DEAD.includes(t.state)) ?? list[list.length - 1] ?? null;
+  const first = pick(by[1]);
+  const second = pick(by[2]);
+
+  const perf: ExperimentPerformance | undefined = (await missionPerformance(db, exp.missionId)).find((x) => x.experimentId === exp.id);
+  const spent = perf?.spentMicro ?? 0;
+  const c = perf ? cpa(perf.spentMicro, perf.conversions) : null;
+  const stopHit = (exp.outcome as { verdict?: string } | null)?.verdict === "STOP" || (spent >= exp.stopAfterSpendMicro && (c == null || c > exp.stopMaxCpaMicro));
+  const secondAmount = exp.budgetMicro - exp.stopAfterSpendMicro;
+  const secondBlockedReason =
+    exp.status !== "running"
+      ? `Experiment is ${exp.status.replace(/_/g, " ")} — the second tranche is only released while it runs`
+      : !first || !PAID.includes(first.state)
+        ? "The first tranche has not been paid"
+        : second && !DEAD.includes(second.state)
+          ? `Second tranche already ${second.state.toLowerCase().replace(/_/g, " ")}`
+          : stopHit
+            ? `Stop condition hit: CPA ${c == null ? "∞ (no conversions)" : fmtUsdc(c)} > ${fmtUsdc(exp.stopMaxCpaMicro)} after ${fmtUsdc(spent)} — second tranche withheld`
+            : secondAmount <= 0
+              ? "No budget left for a second tranche"
+              : null;
+  return { first, second, perf, cpaMicro: c, stopHit, secondAmountMicro: secondAmount, canReleaseSecond: !secondBlockedReason, secondBlockedReason };
 }
 
 export async function createExperimentFromOpportunity(db: DB, p: { projectId: string; opportunityId: string; runId?: string | null; log?: Logger; budgetMicro?: number }) {
@@ -149,6 +225,7 @@ export async function createExperimentFromOpportunity(db: DB, p: { projectId: st
     destinationUrl: dest,
   });
   await db.update(s.opportunities).set({ status: "experiment", updatedAt: new Date() }).where(eq(s.opportunities.id, opp.id));
+  if (kol) await db.update(s.kols).set({ status: "engaged", updatedAt: new Date() }).where(eq(s.kols.id, kol.id));
 
   const d = await recordDecision(db, {
     projectId: p.projectId,
@@ -167,40 +244,60 @@ export async function createExperimentFromOpportunity(db: DB, p: { projectId: st
   return exp;
 }
 
-/** Launch: pay the first tranche (50% of budget) through the policy engine. */
-export async function launchExperiment(db: DB, p: { projectId: string; experimentId: string; runId?: string | null; log?: Logger; tranche?: "first" | "second" }): Promise<ProposalOutcome> {
-  const [exp] = await db.select().from(s.experiments).where(eq(s.experiments.id, p.experimentId));
+/**
+ * Launch: pay the first tranche (stopAfterSpend) through the policy engine; later, the second tranche
+ * (the rest of the budget) only while running, after tranche 1 is paid and the stop condition is not hit.
+ * Nothing is proposed — and no decision recorded — when there is no valid payee.
+ */
+export type LaunchOutcome = Omit<ProposalOutcome, "decisionId"> & { decisionId: string | null };
+
+export async function launchExperiment(db: DB, p: { projectId: string; experimentId: string; runId?: string | null; log?: Logger; tranche?: "first" | "second" }): Promise<LaunchOutcome> {
+  const log = p.log ?? (() => {});
+  const [exp] = await db.select().from(s.experiments).where(and(eq(s.experiments.id, p.experimentId), eq(s.experiments.projectId, p.projectId)));
   if (!exp) throw new Error("experiment not found");
-  const [campaign] = await db.select().from(s.campaigns).where(eq(s.campaigns.experimentId, exp.id));
-  const kol = campaign?.kolId ? (await db.select().from(s.kols).where(eq(s.kols.id, campaign.kolId)))[0] : undefined;
+  const second = p.tranche === "second";
+  const blocked = (state: string, message: string): LaunchOutcome => {
+    log("operator", `Experiment #${exp.number}: ${message}`);
+    return { decisionId: null, verdict: "NOT_PROPOSED", state, message };
+  };
+  if (second) {
+    const ts = await trancheState(db, exp);
+    if (ts.secondBlockedReason) return blocked("BLOCKED", ts.secondBlockedReason);
+  } else if (exp.status !== "proposed") return blocked("BLOCKED", `Experiment is ${exp.status.replace(/_/g, " ")} — only a proposed experiment can be launched`);
+
+  const payee = await experimentPayee(db, exp);
+  if (!payee.recipient) return blocked("NO_RECIPIENT", payee.reason!);
+  const kol = payee.kol;
   const [opp] = exp.opportunityId ? await db.select().from(s.opportunities).where(eq(s.opportunities.id, exp.opportunityId)) : [];
   const evidence = exp.evidenceIds.length ? await db.select().from(s.evidence).where(inArray(s.evidence.id, exp.evidenceIds)) : [];
-  const amount = p.tranche === "second" ? exp.budgetMicro - exp.stopAfterSpendMicro : exp.stopAfterSpendMicro;
+  const amount = second ? exp.budgetMicro - exp.stopAfterSpendMicro : exp.stopAfterSpendMicro;
   const purpose = exp.channel === "kol" ? "kol_payment" : exp.channel === "bounty" ? "developer_bounty" : exp.channel === "community" ? "partner_incentive" : "campaign_payment";
   const res = await proposeFinancialAction(db, {
     projectId: p.projectId,
     runId: p.runId,
     agent: "operator",
-    title: exp.channel === "kol" ? `KOL campaign — @${kol?.handle}` : exp.title,
+    title: `${exp.channel === "kol" ? `KOL campaign — @${kol?.handle}` : exp.title}${second ? " (tranche 2)" : ""}`,
     input: {
       action: "send_payment",
       purpose,
-      recipient: payoutAddressFor(kol?.payoutAddress),
+      recipient: payee.recipient,
       amount: microToDecimal(amount),
       currency: "USDC",
       chain: ARC.appKitChain,
       experimentId: exp.id,
+      payoutRef: second ? "tranche:2" : "tranche:1",
       reasonCode: exp.channel === "kol" ? "PAY_CREATOR" : exp.channel === "bounty" ? "PAY_BOUNTY" : "RUN_EXPERIMENT",
       expectedValue: opp?.expectedValue === "HIGH" ? "high" : opp?.expectedValue === "LOW" ? "low" : "medium",
       missionId: exp.missionId,
       confidence: opp?.confidence ?? 0.7,
     },
-    rationale: `${p.tranche === "second" ? "Second" : "First"} tranche for experiment #${exp.number}: ${exp.hypothesis}`,
-    reasons: [...(opp?.whyNow ?? []).slice(0, 3), `Stop condition: CPA > ${fmtUsdc(exp.stopMaxCpaMicro)} after ${fmtUsdc(exp.stopAfterSpendMicro)}`],
+    rationale: `${second ? "Second" : "First"} tranche for experiment #${exp.number}: ${exp.hypothesis}`,
+    reasons: [...(opp?.whyNow ?? []).slice(0, 3), `Stop condition: CPA > ${fmtUsdc(exp.stopMaxCpaMicro)} after ${fmtUsdc(exp.stopAfterSpendMicro)}`, ...(payee.placeholder ? ["DEMO placeholder payee — the payment is simulated"] : [])],
     expectedOutcome: `${exp.successTarget}+ ${exp.successEvent.replace(/_/g, " ")} (${exp.target})`,
     evidence: evidence.slice(0, 5).map((e) => ({ url: e.sourceUrl, title: e.sourceTitle ?? e.excerpt.slice(0, 80) })),
     log: p.log,
   });
-  if (res.state === "AWAITING_APPROVAL") await db.update(s.experiments).set({ status: "awaiting_approval", updatedAt: new Date() }).where(eq(s.experiments.id, exp.id));
+  // A running experiment stays running while its second tranche waits for approval.
+  if (!second && res.state === "AWAITING_APPROVAL") await db.update(s.experiments).set({ status: "awaiting_approval", updatedAt: new Date() }).where(eq(s.experiments.id, exp.id));
   return res;
 }

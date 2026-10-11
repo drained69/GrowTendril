@@ -24,7 +24,7 @@ const GRANTS: Record<Role, Permission[]> = {
 
 export const ROLE_LABEL: Record<Role, string> = { owner: "Owner", admin: "Admin", member: "Member", viewer: "Viewer" };
 export const ROLE_HELP: Record<Role, string> = {
-  owner: "Everything, including deleting the workspace and transferring ownership.",
+  owner: "Everything, including deleting the workspace and granting the owner role to others.",
   admin: "Approves spend, edits policy, manages the wallet, integrations and members.",
   member: "Runs the agent and experiments within policy. Cannot approve spend.",
   viewer: "Read-only access to intelligence, experiments and receipts.",

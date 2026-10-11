@@ -5,7 +5,7 @@ import { ArrowRight, Beaker, CreditCard, FileText, Gauge, Link2, Play, Rocket, S
 import { requireProject } from "@/server/auth/current";
 import { can } from "@/server/auth/access";
 import { schema as s } from "@/server/db/client";
-import { experimentSpend } from "@/server/domain/agent/ledger";
+import { experimentPayee, trancheState } from "@/server/domain/growth/experiments";
 import { buildUtmUrl, EVENT_LABEL, type ConversionEventType } from "@/server/domain/growth/attribution-links";
 import { txExplorerUrl } from "@/server/integrations/circle/config";
 import { launchExperimentAction } from "@/server/actions/growth";
@@ -23,24 +23,31 @@ export default async function Experiment({ params }: { params: Promise<{ id: str
   const { project, role, db } = await requireProject();
   const [x] = await db.select().from(s.experiments).where(and(eq(s.experiments.id, id), eq(s.experiments.projectId, project.id)));
   if (!x) notFound();
-  const [[camp], spent, txs, funnel, ev] = await Promise.all([
+  const [[camp], ts, payee, [mission], txs, funnel, ev] = await Promise.all([
     db.select().from(s.campaigns).where(eq(s.campaigns.experimentId, x.id)),
-    experimentSpend(db, x.id),
+    trancheState(db, x),
+    experimentPayee(db, x),
+    db.select({ goalEvent: s.missions.goalEvent }).from(s.missions).where(eq(s.missions.id, x.missionId)),
     db.select().from(s.transactions).where(and(eq(s.transactions.experimentId, x.id), eq(s.transactions.projectId, project.id))).orderBy(desc(s.transactions.createdAt)),
     db
-      .select({ type: s.conversionEvents.eventType, n: sql<number>`count(*)::int` })
+      .select({ type: s.conversionEvents.eventType, n: sql<number>`count(distinct coalesce(${s.conversionEvents.visitorId}, ${s.conversionEvents.id}))::int` })
       .from(s.attribution)
       .innerJoin(s.conversionEvents, eq(s.attribution.conversionEventId, s.conversionEvents.id))
       .where(eq(s.attribution.experimentId, x.id))
       .groupBy(s.conversionEvents.eventType),
     x.evidenceIds.length ? db.select().from(s.evidence).where(and(inArray(s.evidence.id, x.evidenceIds), eq(s.evidence.projectId, project.id))) : Promise.resolve([]),
   ]);
-  const conv = funnel.find((f) => f.type === x.successEvent)?.n ?? 0;
+  // Same measurement as the experiments list and the learning engine: committed spend from the ledger,
+  // distinct visitors who completed the mission's goal event via this experiment's referral code.
+  const goalEvent = mission?.goalEvent ?? x.successEvent;
+  const spent = ts.perf?.spentMicro ?? 0;
+  const conv = ts.perf?.conversions ?? 0;
+  const cpa = ts.cpaMicro;
   const link = camp ? buildUtmUrl(camp.destinationUrl, { source: camp.utmSource, medium: camp.utmMedium, campaign: camp.utmCampaign, ref: camp.referralCode }) : null;
-  const firstPaid = txs.some((t) => t.state !== "REJECTED" && t.state !== "DENIED" && t.state !== "FAILED");
   const operate = can(role, "operate");
-  const cpa = conv ? Math.round(spent / conv) : null;
-  const overStop = cpa != null && spent >= x.stopAfterSpendMicro && cpa > x.stopMaxCpaMicro;
+  const overStop = spent >= x.stopAfterSpendMicro && ts.stopHit;
+  const canLaunch = operate && x.status === "proposed" && !!payee.recipient;
+  const canSecond = operate && ts.canReleaseSecond;
   const outcome = x.outcome as { reason?: string; verdict?: string } | null;
 
   return (
@@ -71,8 +78,8 @@ export default async function Experiment({ params }: { params: Promise<{ id: str
                 Creator brief
               </LinkButton>
             )}
-            {operate && x.status === "proposed" && <ActionButton action={launchExperimentAction.bind(null, x.id, "first")} label="Launch — pay first tranche" icon={<Rocket />} variant="primary" logTitle="Launch experiment" />}
-            {operate && x.status === "running" && firstPaid && <ActionButton action={launchExperimentAction.bind(null, x.id, "second")} label="Release second tranche" icon={<Play />} logTitle="Second tranche" />}
+            {canLaunch && <ActionButton action={launchExperimentAction.bind(null, x.id, "first")} label="Launch — pay first tranche" icon={<Rocket />} variant="primary" logTitle="Launch experiment" />}
+            {canSecond && <ActionButton action={launchExperimentAction.bind(null, x.id, "second")} label="Release second tranche" icon={<Play />} logTitle="Second tranche" />}
           </>
         }
       />
@@ -83,8 +90,8 @@ export default async function Experiment({ params }: { params: Promise<{ id: str
             <CardHeader title="Measured result" description="Spend from the ledger; conversions from attribution" icon={<Gauge />} action={outcome?.verdict ? <Badge tone={outcome.verdict === "SCALE" ? "good" : outcome.verdict === "STOP" || outcome.verdict === "REDUCE" ? "bad" : "neutral"}>{outcome.verdict}</Badge> : undefined} />
             <CardBody className="space-y-4">
               <div className="grid grid-cols-2 gap-4 sm:grid-cols-4">
-                <Stat label="Spent" value={fmtUsdc(spent, { unit: false })} sub={`of ${fmtUsdc(x.budgetMicro, { unit: false })} USDC`} />
-                <Stat label="Conversions" value={conv} sub={EVENT_LABEL[x.successEvent as ConversionEventType] ?? x.successEvent} />
+                <Stat label="Spent" value={fmtUsdc(spent, { unit: false })} sub={`committed, of ${fmtUsdc(x.budgetMicro, { unit: false })} USDC`} />
+                <Stat label="Conversions" value={conv} sub={`${EVENT_LABEL[goalEvent as ConversionEventType] ?? goalEvent} · unique`} />
                 <Stat label="CPA" value={cpa != null ? fmtUsdc(cpa, { unit: false }) : "—"} sub={`stop above ${fmtUsdc(x.stopMaxCpaMicro, { unit: false })}`} tone={overStop ? "bad" : undefined} />
                 <Stat label="vs target" value={`${conv}/${x.successTarget}`} sub={`${Math.round((conv / Math.max(1, x.successTarget)) * 100)}% of goal`} tone={conv >= x.successTarget ? "good" : undefined} />
               </div>
@@ -99,7 +106,7 @@ export default async function Experiment({ params }: { params: Promise<{ id: str
               {funnel.length > 0 ? (
                 <div className="flex flex-wrap gap-1.5">
                   {funnel.map((f) => (
-                    <Badge key={f.type} tone={f.type === x.successEvent ? "info" : "neutral"}>
+                    <Badge key={f.type} tone={f.type === goalEvent ? "info" : "neutral"}>
                       {EVENT_LABEL[f.type as ConversionEventType] ?? f.type} <span className="num">{f.n}</span>
                     </Badge>
                   ))}
@@ -139,6 +146,7 @@ export default async function Experiment({ params }: { params: Promise<{ id: str
               <Table>
                 <thead>
                   <tr>
+                    <th>Tranche</th>
                     <th>Rail</th>
                     <th className="text-right">Amount</th>
                     <th>State</th>
@@ -150,6 +158,7 @@ export default async function Experiment({ params }: { params: Promise<{ id: str
                 <tbody>
                   {txs.map((t) => (
                     <tr key={t.id}>
+                      <td className="num text-ink-3">{t.id === ts.first?.id ? "1" : t.id === ts.second?.id ? "2" : "—"}</td>
                       <td className="whitespace-nowrap">{RAIL[t.rail] ?? t.rail}</td>
                       <td className="num text-right">{fmtUsdc(t.amountMicro)}</td>
                       <td>
@@ -240,18 +249,29 @@ export default async function Experiment({ params }: { params: Promise<{ id: str
           <Card>
             <CardHeader title="Run" icon={<Rocket />} />
             <CardBody className="space-y-3">
-              {operate ? (
-                x.status === "proposed" ? (
-                  <ActionButton action={launchExperimentAction.bind(null, x.id, "first")} label="Launch — pay first tranche" icon={<Rocket />} variant="primary" logTitle="Launch experiment" className="w-full" />
-                ) : x.status === "running" && firstPaid ? (
-                  <ActionButton action={launchExperimentAction.bind(null, x.id, "second")} label="Release second tranche" icon={<Play />} logTitle="Second tranche" className="w-full" />
-                ) : (
-                  <p className="text-[12.5px] text-ink-3">Nothing to run — the experiment is {x.status.replace(/_/g, " ")}.</p>
-                )
-              ) : (
+              {x.status === "proposed" || x.status === "running" ? (
+                <KeyValue
+                  items={[
+                    { k: "Payee", v: payee.recipient ? <span className="num break-all text-[11.5px]">{payee.recipient}{payee.placeholder ? " (DEMO placeholder — simulated)" : ""}</span> : <span className="text-critical">none</span> },
+                    { k: "Tranche 1", v: ts.first ? <TxStateBadge state={ts.first.state} /> : <span className="num">{fmtUsdc(x.stopAfterSpendMicro)}</span> },
+                    { k: "Tranche 2", v: ts.second ? <TxStateBadge state={ts.second.state} /> : <span className="num">{fmtUsdc(ts.secondAmountMicro)}</span> },
+                  ]}
+                />
+              ) : null}
+              {!operate ? (
                 <p className="text-[12.5px] text-ink-3">Viewers can’t launch experiments.</p>
+              ) : x.status === "proposed" ? (
+                canLaunch ? (
+                  <ActionButton action={launchExperimentAction.bind(null, x.id, "first")} label="Launch — pay first tranche" icon={<Rocket />} variant="primary" logTitle="Launch experiment" className="w-full" />
+                ) : (
+                  <p className="text-[12.5px] text-critical">{payee.reason}</p>
+                )
+              ) : canSecond ? (
+                <ActionButton action={launchExperimentAction.bind(null, x.id, "second")} label="Release second tranche" icon={<Play />} logTitle="Second tranche" className="w-full" />
+              ) : (
+                <p className="text-[12.5px] text-ink-3">{x.status === "running" ? ts.secondBlockedReason : `Nothing to run — the experiment is ${x.status.replace(/_/g, " ")}.`}</p>
               )}
-              <p className="text-[11.5px] leading-relaxed text-ink-3">Payments go through Zod → policy engine → (approval) → App Kit. Tranche 1 is the amount at risk before the stop condition is evaluated.</p>
+              <p className="text-[11.5px] leading-relaxed text-ink-3">Payments go through Zod → policy engine → (approval) → App Kit. Tranche 1 is the amount at risk before the stop condition is evaluated; tranche 2 is released only if it is not hit, and each tranche can be paid once.</p>
             </CardBody>
           </Card>
         </div>

@@ -10,7 +10,8 @@ import { missionSpend, experimentSpend } from "@/server/domain/agent/ledger";
 import { proposeFinancialAction, type ProposalOutcome } from "@/server/domain/agent/execute";
 import { EVENT_LABEL, utmSlug, type ConversionEventType } from "@/server/domain/growth/attribution-links";
 import { ARC } from "@/server/integrations/circle/config";
-import { capReward, detectDisclosure, normalizeHandle, PLATFORM_LABEL, planCampaign, qualityScore, validPostUrl } from "@/server/domain/growth/campaign-plan";
+import { capReward, detectDisclosure, normalizeHandle, PLATFORM_LABEL, planCampaign, qualityScore, releaseToWinners, validPostUrl } from "@/server/domain/growth/campaign-plan";
+import { getEconomics, planRules } from "@/server/domain/growth/economics";
 
 /**
  * CREATOR CAMPAIGNS — opt-in, measurable creator programs.
@@ -34,6 +35,7 @@ const RETURNED = ["DENIED", "REJECTED", "FAILED"];
 export const ATTRIBUTION_GRACE_DAYS = 7;
 
 const token = () => randomBytes(24).toString("base64url");
+export const ceilingOf = (c: Campaign, p: Participant) => p.ceilingMicro ?? c.creatorCapMicro;
 const isOpen = (c: Campaign, now = Date.now()) => c.status === "open" && now >= c.startsAt.getTime() && now <= c.endsAt.getTime();
 
 export async function getCampaign(db: DB, projectId: string, id: string) {
@@ -77,7 +79,8 @@ export async function createCampaign(db: DB, a: CreateCampaignInput): Promise<Ca
   const room = await missionRoom(db, mission);
   if (a.budgetMicro > room) throw new Error(`The mission has ${fmtUsdc(room)} unreserved — lower the test budget or raise the mission budget`);
   if (a.maxCostPerActionMicro > a.budgetMicro) throw new Error("The test budget must cover at least one action");
-  const plan = planCampaign({ budgetMicro: a.budgetMicro, maxCostPerActionMicro: a.maxCostPerActionMicro, days: a.days, postsPerCreator: a.postsPerCreator, creators: a.creators, actionLabel: EVENT_LABEL[a.targetEvent]?.toLowerCase() });
+  const econ = await getEconomics(db, a.projectId);
+  const plan = planCampaign({ budgetMicro: a.budgetMicro, maxCostPerActionMicro: a.maxCostPerActionMicro, days: a.days, postsPerCreator: a.postsPerCreator, creators: a.creators, actionLabel: EVENT_LABEL[a.targetEvent]?.toLowerCase(), rules: planRules(econ.values), rulesSource: econ.saved ? "setting" : "starting" });
   const now = new Date();
   const ends = new Date(now.getTime() + plan.days * DAY_MS);
   const dataMode = project.dataMode === "DEMO" ? "DEMO" : "LIVE";
@@ -132,6 +135,8 @@ export async function createCampaign(db: DB, a: CreateCampaignInput): Promise<Ca
       disclosureText: a.disclosureText,
       platforms: a.platforms,
       plan: plan as unknown as Record<string, unknown>,
+      releasedMicro: plan.testPhaseMicro,
+      holdbackDays: plan.holdbackDays,
       joinToken: token(),
       startsAt: now,
       endsAt: ends,
@@ -312,9 +317,11 @@ async function accrue(db: DB, c: Campaign, p: Participant, r: { kind: "post" | "
   const [dupe] = await db.select().from(s.campaignRewards).where(and(eq(s.campaignRewards.campaignId, c.id), eq(s.campaignRewards.sourceKey, r.sourceKey)));
   if (dupe && !dupe.voidedAt) return null; // already credited
   const totals = await earnedTotals(db, c.id, p.id);
-  const cap = capReward(r.amountMicro, { creatorEarnedMicro: totals.creator, creatorCapMicro: c.creatorCapMicro, campaignEarnedMicro: totals.campaign, budgetMicro: c.budgetMicro });
+  const ceiling = ceilingOf(c, p);
+  // Only released budget can be earned; the held part waits for results-based release.
+  const cap = capReward(r.amountMicro, { creatorEarnedMicro: totals.creator, creatorCapMicro: ceiling, campaignEarnedMicro: totals.campaign, budgetMicro: Math.min(c.budgetMicro, c.releasedMicro) });
   if (cap.amountMicro <= 0) return null;
-  const reason = cap.capped ? `${r.reason} — reduced to ${fmtUsdc(cap.amountMicro)} by the ${cap.capped === "creator" ? `${fmtUsdc(c.creatorCapMicro)} per-creator ceiling` : "campaign budget"}` : r.reason;
+  const reason = cap.capped ? `${r.reason} — reduced to ${fmtUsdc(cap.amountMicro)} by the ${cap.capped === "creator" ? `${fmtUsdc(ceiling)} ceiling for this creator` : "budget released so far"}` : r.reason;
   if (dupe) {
     const [row] = await db.update(s.campaignRewards).set({ amountMicro: cap.amountMicro, reason, evidence: r.evidence, voidedAt: null, voidReason: null, payoutId: null }).where(eq(s.campaignRewards.id, dupe.id)).returning();
     return row;
@@ -428,7 +435,7 @@ export async function syncProjectCampaigns(db: DB, projectId: string): Promise<n
 
 // ───────────────────────────── ledger ─────────────────────────────
 
-export type RewardState = "earned" | "in_payout" | "paid" | "simulated" | "void";
+export type RewardState = "holding" | "earned" | "in_payout" | "paid" | "simulated" | "void";
 
 export interface LedgerLine extends Reward {
   state: RewardState;
@@ -439,6 +446,9 @@ export interface LedgerLine extends Reward {
 
 export interface CreatorLedger {
   participant: Participant;
+  ceilingMicro: number;
+  /** Verified actions still inside the holdback period — earned, not yet payable. */
+  holdingMicro: number;
   earnedMicro: number;
   inPayoutMicro: number;
   paidMicro: number;
@@ -451,6 +461,12 @@ export interface CreatorLedger {
 
 export interface CampaignLedger {
   budgetMicro: number;
+  /** Released to creator ceilings so far (test phase + results-based releases). */
+  releasedMicro: number;
+  /** Not yet released — waits for creators whose measured cost per action beats the ceiling. */
+  heldForResultsMicro: number;
+  /** Verified actions inside the holdback period. Included in verifiedMicro. */
+  holdingMicro: number;
   /** Paid out on-chain (submitted or settled). */
   paidMicro: number;
   /** Earned from verified results (accepted posts, rated discussion, attributed actions) and not yet paid. */
@@ -460,9 +476,16 @@ export interface CampaignLedger {
   simulatedMicro: number;
   /** Held for accepted creators up to their ceilings, not yet earned. */
   reservedMicro: number;
-  /** Not committed to anyone. */
+  /** Released but not committed to anyone. */
   availableMicro: number;
   creators: CreatorLedger[];
+}
+
+/** A verified action becomes payable only after the campaign's holdback period. */
+export function inHoldback(c: Campaign, r: Pick<Reward, "kind" | "evidence" | "createdAt">, now = Date.now()): boolean {
+  if (r.kind !== "action" || c.holdbackDays <= 0) return false;
+  const at = r.evidence.occurredAt ? new Date(r.evidence.occurredAt).getTime() : r.createdAt.getTime();
+  return at + c.holdbackDays * DAY_MS > now;
 }
 
 export async function campaignLedger(db: DB, c: Campaign): Promise<CampaignLedger> {
@@ -479,7 +502,7 @@ export async function campaignLedger(db: DB, c: Campaign): Promise<CampaignLedge
     txState: txState ?? null,
     txHash: txHash ?? null,
     explorerUrl: explorerUrl ?? null,
-    state: r.voidedAt ? "void" : !txState || RETURNED.includes(txState) ? "earned" : PAID.includes(txState) ? "paid" : txState === "SIMULATED" ? "simulated" : IN_FLIGHT.includes(txState) ? "in_payout" : "earned",
+    state: r.voidedAt ? "void" : !txState || RETURNED.includes(txState) ? (inHoldback(c, r) ? "holding" : "earned") : PAID.includes(txState) ? "paid" : txState === "SIMULATED" ? "simulated" : IN_FLIGHT.includes(txState) ? "in_payout" : "earned",
   }));
   const posts = await db.select({ participantId: s.campaignPosts.participantId, status: s.campaignPosts.status }).from(s.campaignPosts).where(eq(s.campaignPosts.campaignId, c.id));
   const sum = (ls: LedgerLine[], st: RewardState) => ls.filter((l) => l.state === st).reduce((a, l) => a + l.amountMicro, 0);
@@ -489,23 +512,39 @@ export async function campaignLedger(db: DB, c: Campaign): Promise<CampaignLedge
     const total = live.reduce((a, l) => a + l.amountMicro, 0);
     return {
       participant: p,
+      ceilingMicro: ceilingOf(c, p),
+      holdingMicro: sum(ls, "holding"),
       earnedMicro: sum(ls, "earned"),
       inPayoutMicro: sum(ls, "in_payout"),
       paidMicro: sum(ls, "paid"),
       simulatedMicro: sum(ls, "simulated"),
-      remainingCapMicro: p.status === "accepted" ? Math.max(0, c.creatorCapMicro - total) : 0,
+      remainingCapMicro: p.status === "accepted" ? Math.max(0, ceilingOf(c, p) - total) : 0,
       acceptedPosts: posts.filter((x) => x.participantId === p.id && x.status === "accepted").length,
       actions: live.filter((l) => l.kind === "action").length,
       lines: ls,
     };
   });
   const paid = sum(lines, "paid");
+  const holding = sum(lines, "holding");
   const earned = sum(lines, "earned");
   const inPayout = sum(lines, "in_payout");
   const simulated = sum(lines, "simulated");
-  const allocated = paid + earned + inPayout + simulated;
-  const reserved = Math.min(Math.max(0, c.budgetMicro - allocated), c.status === "open" ? creators.reduce((a, x) => a + x.remainingCapMicro, 0) : 0);
-  return { budgetMicro: c.budgetMicro, paidMicro: paid, verifiedMicro: earned + inPayout, inPayoutMicro: inPayout, simulatedMicro: simulated, reservedMicro: reserved, availableMicro: Math.max(0, c.budgetMicro - allocated - reserved), creators };
+  const allocated = paid + holding + earned + inPayout + simulated;
+  const released = Math.min(c.budgetMicro, c.releasedMicro);
+  const reserved = Math.min(Math.max(0, released - allocated), c.status === "open" ? creators.reduce((a, x) => a + x.remainingCapMicro, 0) : 0);
+  return {
+    budgetMicro: c.budgetMicro,
+    releasedMicro: released,
+    heldForResultsMicro: c.status === "open" ? Math.max(0, c.budgetMicro - released) : 0,
+    holdingMicro: holding,
+    paidMicro: paid,
+    verifiedMicro: holding + earned + inPayout,
+    inPayoutMicro: inPayout,
+    simulatedMicro: simulated,
+    reservedMicro: reserved,
+    availableMicro: Math.max(0, released - allocated - reserved),
+    creators,
+  };
 }
 
 // ───────────────────────────── payouts ─────────────────────────────
@@ -521,7 +560,7 @@ export async function proposePayout(db: DB, a: { projectId: string; campaignId: 
   const mine = ledger.creators.find((x) => x.participant.id === p.id);
   const eligible = (mine?.lines ?? []).filter((l) => l.state === "earned");
   const amount = eligible.reduce((x, l) => x + l.amountMicro, 0);
-  if (amount <= 0) throw new Error("Nothing earned is waiting to be paid");
+  if (amount <= 0) throw new Error(mine && mine.holdingMicro > 0 ? `Nothing payable yet — ${fmtUsdc(mine.holdingMicro)} is inside the ${c.holdbackDays}-day holdback` : "Nothing earned is waiting to be paid");
   const [exp] = await db.select().from(s.experiments).where(eq(s.experiments.id, c.experimentId));
   const payoutId = newId();
   await db.insert(s.campaignPayouts).values({ id: payoutId, campaignId: c.id, participantId: p.id, amountMicro: amount, requestedBy: a.userId });
@@ -592,3 +631,43 @@ export async function observedMindshare(db: DB, c: Campaign, participants: Parti
 }
 
 export { PLATFORM_LABEL };
+
+// ───────────────────────────── results-based release ─────────────────────────────
+
+/**
+ * Release held budget to creators whose measured cost per action beats the ceiling, in proportion
+ * to their verified actions. Raises their ceilings; never pays anyone directly.
+ */
+export async function releaseHeldBudget(db: DB, a: { projectId: string; campaignId: string; userId: string }) {
+  const c = await getCampaign(db, a.projectId, a.campaignId);
+  if (!c) throw new Error("Campaign not found");
+  if (c.status !== "open") throw new Error("The campaign is closed");
+  await syncActionRewards(db, c);
+  const ledger = await campaignLedger(db, c);
+  const held = ledger.heldForResultsMicro;
+  if (held <= 0) throw new Error("The whole budget is already released");
+  const minActions = Number((c.plan as { rules?: { minActionsPerCreator?: number } }).rules?.minActionsPerCreator ?? 3);
+  const accepted = ledger.creators.filter((x) => x.participant.status === "accepted");
+  const { grants, skipped } = releaseToWinners({
+    heldMicro: held,
+    maxCostPerActionMicro: c.maxCostPerActionMicro,
+    minActions,
+    creators: accepted.map((x) => ({ id: x.participant.id, handle: x.participant.handle, earnedMicro: x.lines.filter((l) => l.state !== "void").reduce((s2, l) => s2 + l.amountMicro, 0), actions: x.actions })),
+  });
+  if (!grants.length) return { released: 0, grants, skipped };
+  let released = 0;
+  for (const g of grants) {
+    const cur = accepted.find((x) => x.participant.id === g.id)!;
+    await db.update(s.campaignParticipants).set({ ceilingMicro: cur.ceilingMicro + g.amountMicro }).where(eq(s.campaignParticipants.id, g.id));
+    released += g.amountMicro;
+  }
+  await db.update(s.creatorCampaigns).set({ releasedMicro: c.releasedMicro + released, updatedAt: new Date() }).where(eq(s.creatorCampaigns.id, c.id));
+  await audit(db, { projectId: a.projectId, actorType: "user", actorId: a.userId, action: "campaign.release", target: c.id, data: { released, grants, skipped } });
+  return { released, grants, skipped };
+}
+
+/** Recent release decisions, newest first, from the audit log. */
+export async function releaseHistory(db: DB, c: Campaign) {
+  const rows = await db.select().from(s.auditLogs).where(and(eq(s.auditLogs.projectId, c.projectId), eq(s.auditLogs.action, "campaign.release"), eq(s.auditLogs.target, c.id))).orderBy(desc(s.auditLogs.at)).limit(20);
+  return rows.map((r) => ({ at: r.at, data: r.data as { released: number; grants: { id: string; amountMicro: number; reason: string }[]; skipped: { id: string; reason: string }[] } }));
+}
