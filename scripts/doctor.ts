@@ -11,6 +11,10 @@
  * Nothing moves money unless you pass --deposit or --x402. Runs on an in-memory DB; your real data
  * is untouched. Honest by design: it never fabricates a result — a blocked host is reported as blocked.
  */
+import { loadedEnv } from "./env";
+
+// The doctor writes scratch rows, so it always uses a throwaway in-memory database, never DATABASE_URL.
+delete process.env.DATABASE_URL;
 process.env.PGLITE_DIR = "memory://";
 process.env.ENCRYPTION_KEY ??= "00".repeat(32); // scratch DB only; no real secrets are read from it
 
@@ -46,7 +50,7 @@ async function main() {
   const net = networkInfo();
   console.log(`\nGrowTendril money-path doctor — ${net.name} (chain ${net.chainId})`);
   if (net.mainnet) console.log(`${Y}  MAINNET: real funds. --deposit and --x402 move real USDC.${X}`);
-  console.log(`${D}  Gateway API ${GATEWAY_API}\n  Arc RPC     ${ARC.rpcUrl}\n  Discovery   ${DISCOVERY_API}${X}\n`);
+  console.log(`${D}  env files    ${loadedEnv.length ? loadedEnv.join(", ") : "none found (using the shell environment only)"}\n  Gateway API ${GATEWAY_API}\n  Arc RPC     ${ARC.rpcUrl}\n  Discovery   ${DISCOVERY_API}${X}\n`);
 
   const custody = platformCustody();
   console.log("Configuration");

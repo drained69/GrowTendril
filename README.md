@@ -469,6 +469,8 @@ A Postgres-backed queue (`FOR UPDATE SKIP LOCKED`, leases, retries with backoff,
 
 Copy [`.env.example`](.env.example). Nothing is required to explore the demo. In production, set the first four rows.
 
+The web app, `npm run doctor`, `npm run wallet:setup`, `npm run worker` and `npm run signals` all read `.env` and `.env.local` from the project root (`npm run doctor` prints which files it loaded). Values already set in your shell take priority over the files.
+
 | Variable | Purpose |
 | --- | --- |
 | `SESSION_SECRET` | Signs sessions (32+ characters). Required in production |

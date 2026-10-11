@@ -5,6 +5,7 @@
  *   npm run wallet:setup -- --entity-secret   generate + register a Circle entity secret (needs CIRCLE_API_KEY)
  *   npm run wallet:setup -- --local           generate a throwaway TESTNET key for local development
  */
+import "./env";
 import { randomBytes } from "node:crypto";
 import { generatePrivateKey, privateKeyToAccount } from "viem/accounts";
 

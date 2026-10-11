@@ -8,6 +8,7 @@
  * Real entities are enriched from public APIs (GitHub, HN Algolia) at request time.
  * The fictional demo entities return fixtures tagged dataMode: "DEMO".
  */
+import "../../scripts/env";
 import express from "express";
 import { createGatewayMiddleware } from "@circle-fin/x402-batching/server";
 import { formatUnits } from "viem";
