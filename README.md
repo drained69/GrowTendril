@@ -363,7 +363,7 @@ cp .env.example .env.local     # everything optional for the demo
 npm run dev                    # web on :3000 + x402 seller on :4021
 ```
 
-Open http://localhost:3000 and click **SEE IT WORK**. No keys needed.
+Open http://localhost:3000 and click **See it work**. No keys needed.
 
 | Script | What it does |
 | --- | --- |
@@ -468,31 +468,38 @@ One setting switches the whole deployment: `GROWTHOS_NETWORK=mainnet` (default `
 
 ## Verification status
 
-What was verified in the build environment:
+**Verified in the build environment** (re-run in CI on every push):
 
-- `npm test`: all tests pass. They also cover the job queue (claiming, dedupe, retries and leases on an in-memory Postgres). They cover policy verdicts (allow / approval / deny, deny-after-approval), schema rejection of free-form and malformed actions, scoring, narrative lifecycle, issue gating, learning and reallocation on the spec's KOL A / KOL B / content example, HMAC, the state machine, rate limits, and an **offline x402 round-trip**. In that test, Circle's `BatchEvmScheme` signs against a mock seller using the exact `PAYMENT-REQUIRED` / `Payment-Signature` / `PAYMENT-RESPONSE` wire format, the EIP-712 signer is recovered, and over-price payments are refused.
-- `npm run typecheck` and `npm run build` are clean. The production server was smoke-tested.
-- The full demo loop, onboarding, signed event ingestion (valid / replay / tampered / stale) and tracked redirects were exercised in a real browser and with HTTP requests.
+- `npm run typecheck`, `npm test` (60 tests) and `npm run build` are clean, and the typecheck and tests also pass under `GROWTHOS_NETWORK=mainnet`.
+- The tests cover policy verdicts (allow / approval / deny, deny-after-approval, balance and recipient rules), schema rejection of free-form actions, scoring, narrative lifecycle, learning and reallocation, experiment tranches, HMAC and rate limits, roles and invites, encrypted credentials, SSRF-safe fetching, the job queue on a real (in-memory) Postgres, creator-campaign planning, rewards, holdback and release, and an **offline x402 round-trip** in which Circle's `BatchEvmScheme` signs against a mock seller using the exact `PAYMENT-REQUIRED` / `Payment-Signature` / `PAYMENT-RESPONSE` wire format.
+- `npm run demo:run` executes the full 8-step agent loop (detect → buy data over x402 → experiment → approval → re-check → App Kit send → conversions → learn → reallocate) end to end in simulation.
+- A browser pass over every page, the signup → onboarding → settings → campaign → public join flow, was done against a production build with no console or server errors.
+- Every `@circle-fin` call was compared with the installed SDK type declarations (method names, parameter shapes, response fields, decimals) and no mismatches were found. Two live-robustness gaps it surfaced (STUCK transactions, a missing Arc RPC URL) are fixed.
 
-**Not verified here:** live calls to Circle (Gateway facilitator, Discovery API, Wallets API), the Arc RPC, and the documentation sites. The build environment's network policy blocked those hosts. The bundled seller was confirmed to reach out to Circle's facilitator (`getSupported`) and be refused by the sandbox proxy. Live testnet settlement therefore still needs to be run on a networked machine with the steps above. GrowthOS records whatever actually happens and never fills the gap with fabricated data.
+**Not verified here:** the live calls themselves (Circle Wallets, Gateway, x402 settlement, Discovery API, Arc RPC). The build environment's network policy blocks those hosts, so nothing in this repo has moved real or test funds from here. `npm run doctor` exists to run each step against the real network on a machine that can reach them. The Agent Marketplace discovery response shape is the one call with no SDK to check against; if the live envelope differs, discovery returns no services and the bundled seller still works. GrowthOS records whatever actually happens and never fills the gap with fabricated data.
 
 ## Known limitations
 
-- **No live settlement in the build environment** (see above). The code paths follow Circle's SDKs and the organizer's example. First real-network runs may surface integration details (e.g. account-type requirements for Circle-signed EIP-712, exact `GetBalances` chain identifiers) that the SDK types alone can't reveal.
+- **Live money path not yet run.** See the verification section. Run `npm run doctor` (then `-- --provision`, `-- --deposit`, `-- --x402`) and a small real payment before raising spend limits.
 - **Provider coverage depends on credentials.** Without X, Reddit or YouTube keys, discovery uses GitHub and Hacker News (and RSS if configured). TikTok, Discord and Telegram are declared interfaces that report unavailable, because there's no permitted access path in this build.
 - **Entity resolution is conservative.** Companies come from explicit attribution (GitHub orgs, "Show HN"). Cross-platform creator identity is matched by handle and flagged *unverified*.
 - **Heuristic product analysis without Claude** leaves competitors and use cases for the founder to fill in, by design.
-- **Creator audience composition** has no permitted public source; GrowthOS reports `available: false` instead of estimating.
+- **Creator audience composition and mindshare.** There is no permitted public source for audience composition, so GrowthOS reports `available: false`. Campaign mindshare is *observed*: it counts only posts GrowthOS collected from connected sources, never every post.
+- **No outbound email.** Invites produce a one-time link to share, email addresses are not verified, and there is no password reset.
+- **Sessions are stateless**, so logout clears the cookie but a copied token stays valid until it expires.
 - **PGlite is single-process.** Use Postgres (`DATABASE_URL`) for multi-instance deployments and a separate `npm run worker`. The in-memory rate limiter is per-instance.
-- **No outbound email.** Invites produce a one-time link for the inviter to share.
 - **Batch-tx resolution** for x402 settlements is a timestamp heuristic, as in the organizer's example.
-- **Earn is recommendation-only. Borrow is not built.**
+- **Earn is recommendation-only. Borrow is not built.** The agent does not initiate bridges yet, though the policy engine supports them.
+- **Workspace deletion is blocked** while a workspace has an agent wallet or payments in flight, because no withdraw feature exists to recover funds first.
 
 ## Roadmap
 
-- Run and pin a live Arc Testnet settlement trace (snapshot the batch, as the organizer's example does).
+- Run and pin a live Arc settlement trace (snapshot the batch, as the organizer's example does) and check the Discovery API response shape.
+- Email delivery: verification, invites and password reset.
+- Revocable sessions, and a withdraw action so wallets can be emptied before a workspace is deleted.
 - Circle webhook subscriptions for wallet transactions, replacing polling for App Kit transfers.
-- A per-service reliability score learned from purchased-data outcomes (feeding the EVI model).
+- A per-service reliability score learned from purchased-data outcomes (feeding the value-of-information model).
 - Multi-touch attribution windows and holdout experiments.
+- Billing and plan limits per workspace; sign-in with Google or GitHub; two-factor authentication.
 - Discord and Telegram providers for communities that invite the bot.
 - Earn execution behind explicit founder policy once Earn Kit is GA, then campaign credit backed by attribution history.
