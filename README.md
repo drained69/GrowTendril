@@ -219,6 +219,13 @@ The campaign budget is reserved from the active mission and shown as **Paid** (o
 
 v1 is deliberately narrow: 5–10 creators, manual review of posts and payouts, one tracked action.
 
+**Budget follows results, with real figures.** Nothing is a fixed percentage guess:
+
+- **Settings → Economics** holds the project's own figures: what a customer is worth, gross margin, the share of margin to spend on acquisition, and the campaign-planning rules (test-phase share, fixed-pay cap, action-bonus share, min actions, max creators, holdback days). Every planner figure is labelled by where it came from — **measured** from the project's own events and ledger (with the sample size), the project's **setting**, or a **starting value** it hasn't reviewed. Missing inputs stay missing; no number is invented.
+- The suggested **max cost per action** = customer value × gross margin × action→customer rate × acquisition share. The action→customer rate is measured from conversion events once there are ≥ 30 linked actions, and the average customer value from ≥ 10 valued `purchase` events; until then the business's own estimate is used, and labelled as such.
+- **Staged release.** Only a test phase (default 50%) is released to creator ceilings at launch. The rest is **held**, and released later only to creators whose *measured* cost per verified action beats the ceiling, in proportion to their verified actions. Every release is audit-logged with the reason per creator.
+- **Holdback.** A verified action becomes payable only after a hold period (default 7 days), so fake or reversed actions can be caught before any payout. The ledger shows in-holdback vs payable separately.
+
 ## Growth missions
 
 Templates: **First 100 Developers**, **Find 20 Buyers**, **Own the Narrative**, **KOL Discovery**, each with a goal event, target, timeframe and budget split by category (research, services, KOLs, bounties, content, community). The mission result shows goal, achieved, attributed, budget, spent, cost per qualified conversion, experiments, successes and **growth efficiency**: 50% goal attainment, 30% cost efficiency vs plan, 20% hit rate.
