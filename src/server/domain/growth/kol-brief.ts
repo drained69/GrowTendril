@@ -1,15 +1,15 @@
-import { eq, inArray } from "drizzle-orm";
+import { and, eq, inArray } from "drizzle-orm";
 import { z } from "zod";
 import type { DB } from "@/server/db/client";
 import * as s from "@/server/db/schema";
-import { claudeStructured } from "@/server/integrations/llm/claude";
+import { aiStructured } from "@/server/integrations/llm";
 import { fmtUsdc } from "@/lib/money";
 import { buildUtmUrl } from "@/server/domain/growth/attribution-links";
 
 /**
  * KOL BRIEF — a working document for a creator, not ad copy. Every claim cites a source.
  * Drafts (X post, thread, video points…) are clearly marked as *suggestions for the creator
- * to rewrite in their own voice* — GrowthOS never posts as, or impersonates, anyone.
+ * to rewrite in their own voice* — GrowTendril never posts as, or impersonates, anyone.
  */
 
 export interface KolBrief {
@@ -51,21 +51,22 @@ export async function generateKolBrief(db: DB, kolId: string, experimentId?: str
   const narrLinks = await db.select({ n: s.narratives }).from(s.narrativeKols).innerJoin(s.narratives, eq(s.narrativeKols.narrativeId, s.narratives.id)).where(eq(s.narrativeKols.kolId, kol.id));
   const narrative = narrLinks.map((l) => l.n).sort((a, b) => b.relevance - a.relevance)[0];
   const narrEvidence = narrative ? await db.select().from(s.evidence).where(eq(s.evidence.narrativeId, narrative.id)) : [];
-  const exp = experimentId ? (await db.select().from(s.experiments).where(eq(s.experiments.id, experimentId)))[0] : undefined;
+  const exp = experimentId ? (await db.select().from(s.experiments).where(and(eq(s.experiments.id, experimentId), eq(s.experiments.projectId, kol.projectId))))[0] : undefined;
+  if (experimentId && !exp) throw new Error("Experiment not found in this workspace");
   const campaign = exp ? (await db.select().from(s.campaigns).where(eq(s.campaigns.experimentId, exp.id)))[0] : undefined;
   const [mission] = exp ? await db.select().from(s.missions).where(eq(s.missions.id, exp.missionId)) : [];
   const m = kol.metrics as Record<string, { score: number; reasons: string[] }>;
 
   const siteSource = profile.crawledSources.find((c) => c.ok)?.url ?? project.website ?? "founder-provided description";
   const productProof = profile.valueProps.slice(0, 4).map((v) => ({ claim: v, source: siteSource }));
-  const tracking = campaign
+  const tracking = campaign?.destinationUrl
     ? buildUtmUrl(campaign.destinationUrl, { source: campaign.utmSource, medium: campaign.utmMedium, campaign: campaign.utmCampaign, ref: campaign.referralCode })
     : null;
   const narrativeLabel = narrative?.label ?? profile.keywords[0] ?? profile.category;
 
   const brief: KolBrief = {
     creator: `@${kol.handle} (${kol.provider})`,
-    objective: mission ? `${mission.goalDescription} — introduce ${profile.targetUsers[0]?.toLowerCase() ?? "developers"} to ${project.name}` : `Introduce ${profile.targetUsers[0]?.toLowerCase() ?? "developers"} to ${project.name}`,
+    objective: mission ? `${mission.goalDescription} — introduce ${profile.targetUsers[0]?.toLowerCase() ?? "your audience"} to ${project.name}` : `Introduce ${profile.targetUsers[0]?.toLowerCase() ?? "your audience"} to ${project.name}`,
     whyThisCreator: [
       ...(m.topicAuthority?.reasons ?? []).slice(0, 2),
       ...(m.audienceFit?.reasons ?? []).slice(0, 1),
@@ -76,10 +77,10 @@ export async function generateKolBrief(db: DB, kolId: string, experimentId?: str
     currentNarrative: narrative ? `${narrative.label}: ${narrative.status} (${narrative.velocityPct >= 0 ? "+" : ""}${narrative.velocityPct}% WoW, ${narrative.volume7d} posts this week)` : "No dominant narrative detected",
     coreIdea: kol.recommendedAngle ?? `Show what ${project.name} makes possible in ${narrativeLabel}.`,
     productProof,
-    demoWorthShowing: profile.useCases[0] ? `Live: ${profile.useCases[0]}` : `Live, unedited: install ${project.name} and complete the core flow end to end`,
+    demoWorthShowing: profile.useCases[0] ? `Live: ${profile.useCases[0]}` : `Live, unedited: try ${project.name} yourself from start to finish`,
     suggestedAngles: [
       kol.recommendedAngle ?? `${narrativeLabel}, made practical`,
-      `What changes for ${profile.targetUsers[0] ?? "developers"} when ${narrativeLabel.toLowerCase()} works without the usual setup`,
+      `What changes for ${profile.targetUsers[0]?.toLowerCase() ?? "your audience"} when ${narrativeLabel.toLowerCase()} gets easier`,
       `An honest comparison: ${project.name} vs. doing it yourself${profile.competitors.length ? ` or ${profile.competitors[0]}` : ""}`,
     ],
     claimsWithEvidence: [
@@ -87,20 +88,20 @@ export async function generateKolBrief(db: DB, kolId: string, experimentId?: str
       ...narrEvidence.slice(0, 3).map((e) => ({ claim: `Market context: ${e.excerpt.slice(0, 120)}`, source: e.sourceUrl })),
       ...kolEvidence.slice(0, 2).map((e) => ({ claim: `Creator's prior coverage: ${e.excerpt.slice(0, 100)}`, source: e.sourceUrl })),
     ],
-    thingsToAvoid: ["Unsupported claims — only use the claims listed with sources", "Price or token speculation", 'Generic "future of Web3" language', "Implying endorsement beyond what you actually tested", "Undisclosed sponsorship — always disclose"],
+    thingsToAvoid: ["Unsupported claims — only use the claims listed with sources", "Price speculation or financial promises", 'Generic hype ("game-changer", "the future of…")', "Implying endorsement beyond what you actually tested", "Undisclosed sponsorship — always disclose"],
     cta: mission?.goalEvent === "sdk_key_created" ? `Try the SDK — create a key via the tracking link` : `Try ${project.name} via the tracking link`,
     trackingLink: tracking,
     creatorFreedom: "HIGH",
-    compensation: exp ? `${fmtUsdc(exp.budgetMicro)} in two tranches (USDC on Arc); second tranche released only if results are on track` : "To be agreed",
+    compensation: exp ? `${fmtUsdc(exp.budgetMicro)} in two tranches (USDC on Arc); first to start, second once the post is live (share the link) and results are on track` : "To be agreed",
     drafts: [],
     draftsGeneratedBy: "template",
-    disclosure: "Drafts below are suggestions for the creator to rewrite in their own voice. GrowthOS never posts on anyone's behalf.",
+    disclosure: "Drafts below are suggestions for the creator to rewrite in their own voice. GrowTendril never posts on anyone's behalf.",
   };
 
-  const ai = await claudeStructured({
+  const ai = await aiStructured({
     schema: DraftsSchema,
     system:
-      "You write suggested creator drafts for a sponsored technical campaign. Only use the claims provided, never invent metrics, include a sponsorship disclosure (#ad or 'sponsored'), no price speculation, no hype. Write so the creator can easily rewrite in their own voice.",
+      "You write suggested creator drafts for a sponsored creator campaign. Match the product's market: it may be a local business, a consumer product, B2B software or a developer tool. Only use the claims provided, never invent metrics, include a sponsorship disclosure (#ad or 'sponsored'), no price speculation, no hype. Write so the creator can easily rewrite in their own voice.",
     user: JSON.stringify({ product: project.name, creator: brief.creator, coreIdea: brief.coreIdea, angles: brief.suggestedAngles, claims: brief.claimsWithEvidence.map((c) => c.claim), cta: brief.cta, link: tracking }),
     effort: "low",
   });
@@ -129,4 +130,22 @@ export async function generateKolBrief(db: DB, kolId: string, experimentId?: str
 
 export async function evidenceByIds(db: DB, ids: string[]) {
   return ids.length ? db.select().from(s.evidence).where(inArray(s.evidence.id, ids)) : [];
+}
+
+/**
+ * Briefs that aren't saved to a campaign are rebuilt from the latest evidence — and drafting them
+ * can call Claude — so the result is reused until the creator's data or the workspace's last scan
+ * changes. Kept in memory: a restart simply rebuilds on the next view.
+ */
+const briefCache = new Map<string, { at: number; brief: KolBrief }>();
+const BRIEF_TTL_MS = 12 * 3_600_000;
+
+export async function kolBriefCached(db: DB, kol: { id: string; updatedAt: Date }, version: Date | null, experimentId?: string): Promise<KolBrief> {
+  const key = `${kol.id}:${experimentId ?? "-"}:${kol.updatedAt.getTime()}:${version?.getTime() ?? 0}`;
+  const hit = briefCache.get(key);
+  if (hit && Date.now() - hit.at < BRIEF_TTL_MS) return hit.brief;
+  const brief = await generateKolBrief(db, kol.id, experimentId);
+  if (briefCache.size > 500) briefCache.delete(briefCache.keys().next().value!);
+  briefCache.set(key, { at: Date.now(), brief });
+  return brief;
 }

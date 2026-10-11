@@ -3,7 +3,7 @@ import { fmtUsdc } from "@/lib/money";
 /**
  * "Is this information worth paying for?"
  *
- * GrowthOS commits budget to an opportunity only when confidence ≥ COMMIT_THRESHOLD.
+ * GrowTendril commits budget to an opportunity only when confidence ≥ COMMIT_THRESHOLD.
  * Buying data is worth it when it is likely to move confidence across that line
  * (either way) and the budget at stake is large relative to the price.
  *

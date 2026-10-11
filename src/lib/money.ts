@@ -6,8 +6,10 @@ export function toMicro(usdc: number | string): number {
   if (!/^-?\d+(\.\d+)?$/.test(s)) throw new Error(`invalid USDC amount: ${usdc}`);
   const neg = s.startsWith("-");
   const [whole, frac = ""] = s.replace("-", "").split(".");
-  const micro = Number(whole) * MICRO + Number((frac + "000000").slice(0, 6));
-  return neg ? -micro : micro;
+  if (/[^0]/.test(frac.slice(6))) throw new Error("USDC amounts support at most 6 decimal places");
+  const micro = BigInt(whole) * BigInt(MICRO) + BigInt((frac + "000000").slice(0, 6));
+  if (micro > BigInt(Number.MAX_SAFE_INTEGER)) throw new Error("USDC amount exceeds safe precision");
+  return Number(neg ? -micro : micro);
 }
 
 /** Decimal string with exactly the needed precision ("0.01", "150", "3.89"). */

@@ -169,7 +169,7 @@ export default async function Missions() {
                   <ul className="mt-2 space-y-1.5 text-[12.5px] text-ink-2">
                     {(l.findings as unknown as Finding[]).map((f) => (
                       <li key={f.label} className="flex items-start gap-2">
-                        <Badge tone={VERDICT_TONE(f.verdict)} className="mt-px w-16 justify-center">
+                        <Badge tone={VERDICT_TONE(f.verdict)} className="mt-px min-w-16 justify-center">
                           {f.verdict.replace(/_/g, " ")}
                         </Badge>
                         <span>

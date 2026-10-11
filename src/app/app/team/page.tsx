@@ -127,8 +127,8 @@ export default async function Team() {
         <Card className="self-start">
           <CardHeader title="Roles" description="What each role can do in this workspace." icon={<ShieldCheck />} />
           <ul className="divide-y divide-line">
-            {ROLES.map((r) => (
-              <li key={r} className="px-4 py-3">
+            {ROLES.map((r, ir) => (
+              <li key={`${ir}:${r}`} className="px-4 py-3">
                 <div className="flex items-center justify-between gap-2">
                   <Badge tone={ROLE_TONE[r]}>{ROLE_LABEL[r]}</Badge>
                   {r === role && <span className="text-[11px] text-ink-4">your role</span>}

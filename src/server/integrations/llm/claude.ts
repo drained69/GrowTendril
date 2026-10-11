@@ -1,14 +1,15 @@
 import Anthropic from "@anthropic-ai/sdk";
 import { betaZodOutputFormat } from "@anthropic-ai/sdk/helpers/beta/zod";
 import type { z } from "zod";
+import type { StructuredResult } from "./types";
 
 /**
- * Optional Claude layer. GrowthOS uses it for language tasks only (reading a product site,
+ * Optional Claude layer. GrowTendril uses it for language tasks only (reading a product site,
  * drafting a brief). It never sets scores and never triggers payments. When no key is set,
  * or a call fails, every caller falls back to deterministic logic and says so.
  */
 
-export const CLAUDE_MODEL = process.env.GROWTHOS_CLAUDE_MODEL ?? "claude-opus-5-5";
+export const CLAUDE_MODEL = process.env.GROWTHOS_CLAUDE_MODEL || "claude-opus-5-5";
 
 let client: Anthropic | null = null;
 
@@ -17,13 +18,10 @@ export function claudeEnabled(): boolean {
 }
 
 function getClient(): Anthropic {
-  client ??= new Anthropic();
+  // Keys that aren't scoped to a workspace (sk-ant-usr-…) must name one on every request.
+  const workspace = process.env.ANTHROPIC_WORKSPACE_ID?.trim();
+  client ??= new Anthropic(workspace ? { defaultHeaders: { "anthropic-workspace-id": workspace } } : {});
   return client;
-}
-
-export interface StructuredResult<T> {
-  data: T | null;
-  error?: string;
 }
 
 /** One structured-output call. Returns null data (with a reason) instead of throwing. */
@@ -52,7 +50,10 @@ export async function claudeStructured<S extends z.ZodType>(opts: {
   } catch (e) {
     if (e instanceof Anthropic.RateLimitError) return { data: null, error: "Claude rate limited" };
     if (e instanceof Anthropic.AuthenticationError) return { data: null, error: "Claude authentication failed" };
-    if (e instanceof Anthropic.APIError) return { data: null, error: `Claude API error ${e.status ?? ""}`.trim() };
+    if (e instanceof Anthropic.APIError) {
+      const detail = (e.error as { error?: { message?: string } } | undefined)?.error?.message;
+      return { data: null, error: `Claude API error ${e.status ?? ""}${detail ? `: ${detail.slice(0, 200)}` : ""}`.trim() };
+    }
     return { data: null, error: `Claude call failed: ${(e as Error).message}` };
   }
 }

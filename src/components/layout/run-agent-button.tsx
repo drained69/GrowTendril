@@ -1,41 +1,63 @@
 "use client";
 import { useEffect, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
-import { Bot, Play, X } from "lucide-react";
+import Link from "next/link";
+import { Loader2, Play } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { toast } from "@/components/ui/toast";
 import { AgentLog } from "@/components/features/agent/agent-log";
 import { jobStatusAction, runCycleAction } from "@/server/actions/agent";
+import { Dialog } from "@/components/ui/dialog";
+import { Callout } from "@/components/ui/misc";
 
 /** Queues an operator cycle on the job worker and streams its log by polling the job. */
-export function RunAgentButton({ disabled }: { disabled?: boolean }) {
+export function RunAgentButton({ disabled, priceUsdc }: { disabled?: boolean; priceUsdc?: number }) {
   const [jobId, setJobId] = useState<string | null>(null);
   const [status, setStatus] = useState<string | null>(null);
   const [log, setLog] = useState<{ agent: string; message: string }[]>([]);
   const [open, setOpen] = useState(false);
+  const [starting, setStarting] = useState(false);
+  const [error, setError] = useState<string | null>(null);
   const router = useRouter();
-  const timer = useRef<NodeJS.Timeout | null>(null);
+  const startingRef = useRef(false);
 
   useEffect(() => {
     if (!jobId) return;
+    let stopped = false;
+    let timer: ReturnType<typeof setTimeout>;
     const poll = async () => {
-      const r = await jobStatusAction(jobId);
-      if (!r.ok) return;
-      setStatus(r.data!.status);
-      setLog(r.data!.log);
-      if (r.data!.status === "done" || r.data!.status === "failed") {
-        if (timer.current) clearInterval(timer.current);
-        if (r.data!.status === "done") toast.success("Agent cycle complete", `${r.data!.log.length} steps — see the log for decisions`);
-        else toast.error("Agent cycle failed", r.data!.error ?? undefined);
-        setJobId(null);
-        router.refresh();
+      try {
+        const r = await jobStatusAction(jobId);
+        if (stopped) return;
+        if (!r.ok || !r.data) {
+          setError(!r.ok ? r.error : "The worker did not return a job status.");
+        } else {
+          setError(null);
+          setStatus(r.data.status);
+          setLog(r.data.log);
+          if (r.data.status === "done" || r.data.status === "failed") {
+            if (r.data.skipped) {
+              const message = r.data.skipped === "balance too low" ? "The balance is too low for a scan — top up in Billing." : r.data.skipped;
+              setError(message);
+              setStatus("skipped");
+              toast.error("Scan didn’t run", message);
+            } else if (r.data.status === "done") toast.success("Agent cycle complete", `${r.data.log.length} steps — see the log for decisions`);
+            else {
+              setError(r.data.error ?? "The worker could not complete this cycle.");
+              toast.error("Agent cycle failed", r.data.error ?? undefined);
+            }
+            setJobId(null);
+            router.refresh();
+            return;
+          }
+        }
+      } catch {
+        if (!stopped) setError("Couldn’t read the worker's status. Checking will retry automatically.");
       }
+      if (!stopped) timer = setTimeout(poll, 3000);
     };
-    poll();
-    timer.current = setInterval(poll, 1500);
-    return () => {
-      if (timer.current) clearInterval(timer.current);
-    };
+    void poll();
+    return () => { stopped = true; clearTimeout(timer); };
   }, [jobId, router]);
 
   const running = !!jobId;
@@ -45,33 +67,38 @@ export function RunAgentButton({ disabled }: { disabled?: boolean }) {
         variant="primary"
         size="sm"
         disabled={disabled}
-        loading={running}
-        icon={<Play />}
+        loading={starting}
+        title={priceUsdc ? `Run a market scan now — ${priceUsdc} USDC from the balance` : "Run a market scan now"}
+        icon={running ? <Loader2 className="animate-spin" /> : <Play />}
         onClick={async () => {
           if (running) return setOpen(true);
-          const r = await runCycleAction();
-          if (!r.ok) return toast.error("Couldn’t start the agent", r.error);
-          setLog([]);
-          setStatus("queued");
-          setJobId(r.data!.jobId);
-          setOpen(true);
+          if (startingRef.current) return;
+          startingRef.current = true;
+          setStarting(true);
+          try {
+            const r = await runCycleAction();
+            if (!r.ok) return toast.error("Couldn’t start the agent", r.error);
+            if (!r.data?.jobId) return toast.error("Couldn’t start the agent", "No job was returned. Try again.");
+            setError(null);
+            setLog([]);
+            setStatus("queued");
+            setJobId(r.data.jobId);
+            setOpen(true);
+          } catch {
+            toast.error("Couldn’t start the agent", "Check your connection and try again.");
+          } finally {
+            startingRef.current = false;
+            setStarting(false);
+          }
         }}
       >
         {running ? (status === "queued" ? "Queued…" : "Running…") : "Run agent"}
       </Button>
-      {open && (log.length > 0 || running) && (
-        <div className="absolute right-0 top-9 z-40 w-[min(620px,92vw)] animate-pop-in rounded-[12px] border border-line-strong bg-surface p-3 shadow-[var(--shadow-pop)]">
-          <div className="mb-2 flex items-center justify-between">
-            <span className="flex items-center gap-2 text-[12.5px] font-medium text-ink">
-              <Bot className="size-4 text-ink-3" /> Operator cycle {running ? <span className="text-ink-3">· {status}</span> : <span className="text-good">· done</span>}
-            </span>
-            <button aria-label="Close" onClick={() => setOpen(false)} className="text-ink-4 hover:text-ink">
-              <X className="size-4" />
-            </button>
-          </div>
-          {log.length ? <AgentLog log={log} /> : <div className="rounded-[8px] border border-line bg-bg px-3 py-4 text-center text-[12px] text-ink-3">Waiting for the worker to pick up the job…</div>}
-        </div>
-      )}
+      <Dialog open={open} onClose={() => setOpen(false)} title={`Operator cycle${status ? ` · ${status}` : ""}`} description={running ? "You can close this view and reopen it with the running button." : "Review the outcome and each recorded step."} size="lg">
+        {error && <Callout tone="danger" className="mb-3">{error}</Callout>}
+        {log.length ? <AgentLog log={log} /> : <div role="status" className="rounded-[14px] border border-dashed border-line-strong bg-surface-2 px-3 py-5 text-center text-[12.5px] text-ink-3">{running ? "Waiting for the worker to report progress…" : "No steps were recorded for this cycle."}</div>}
+        <Link href="/app/runs" onClick={() => setOpen(false)} className="mt-3 inline-block text-[12px] text-s1 hover:underline">View all agent runs</Link>
+      </Dialog>
     </div>
   );
 }

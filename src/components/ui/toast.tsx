@@ -35,7 +35,7 @@ export function Toaster() {
   return (
     <div aria-live="polite" className="pointer-events-none fixed bottom-4 right-4 z-[100] flex w-[360px] max-w-[calc(100vw-2rem)] flex-col gap-2">
       {items.map((t) => (
-        <div key={t.id} className="pointer-events-auto flex animate-slide-up gap-3 rounded-[10px] border border-line-strong bg-surface-2 px-3.5 py-3 shadow-[var(--shadow-pop)]">
+        <div key={t.id} className="pointer-events-auto flex animate-slide-up gap-3 rounded-[16px] border border-line bg-surface px-4 py-3 shadow-[var(--shadow-pop)]">
           <span className="mt-px shrink-0 [&_svg]:size-4">{ICON[t.kind]}</span>
           <div className="min-w-0 flex-1">
             <div className="text-[13px] font-medium text-ink">{t.title}</div>

@@ -13,6 +13,8 @@ const nextConfig: NextConfig = {
     "pg",
   ],
   poweredByHeader: false,
+  // Lets a second dev server run beside the main one without sharing build output.
+  distDir: process.env.NEXT_DIST_DIR || ".next",
 };
 
 export default nextConfig;

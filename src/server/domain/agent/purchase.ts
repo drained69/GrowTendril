@@ -1,20 +1,18 @@
 import { and, desc, eq } from "drizzle-orm";
 import type { DB } from "@/server/db/client";
 import * as s from "@/server/db/schema";
-import { mergeMode } from "@/server/db/helpers";
 import { canonicalJson, newId, sha256 } from "@/server/lib/ids";
 import { fmtUsdc, microToDecimal, toMicro } from "@/lib/money";
 import { ARC } from "@/server/integrations/circle/config";
 import { signerFor } from "@/server/integrations/circle/signer";
 import { getWallet, walletIsLive } from "@/server/integrations/circle/wallets";
 import { quote, pay } from "@/server/integrations/circle/x402";
-import { servicesWithCapability, registerBundledSignalsService } from "@/server/integrations/circle/marketplace";
-import { demoCompanyIntel, demoCreatorAudience, type EnrichmentSignal } from "@/server/demo/enrichment";
+import { servicesWithCapability } from "@/server/integrations/circle/marketplace";
 import { analyzeProject, type Logger } from "@/server/domain/intel/analyze";
 import { evaluateInformationValue } from "@/server/domain/agent/information-value";
 import { parseFinancialAction } from "@/server/domain/agent/actions";
 import { evaluatePolicy } from "@/server/domain/agent/policy";
-import { createTransaction, loadPolicy, loadPolicyState, transition } from "@/server/domain/agent/ledger";
+import { claimExecution, createTransaction, loadPolicy, loadPolicyState, transition } from "@/server/domain/agent/ledger";
 import { recordDecision, updateDecision, writeReceipt } from "@/server/domain/agent/decisions";
 
 /**
@@ -37,11 +35,19 @@ export interface PurchaseOutcome {
 }
 
 /** How much a company-enrichment purchase is expected to move confidence, and how reliable it has been. */
-const EXPECTED_LIFT = { company_enrichment: 0.2, creator_audience: 0.15 };
+const EXPECTED_LIFT = { company_enrichment: 0.2 };
+
+interface EnrichmentSignal {
+  signalType: "funding" | "hiring" | "initiative" | "tech_adoption" | "partnership" | "launch";
+  summary: string;
+  sourceUrl: string;
+  observedAt: string;
+  confidence: number;
+}
 
 export async function purchaseCompanyIntel(db: DB, p: { projectId: string; companyId: string; runId?: string | null; log?: Logger }): Promise<PurchaseOutcome> {
   const log = p.log ?? (() => {});
-  const [company] = await db.select().from(s.companies).where(eq(s.companies.id, p.companyId));
+  const [company] = await db.select().from(s.companies).where(and(eq(s.companies.id, p.companyId), eq(s.companies.projectId, p.projectId)));
   if (!company) throw new Error("company not found");
   const [mission] = await db.select().from(s.missions).where(and(eq(s.missions.projectId, p.projectId), eq(s.missions.status, "active")));
   if (!mission) throw new Error("No active mission — purchases are always tied to a mission budget");
@@ -53,11 +59,12 @@ export async function purchaseCompanyIntel(db: DB, p: { projectId: string; compa
   log("operator", `${company.name}: confidence ${(before * 100).toFixed(0)}% — evaluating whether more information is worth buying`);
 
   // 1. Discover a service that can answer the question.
-  await registerBundledSignalsService(db);
-  const candidates = (await servicesWithCapability(db, "company_enrichment")).sort((a, b) => (a.svc.priceMicro ?? 1e12) - (b.svc.priceMicro ?? 1e12));
-  const pick = candidates.find((c) => c.svc.network === ARC.caip2) ?? candidates[0];
-  if (!pick) throw new Error("No company-enrichment service in the catalog");
-  log("operator", `Found ${pick.vendor.name} (${pick.vendor.source === "circle_marketplace" ? "Circle Agent Marketplace" : "bundled x402 seller"}) — listed at ${fmtUsdc(pick.svc.priceMicro)}`);
+  const candidates = (await servicesWithCapability(db, "company_enrichment"))
+    .filter((c) => c.svc.network === ARC.caip2 && c.svc.priceMicro != null && c.svc.priceMicro > 0 && c.svc.resourceUrl.startsWith("https://"))
+    .sort((a, b) => (a.svc.priceMicro ?? 1e12) - (b.svc.priceMicro ?? 1e12));
+  const pick = candidates[0];
+  if (!pick) throw new Error("No company-research service payable on Arc is listed on Circle's Agent Marketplace right now, so there's nothing to buy. GrowTendril keeps the free public evidence and checks the marketplace again each cycle.");
+  log("operator", `Found ${pick.vendor.name} on Circle Agent Marketplace — listed at ${fmtUsdc(pick.svc.priceMicro)}`);
 
   // 2. Live quote from the seller's 402 challenge (the price we evaluate is the price we'd pay).
   const url = new URL(pick.svc.resourceUrl);
@@ -71,11 +78,17 @@ export async function purchaseCompanyIntel(db: DB, p: { projectId: string; compa
   } catch (e) {
     quoteError = (e as Error).message;
   }
-  const priceMicro = liveQuote?.kind === "quote" ? liveQuote.quote.amountMicro : pick.svc.priceMicro ?? toMicro(0.01);
-  if (quoteError) log("operator", `Live quote unavailable (${quoteError}) — using listed price ${fmtUsdc(priceMicro)}`);
+  if (liveQuote?.kind !== "quote") {
+    const reason = `No compatible Arc mainnet quote from ${pick.vendor.name}${quoteError ? `: ${quoteError}` : ""}`;
+    const d = await recordDecision(db, { projectId: p.projectId, missionId: mission.id, runId: p.runId, agent: "operator", kind: "skip_purchase", action: { action: "skip_purchase", serviceId: pick.svc.id }, rationale: reason, status: "executed", dataMode: "LIVE" });
+    await writeReceipt(db, d.id);
+    log("operator", reason);
+    return { decisionId: d.id, bought: false, state: "SKIPPED", confidenceBefore: before, confidenceAfter: null, priceMicro: null, settlementId: null, message: reason };
+  }
+  const priceMicro = liveQuote.quote.amountMicro;
 
   // 3. Is it worth it?
-  const ivi = evaluateInformationValue({ confidence: before, stakeMicro: stake, priceMicro, expectedLift: EXPECTED_LIFT.company_enrichment, reliability: 0.8, maxPerCallMicro: policy.maxTransactionMicro });
+  const ivi = evaluateInformationValue({ confidence: before, stakeMicro: stake, priceMicro, expectedLift: EXPECTED_LIFT.company_enrichment, reliability: 0.8, maxPerCallMicro: policy.hardCeilingMicro });
   const reasons = [...ivi.reasons];
   const projectMode = (await db.select({ m: s.projects.dataMode }).from(s.projects).where(eq(s.projects.id, p.projectId)))[0]?.m ?? "LIVE";
 
@@ -110,7 +123,7 @@ export async function purchaseCompanyIntel(db: DB, p: { projectId: string; compa
     missionId: mission.id,
     confidence: before,
     subject: { type: "company", id: company.id },
-    chain: "Arc_Testnet",
+    chain: ARC.appKitChain,
   });
   if (!parsed.success) throw new Error(`Action failed schema validation: ${parsed.error.message}`);
   const action = parsed.data;
@@ -118,7 +131,6 @@ export async function purchaseCompanyIntel(db: DB, p: { projectId: string; compa
   const verdict = evaluatePolicy(action, policy, pstate);
   log("policy", `purchase_service ${fmtUsdc(priceMicro)} → ${verdict.verdict}`);
 
-  const simulated = pstate.simulation;
   const decision = await recordDecision(db, {
     projectId: p.projectId,
     missionId: mission.id,
@@ -130,20 +142,21 @@ export async function purchaseCompanyIntel(db: DB, p: { projectId: string; compa
     inputs: { confidenceBefore: before, reasons, eviMicro: ivi.eviMicro, quoteError },
     policy: verdict,
     status: verdict.verdict === "ALLOW" ? "approved" : verdict.verdict === "DENY" ? "denied" : "awaiting_approval",
-    dataMode: simulated ? "SIMULATED" : projectMode === "DEMO" ? "DEMO" : "TESTNET",
+    dataMode: "LIVE",
   });
   const { tx, duplicate } = await createTransaction(db, {
     projectId: p.projectId,
+    walletId: (await getWallet(db, p.projectId))?.id,
     decisionId: decision.id,
     missionId: mission.id,
     kind: "x402_purchase",
     rail: "gateway_x402",
     budgetCategory: verdict.category,
     amountMicro: priceMicro,
-    chain: "Arc_Testnet",
+    chain: ARC.appKitChain,
     recipient: liveQuote?.kind === "quote" ? liveQuote.quote.payTo : pick.svc.payTo,
     idempotencyKey: sha256(`x402:${p.projectId}:${company.id}:${pick.svc.id}:${new Date().toISOString().slice(0, 13)}`),
-    dataMode: simulated ? "SIMULATED" : "TESTNET",
+    dataMode: "LIVE",
   });
   if (duplicate) {
     log("operator", "Same purchase already made this hour — idempotency key matched; not paying twice");
@@ -172,22 +185,23 @@ export async function executePurchase(
   a: { txId: string; decisionId: string; projectId: string; companyId: string; url: string; liveQuote: Awaited<ReturnType<typeof quote>> | null; priceMicro: number; before: number; serviceId: string; purpose: string; log?: Logger },
 ): Promise<PurchaseOutcome> {
   const log = a.log ?? (() => {});
-  const locked = await transition(db, a.txId, "EXECUTING", {}, "execution lock acquired");
-  if (!locked) return { decisionId: a.decisionId, bought: false, state: "LOCKED", confidenceBefore: a.before, confidenceAfter: null, priceMicro: a.priceMicro, settlementId: null, message: "Another worker is executing this payment" };
+  const claim = await claimExecution(db, a.txId);
+  if (!claim.claimed) return { decisionId: a.decisionId, bought: false, state: claim.state, confidenceBefore: a.before, confidenceAfter: null, priceMicro: a.priceMicro, settlementId: null, message: claim.message };
 
   const [company] = await db.select().from(s.companies).where(eq(s.companies.id, a.companyId));
+  const [approvedTx] = await db.select().from(s.transactions).where(eq(s.transactions.id, a.txId));
   let data: { dataMode?: string; signals?: EnrichmentSignal[] } | null = null;
   let settlementId: string | null = null;
-  let finalState: "SUBMITTED" | "SIMULATED" | "FAILED" = "FAILED";
+  let finalState: "SUBMITTED" | "FAILED" = "FAILED";
   let payer: string | null = null;
   let httpStatus: number | null = null;
   let failure: string | null = null;
 
   const wallet = await getWallet(db, a.projectId);
   const signer = walletIsLive(wallet) && !wallet!.frozen ? signerFor(wallet) : null;
-  if (signer && a.liveQuote?.kind === "quote") {
+  if (signer && a.liveQuote?.kind === "quote" && approvedTx?.chain === ARC.appKitChain && approvedTx.amountMicro === a.priceMicro && approvedTx.recipient?.toLowerCase() === a.liveQuote.quote.payTo.toLowerCase() && a.liveQuote.quote.amountMicro <= a.priceMicro) {
     try {
-      log("operator", `Signing x402 authorization for ${fmtUsdc(a.priceMicro)} (EIP-712, ${signer.kind === "circle_dcw" ? "Circle wallet" : "server testnet key"})`);
+      log("operator", `Signing x402 authorization for ${fmtUsdc(a.priceMicro)} (EIP-712, Circle wallet)`);
       const res = await pay(a.liveQuote.quote, signer, { maxAmountMicro: a.priceMicro });
       data = res.data as typeof data;
       settlementId = res.settlementId;
@@ -199,17 +213,7 @@ export async function executePurchase(
       failure = (e as Error).message;
       log("operator", `x402 payment failed: ${failure}`);
     }
-  } else {
-    const [project] = await db.select().from(s.projects).where(eq(s.projects.id, a.projectId));
-    if (project?.dataMode === "DEMO") {
-      // No wallet (or seller unreachable) in a DEMO project: run the rest of the loop on the
-      // seller's demo fixture and record the payment as SIMULATED — no id, no hash, no funds.
-      data = demoCompanyIntel(company.name) ?? { dataMode: "DEMO", signals: [] };
-      finalState = "SIMULATED";
-      failure = signer ? `Seller unreachable: ${a.liveQuote?.kind === "unsupported" ? a.liveQuote.reason : "no quote"}` : "No agent wallet configured";
-      log("operator", `SIMULATED payment (${failure}). Nothing moved on-chain.`);
-    } else failure = signer ? "No payable quote from seller" : "No agent wallet configured";
-  }
+  } else failure = signer ? "Seller payment terms changed after approval or no compatible Arc mainnet quote" : "No Arc mainnet wallet configured";
 
   const digest = data ? sha256(canonicalJson(data)) : null;
   await db.insert(s.x402Purchases).values({ id: newId(), transactionId: a.txId, serviceId: a.serviceId, resourceUrl: a.url, method: "GET", priceMicro: a.priceMicro, purpose: a.purpose, payer, network: ARC.caip2, httpStatus, responseDigest: digest, responseExcerpt: data ? (data as Record<string, unknown>) : null });
@@ -217,10 +221,11 @@ export async function executePurchase(
 
   // Consume what we bought: each signal becomes attributable evidence.
   let added = 0;
-  if (data?.signals?.length) {
+  const paidData = data as { dataMode?: string; signals?: EnrichmentSignal[] } | null;
+  if (finalState === "SUBMITTED" && paidData?.signals?.length) {
     const [purchase] = await db.select().from(s.x402Purchases).where(eq(s.x402Purchases.transactionId, a.txId));
-    const mode = data.dataMode === "DEMO" ? "DEMO" : "LIVE";
-    for (const sig of data.signals) {
+    for (const sig of paidData.signals) {
+      if (!sig.sourceUrl.startsWith("https://") || !Number.isFinite(Date.parse(sig.observedAt)) || sig.confidence < 0 || sig.confidence > 1) continue;
       const r = await db
         .insert(s.evidence)
         .values({
@@ -237,7 +242,7 @@ export async function executePurchase(
           observedAt: new Date(sig.observedAt),
           weight: sig.confidence,
           classifiedBy: "x402",
-          dataMode: mode,
+          dataMode: "LIVE",
         })
         .onConflictDoNothing()
         .returning({ id: s.evidence.id });
@@ -251,11 +256,11 @@ export async function executePurchase(
   await updateDecision(db, a.decisionId, {
     status: finalState === "FAILED" ? "failed" : "executed",
     result: { confidenceAfter, signalsAdded: added, settlementId, state: finalState, summary: `${added} additional intent signal(s) found` },
-    dataMode: mergeMode([finalState === "SIMULATED" ? "SIMULATED" : "TESTNET", ...(data?.dataMode === "DEMO" ? (["DEMO"] as const) : [])]),
+    dataMode: "LIVE",
   });
   await writeReceipt(db, a.decisionId);
   log("operator", `${company.name}: ${added} new signal(s); confidence ${(a.before * 100).toFixed(0)}% → ${confidenceAfter != null ? (confidenceAfter * 100).toFixed(0) : "?"}%`);
-  return { decisionId: a.decisionId, bought: finalState !== "FAILED", state: finalState, confidenceBefore: a.before, confidenceAfter, priceMicro: a.priceMicro, settlementId, message: failure ?? "Purchased" };
+  return { decisionId: a.decisionId, bought: finalState === "SUBMITTED", state: finalState, confidenceBefore: a.before, confidenceAfter, priceMicro: a.priceMicro, settlementId, message: failure ?? "Purchased" };
 }
 
 /** Latest purchases for the activity feed. */
@@ -268,5 +273,3 @@ export async function recentPurchases(db: DB, projectId: string, limit = 20) {
     .orderBy(desc(s.x402Purchases.createdAt))
     .limit(limit);
 }
-
-export { demoCreatorAudience };

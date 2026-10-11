@@ -59,7 +59,7 @@ export async function buildGraph(db: DB, projectId: string): Promise<{ nodes: Gr
   for (const x of exps) {
     const parent = x.opportunityId && nodes.find((n) => n.id === `o:${x.opportunityId}`) ? `o:${x.opportunityId}` : "product";
     add({ id: `x:${x.id}`, type: "experiment", label: `EXP #${x.number}`, sub: x.status, href: `/app/experiments/${x.id}`, mode: x.dataMode }, parent);
-    const [spend] = await db.select({ n: sql<string>`coalesce(sum(${s.transactions.amountMicro}),0)` }).from(s.transactions).where(and(eq(s.transactions.experimentId, x.id), inArray(s.transactions.state, ["SUBMITTED", "SETTLED", "SIMULATED", "EXECUTING"])));
+    const [spend] = await db.select({ n: sql<string>`coalesce(sum(${s.transactions.amountMicro}),0)` }).from(s.transactions).where(and(eq(s.transactions.experimentId, x.id), inArray(s.transactions.state, ["SUBMITTED", "SETTLED", "EXECUTING"])));
     if (Number(spend?.n ?? 0) > 0) add({ id: `sp:${x.id}`, type: "spend", label: fmtUsdc(Number(spend.n)), sub: "spent", href: "/app/activity" }, `x:${x.id}`);
     const [conv] = await db.select({ n: sql<number>`count(*)::int` }).from(s.attribution).where(eq(s.attribution.experimentId, x.id));
     if ((conv?.n ?? 0) > 0) add({ id: `r:${x.id}`, type: "result", label: `${conv.n} conversions`, sub: (x.outcome as { verdict?: string } | null)?.verdict ?? "measuring", href: `/app/experiments/${x.id}` }, Number(spend?.n ?? 0) > 0 ? `sp:${x.id}` : `x:${x.id}`);

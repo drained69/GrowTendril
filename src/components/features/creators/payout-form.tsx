@@ -6,6 +6,7 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/form";
 import { toast } from "@/components/ui/toast";
 import { setKolPayoutAction } from "@/server/actions/wallet";
+import { useHydrated } from "@/components/ui/submit";
 
 const EVM = /^0x[0-9a-fA-F]{40}$/;
 
@@ -17,12 +18,15 @@ export function PayoutForm({ kolId, current, disabled }: { kolId: string; curren
   const router = useRouter();
   const trimmed = value.trim();
   const dirty = trimmed !== (current ?? "");
+  const hydrated = useHydrated();
 
   return (
     <form
+      method="post"
       className="space-y-2"
       onSubmit={(e) => {
         e.preventDefault();
+        if (!hydrated || disabled || pending || !dirty) return;
         if (trimmed && !EVM.test(trimmed)) {
           setError("Enter a 0x… EVM address (42 characters)");
           return;
@@ -58,7 +62,7 @@ export function PayoutForm({ kolId, current, disabled }: { kolId: string; curren
           className="num text-[12px]"
           aria-invalid={!!error}
         />
-        <Button type="submit" variant="secondary" icon={<Wallet />} loading={pending} disabled={disabled || !dirty}>
+        <Button type="submit" variant="secondary" icon={<Wallet />} loading={pending} disabled={!hydrated || disabled || !dirty}>
           {trimmed || !current ? "Save" : "Clear"}
         </Button>
       </div>

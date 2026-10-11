@@ -4,18 +4,18 @@ import { cn } from "@/components/ui/cn";
 export type Tone = "neutral" | "good" | "warn" | "bad" | "info" | "accent" | "muted";
 
 const TONE: Record<Tone, string> = {
-  neutral: "bg-surface-3 text-ink-2 ring-line-strong",
+  neutral: "bg-surface-2 text-ink-2 ring-line-strong/70",
   muted: "bg-transparent text-ink-3 ring-line",
-  good: "bg-good/10 text-good ring-good/25",
-  warn: "bg-warning/10 text-warning ring-warning/25",
-  bad: "bg-critical/10 text-critical ring-critical/30",
-  info: "bg-s1/10 text-s1 ring-s1/25",
-  accent: "bg-s7/10 text-s7 ring-s7/25",
+  good: "bg-good/10 text-good ring-good/20",
+  warn: "bg-warning/10 text-warning ring-warning/20",
+  bad: "bg-critical/10 text-critical ring-critical/25",
+  info: "bg-s1/10 text-s1 ring-s1/20",
+  accent: "bg-s7/10 text-s7 ring-s7/20",
 };
 
 export function Badge({ children, tone = "neutral", className, dot }: { children: ReactNode; tone?: Tone; className?: string; dot?: boolean }) {
   return (
-    <span className={cn("inline-flex h-[18px] shrink-0 items-center gap-1 whitespace-nowrap rounded-[4px] px-1.5 text-[10.5px] font-medium ring-1 ring-inset", TONE[tone], className)}>
+    <span className={cn("inline-flex h-5 shrink-0 items-center gap-1 whitespace-nowrap rounded-full px-2 text-[11px] font-medium ring-1 ring-inset", TONE[tone], className)}>
       {dot && <span className="size-1.5 rounded-full bg-current" />}
       {children}
     </span>

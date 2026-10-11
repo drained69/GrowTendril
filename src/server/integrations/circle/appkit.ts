@@ -3,7 +3,7 @@ import type { SignableWallet } from "@/server/integrations/circle/signer";
 import { toMicro } from "@/lib/money";
 
 /**
- * Arc App Kit — used where it solves a GrowthOS problem:
+ * Arc App Kit — used where it solves a GrowTendril problem:
  *  SEND            approved creator/bounty/partner payments
  *  BRIDGE          move budget to the chain a payment must land on (e.g. a Base bounty)
  *  UNIFIED BALANCE one chain-abstracted view of operating capital
@@ -22,7 +22,7 @@ async function kit(): Promise<Kit> {
 type AnyAdapter = any;
 const adapters = new Map<string, Promise<AnyAdapter>>();
 
-/** One adapter per custody type: Circle Wallets (addresses passed explicitly) or a viem testnet key. */
+/** Circle-custodied wallet adapter. */
 async function adapter(provider: string): Promise<AnyAdapter> {
   if (!adapters.has(provider)) {
     adapters.set(
@@ -31,10 +31,6 @@ async function adapter(provider: string): Promise<AnyAdapter> {
         if (provider === "circle_dcw") {
           const { createCircleWalletsAdapter } = await import("@circle-fin/adapter-circle-wallets");
           return createCircleWalletsAdapter({ apiKey: process.env.CIRCLE_API_KEY!, entitySecret: process.env.CIRCLE_ENTITY_SECRET! });
-        }
-        if (provider === "local_testnet") {
-          const { createViemAdapterFromPrivateKey } = await import("@circle-fin/adapter-viem-v2");
-          return createViemAdapterFromPrivateKey({ privateKey: process.env.AGENT_PRIVATE_KEY! });
         }
         throw new Error("This workspace has no agent wallet");
       })(),
@@ -46,7 +42,8 @@ async function adapter(provider: string): Promise<AnyAdapter> {
 /** Circle-custodied wallets are addressed explicitly ("developer-controlled addressing"). */
 async function ctx(chain: string, w: SignableWallet) {
   const a = await adapter(w.provider);
-  return w.provider === "circle_dcw" ? { adapter: a, chain, address: w.address! } : { adapter: a, chain };
+  if (w.provider !== "circle_dcw") throw new Error("Arc mainnet requires Circle custody");
+  return { adapter: a, chain, address: w.address! };
 }
 
 export interface ChainTxResult {
@@ -95,12 +92,12 @@ export interface UnifiedBalance {
 /** Read-only, address-based query — needs no signing capability. */
 export async function unifiedBalance(address: string): Promise<UnifiedBalance> {
   const k = await kit();
-  const chains = ["Arc_Testnet", "Base_Sepolia", "Arbitrum_Sepolia"];
+  const chains = ["Arc"];
   const res = await k.unifiedBalance.getBalances({
     token: "USDC",
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     sources: { address, chains: chains as any },
-    networkType: "testnet",
+    networkType: "mainnet",
   });
   const byChain = res.breakdown.flatMap((b) => b.breakdown.map((c) => ({ chain: String(c.chain), label: CHAINS[String(c.chain)]?.label ?? String(c.chain), micro: toMicro(c.confirmedBalance) })));
   return { totalMicro: toMicro(res.totalConfirmedBalance), byChain, source: "app_kit_unified_balance" };

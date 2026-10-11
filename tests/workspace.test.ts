@@ -1,4 +1,4 @@
-import { describe, it, expect, beforeAll } from "vitest";
+import { describe, it, expect, beforeAll, vi } from "vitest";
 import type { DB } from "@/server/db/client";
 import { can } from "@/server/auth/access";
 import { decryptJson, encryptJson } from "@/server/security/secrets";
@@ -16,9 +16,9 @@ beforeAll(async () => {
   s = client.schema;
   m = await import("@/server/domain/workspace/members");
   await db.insert(s.users).values([
-    { id: "u_owner", email: "owner@example.com", name: "Owner", passwordHash: "x" },
-    { id: "u_bob", email: "bob@example.com", name: "Bob", passwordHash: "x" },
-    { id: "u_eve", email: "eve@example.com", name: "Eve", passwordHash: "x" },
+    { id: "u_owner", email: "owner@example.com", name: "Owner", passwordHash: "x", emailVerifiedAt: new Date() },
+    { id: "u_bob", email: "bob@example.com", name: "Bob", passwordHash: "x", emailVerifiedAt: new Date() },
+    { id: "u_eve", email: "eve@example.com", name: "Eve", passwordHash: "x", emailVerifiedAt: new Date() },
   ]);
   await db.insert(s.projects).values({ id: "p1", ownerId: "u_owner", name: "Acme", webhookSecret: "w" });
   await db.insert(s.memberships).values({ id: "m1", projectId: "p1", userId: "u_owner", role: "owner" });
@@ -44,6 +44,25 @@ describe("secrets at rest", () => {
     expect(decryptJson(blob, "integration:p1:github")).toEqual({ token: "ghp_secret" });
     // Copying a credential to another workspace or provider must not decrypt.
     expect(() => decryptJson(blob, "integration:p2:github")).toThrow();
+  });
+});
+
+describe("provider lookup", () => {
+  it("loads workspace connections once for listing and discovery", async () => {
+    const { listConnections, readyProviders } = await import("@/server/integrations/vault");
+    const select = vi.spyOn(db, "select");
+    try {
+      const connections = await listConnections(db, "p1");
+      expect(connections.length).toBeGreaterThan(1);
+      expect(select).toHaveBeenCalledTimes(1);
+
+      select.mockClear();
+      const ready = await readyProviders(db, "p1");
+      expect(ready.map((r) => r.provider.id)).toEqual(connections.filter((c) => c.ready).map((c) => c.provider.id));
+      expect(select).toHaveBeenCalledTimes(1);
+    } finally {
+      select.mockRestore();
+    }
   });
 });
 

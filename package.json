@@ -1,10 +1,10 @@
 {
-  "name": "growthos",
+  "name": "growtendril",
   "version": "0.1.0",
   "private": true,
   "type": "module",
   "scripts": {
-    "dev": "concurrently -n web,signals -c cyan,magenta \"next dev -p 3000\" \"tsx services/signals-api/server.ts\"",
+    "dev": "next dev -p 3000",
     "dev:web": "next dev -p 3000",
     "signals": "tsx services/signals-api/server.ts",
     "build": "next build",
@@ -12,25 +12,23 @@
     "typecheck": "tsc --noEmit",
     "test": "vitest run",
     "db:generate": "drizzle-kit generate",
-    "db:seed": "tsx scripts/seed.ts",
-    "wallet:setup": "tsx scripts/wallet-setup.ts",
-    "demo:run": "tsx scripts/demo-run.ts",
     "test:events": "tsx scripts/test-events.ts",
-    "worker": "tsx scripts/worker.ts"
+    "worker": "tsx scripts/worker.ts",
+    "circle:entity-secret": "tsx scripts/circle-entity-secret.ts",
+    "env:push": "tsx scripts/push-env.ts",
+    "ledger:exceptions": "tsx scripts/ledger-exceptions.ts"
   },
   "dependencies": {
     "@anthropic-ai/sdk": "^0.131.0",
     "@circle-fin/adapter-circle-wallets": "^1.8.1",
-    "@circle-fin/adapter-viem-v2": "^1.19.0",
     "@circle-fin/app-kit": "^1.16.0",
     "@circle-fin/developer-controlled-wallets": "^10.8.1",
     "@circle-fin/onramp-kit": "^1.0.3",
     "@circle-fin/x402-batching": "^3.5.0",
     "@electric-sql/pglite": "^0.5.8",
-    "@fontsource-variable/inter": "^5.3.0",
+    "@fontsource-variable/hanken-grotesk": "^5.3.0",
     "@fontsource-variable/jetbrains-mono": "^5.3.0",
-    "@x402/core": "^2.28.0",
-    "@x402/evm": "^2.28.0",
+    "@fontsource-variable/shantell-sans": "^5.3.0",
     "drizzle-orm": "^0.45.3",
     "express": "^5.2.1",
     "lucide-react": "^1.51.0",
@@ -49,15 +47,15 @@
     "@types/pg": "^8.23.1",
     "@types/react": "^19.3.0",
     "@types/react-dom": "^19.3.0",
-    "concurrently": "^10.0.5",
     "drizzle-kit": "^0.31.11",
     "postcss": "^8.5.28",
+    "railway": "^3.12.0",
     "tailwindcss": "^4.3.3",
     "tsx": "^4.23.15",
     "typescript": "^5.9.3",
     "vitest": "^5.0.3"
   },
   "engines": {
-    "node": ">=20"
+    "node": ">=22"
   }
 }

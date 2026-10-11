@@ -15,6 +15,7 @@ export async function GET(req: Request, { params }: { params: Promise<{ code: st
   const db = await getDb();
   const [camp] = await db.select().from(s.campaigns).where(eq(s.campaigns.referralCode, code));
   if (!camp) return new NextResponse("Not found", { status: 404 });
+  if (!camp.destinationUrl) return new NextResponse("This campaign doesn't have a link yet.", { status: 404, headers: { "content-type": "text/plain; charset=utf-8" } });
   const [exp] = await db.select({ projectId: s.experiments.projectId, mode: s.experiments.dataMode }).from(s.experiments).where(eq(s.experiments.id, camp.experimentId));
   const dest = buildUtmUrl(camp.destinationUrl, { source: camp.utmSource, medium: camp.utmMedium, campaign: camp.utmCampaign, ref: camp.referralCode });
   const res = NextResponse.redirect(dest, 302);

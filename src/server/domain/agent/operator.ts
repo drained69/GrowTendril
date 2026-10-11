@@ -2,9 +2,8 @@ import { and, desc, eq, inArray } from "drizzle-orm";
 import type { DB } from "@/server/db/client";
 import * as s from "@/server/db/schema";
 import { newId } from "@/server/lib/ids";
-import { analyzeProject } from "@/server/domain/intel/analyze";
 import { runDiscovery } from "@/server/domain/intel/discovery";
-import { refreshMarketplace, registerBundledSignalsService } from "@/server/integrations/circle/marketplace";
+import { refreshMarketplace } from "@/server/integrations/circle/marketplace";
 import { refreshSettlements } from "@/server/domain/agent/execute";
 import { purchaseCompanyIntel } from "@/server/domain/agent/purchase";
 import { recordDecision, writeReceipt } from "@/server/domain/agent/decisions";
@@ -19,7 +18,7 @@ import { buildDailyBrief } from "@/server/domain/growth/brief";
  *   → EXECUTE → MEASURE → ATTRIBUTE → LEARN → REALLOCATE → brief
  * Each step is deterministic code; the founder sets goal, budget and rules, not steps.
  */
-export async function runCycle(db: DB, projectId: string, opts: { trigger?: "manual" | "schedule" | "demo"; maxPurchases?: number; maxNewExperiments?: number } = {}) {
+export async function runCycle(db: DB, projectId: string, opts: { trigger?: "manual" | "schedule"; maxPurchases?: number; maxNewExperiments?: number } = {}) {
   const [run] = await db.insert(s.agentRuns).values({ id: newId(), projectId, trigger: opts.trigger ?? "manual", status: "running" }).returning();
   const lines: { at: string; agent: string; message: string }[] = [];
   const log = (agent: string, message: string) => lines.push({ at: new Date().toISOString(), agent, message });
@@ -29,17 +28,13 @@ export async function runCycle(db: DB, projectId: string, opts: { trigger?: "man
     const [mission] = await db.select().from(s.missions).where(and(eq(s.missions.projectId, projectId), eq(s.missions.status, "active")));
 
     // DISCOVER + UNDERSTAND
-    if (project.dataMode === "DEMO") {
-      log("discovery", "DEMO project — analyzing the seeded demo corpus (no live provider calls)");
-      stats.analysis = await analyzeProject(db, projectId, log);
-    } else {
-      const d = await runDiscovery(db, projectId, log);
-      stats.analysis = d.stats;
-      stats.fetched = d.fetched;
-    }
+    if (!project) throw new Error("Workspace not found");
+    if (project.dataMode === "DEMO") throw new Error("Demo workspaces are no longer supported");
+    const d = await runDiscovery(db, projectId, log);
+    stats.analysis = d.stats;
+    stats.fetched = d.fetched;
 
-    // Keep the service catalog fresh (Circle Agent Marketplace + bundled seller).
-    await registerBundledSignalsService(db);
+    // Keep the live service catalog fresh.
     const mk = await refreshMarketplace(db);
     log("operator", mk.error ? `Agent Marketplace unreachable: ${mk.error}` : `Agent Marketplace: ${mk.found} services, ${mk.arcPayable} payable on Arc`);
 
@@ -47,7 +42,7 @@ export async function runCycle(db: DB, projectId: string, opts: { trigger?: "man
     if (settle.checked) log("operator", `Checked ${settle.checked} in-flight settlement(s), ${settle.updated} updated`);
 
     if (!mission) {
-      log("operator", "No active mission — nothing to spend against. Create one to let GrowthOS act.");
+      log("operator", "No active mission — nothing to spend against. Create one to let GrowTendril act.");
     } else {
       // Product friction gates paid acquisition.
       const blocking = await db.select().from(s.productIssues).where(and(eq(s.productIssues.projectId, projectId), eq(s.productIssues.blocksAcquisition, true)));
@@ -83,10 +78,23 @@ export async function runCycle(db: DB, projectId: string, opts: { trigger?: "man
           log("operator", `Held acquisition for #${o.number} — fix "${blocking[0].label}" first`);
           continue;
         }
-        const exp = await createExperimentFromOpportunity(db, { projectId, opportunityId: o.id, runId: run.id, log });
+        let exp: Awaited<ReturnType<typeof createExperimentFromOpportunity>>;
+        try {
+          exp = await createExperimentFromOpportunity(db, { projectId, opportunityId: o.id, runId: run.id, log });
+        } catch (e) {
+          // A full budget or missing destination URL is a normal state, not a failed cycle.
+          log("strategist", `No new experiment for #${o.number}: ${(e as Error).message}`);
+          break;
+        }
         if (exp.status === "proposed") {
-          const res = await launchExperiment(db, { projectId, experimentId: exp.id, runId: run.id, log });
-          log("operator", `Launch EXP #${exp.number}: ${res.verdict} → ${res.state}`);
+          if (o.type === "KOL") {
+            try {
+              const res = await launchExperiment(db, { projectId, experimentId: exp.id, runId: run.id, log });
+              log("operator", `Launch EXP #${exp.number}: ${res.verdict} → ${res.state}`);
+            } catch (e) {
+              log("operator", `Experiment #${exp.number} awaits a verified creator payout address: ${(e as Error).message}`);
+            }
+          } else log("operator", `Experiment #${exp.number} is proposed. Choose a recipient and scope before requesting payment.`);
         }
       }
 

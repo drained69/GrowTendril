@@ -1,5 +1,6 @@
 import { getJson } from "@/server/integrations/providers/http";
-import type { FetchedPost, MarketProvider } from "@/server/integrations/providers/types";
+import type { CreatorProfile, FetchedPost, MarketProvider } from "@/server/integrations/providers/types";
+import { emailsIn, linksIn } from "@/server/domain/growth/creator-contacts";
 
 /** YouTube Data API v3 (API key). Video stats + channel subscriber counts. */
 interface SearchItem {
@@ -46,5 +47,16 @@ export const youtube: MarketProvider = {
         engagement: { views: Number(st.viewCount ?? 0), likes: Number(st.likeCount ?? 0), comments: Number(st.commentCount ?? 0) },
       };
     });
+  },
+  async profile(handle, creds, url): Promise<CreatorProfile | null> {
+    const channelId = url?.match(/\/channel\/([A-Za-z0-9_-]+)/)?.[1];
+    if (!channelId) return null;
+    const r = await getJson<{ items: { snippet: { title: string; description: string; customUrl?: string; country?: string; thumbnails?: { default?: { url: string } } }; statistics: { subscriberCount?: string } }[] }>(
+      "youtube",
+      `https://www.googleapis.com/youtube/v3/channels?part=snippet,statistics&id=${channelId}&key=${creds.apiKey}`,
+    ).catch(() => null);
+    const c = r?.items[0];
+    if (!c) return null;
+    return { handle, displayName: c.snippet.title, bio: c.snippet.description, followers: Number(c.statistics.subscriberCount ?? 0) || undefined, links: linksIn(c.snippet.description), publicEmail: emailsIn(c.snippet.description)[0], location: c.snippet.country, avatarUrl: c.snippet.thumbnails?.default?.url, url: c.snippet.customUrl ? `https://www.youtube.com/${c.snippet.customUrl}` : `https://www.youtube.com/channel/${channelId}` };
   },
 };

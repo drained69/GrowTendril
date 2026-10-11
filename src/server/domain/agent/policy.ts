@@ -1,5 +1,6 @@
 import { toMicro, fmtUsdc } from "@/lib/money";
 import { categoryFor, type FinancialAction } from "@/server/domain/agent/actions";
+import { ARC } from "@/server/integrations/circle/config";
 
 /**
  * Deterministic policy engine. Pure: the caller loads the state, this decides.
@@ -14,6 +15,8 @@ import { categoryFor, type FinancialAction } from "@/server/domain/agent/actions
 export type Verdict = "ALLOW" | "APPROVAL_REQUIRED" | "DENY";
 
 export interface PolicyConfig {
+  /** Founder opted in to autonomous spend. Off by default and for every policy stored before the switch existed. */
+  autonomyEnabled?: boolean;
   maxTransactionMicro: number;
   dailySpendMicro: number;
   kolApprovalThresholdMicro: number;
@@ -42,8 +45,9 @@ export interface PolicyState {
   serviceKnown?: boolean;
   /** For reallocate_budget: unspent budget of each source experiment. */
   experimentRemainingMicro?: Record<string, number>;
-  /** DEMO project with no wallet: decisions run, execution is recorded as SIMULATED. */
-  simulation?: boolean;
+  experimentActive?: boolean;
+  experimentBudgetMicro?: number;
+  experimentCommittedMicro?: number;
 }
 
 export interface PolicyCheck {
@@ -61,17 +65,18 @@ export interface PolicyResult {
 }
 
 export const DEFAULT_POLICY: PolicyConfig = {
-  maxTransactionMicro: toMicro(10),
-  dailySpendMicro: toMicro(50),
+  autonomyEnabled: false,
+  maxTransactionMicro: 0,
+  dailySpendMicro: toMicro(10),
   kolApprovalThresholdMicro: toMicro(100),
   bountyApprovalThresholdMicro: toMicro(25),
-  hardCeilingMicro: toMicro(500),
-  autonomousCategories: ["research", "services", "bounty", "content"],
-  approvalCategories: ["kol", "community", "treasury"],
+  hardCeilingMicro: toMicro(10),
+  autonomousCategories: [],
+  approvalCategories: ["research", "services", "kol", "bounty", "content", "community", "treasury"],
   forbiddenActions: ["mass_unsolicited_messaging", "automated_dm", "automated_cold_email", "automated_mentions"],
-  approvedServiceHosts: ["*"],
+  approvedServiceHosts: [],
   allowedTokens: ["USDC"],
-  allowedChains: ["Arc_Testnet", "Base_Sepolia"],
+  allowedChains: [ARC.appKitChain],
 };
 
 function amountOf(action: FinancialAction): number {
@@ -122,12 +127,14 @@ export function evaluatePolicy(
     "WALLET_CONFIGURED",
     state.walletConfigured,
     "deny",
-    state.simulation ? "SIMULATION — no wallet configured; nothing will move" : state.walletConfigured ? "Agent wallet is configured" : "No agent wallet configured",
+    state.walletConfigured ? "Agent wallet is configured" : "No Arc mainnet wallet configured",
   );
   add("WALLET_NOT_FROZEN", !state.walletFrozen, "deny", state.walletFrozen ? "Founder kill switch is on" : "Wallet active");
   add("ALLOWED_TOKENS", policy.allowedTokens.includes(action.currency), "deny", `${action.currency} ${policy.allowedTokens.includes(action.currency) ? "is" : "is not"} an allowed token`);
 
   const chains = action.action === "bridge_funds" ? [action.fromChain, action.toChain] : [action.chain];
+  add("DEPLOYMENT_CHAIN", chains.every((chain) => chain === ARC.appKitChain), "deny", `This deployment can spend only on ${ARC.name}`);
+  add("BRIDGE_DISABLED", action.action !== "bridge_funds", "deny", "Cross-chain transfers are not enabled for the mainnet launch");
   const badChain = chains.find((c) => !policy.allowedChains.includes(c));
   add("ALLOWED_CHAINS", !badChain, "deny", badChain ? `${badChain} is not an allowed chain` : `${chains.join(" → ")} allowed`);
 
@@ -135,10 +142,16 @@ export function evaluatePolicy(
   const forbidden = policy.forbiddenActions.includes(kind);
   add("FORBIDDEN_ACTIONS", !forbidden, "deny", forbidden ? `${kind} is forbidden by policy` : `${kind} is not forbidden`);
 
-  const overCeiling = amount > policy.hardCeilingMicro;
-  add("HARD_CEILING", !overCeiling, "deny", `${fmtUsdc(amount)} ${overCeiling ? ">" : "≤"} hard ceiling ${fmtUsdc(policy.hardCeilingMicro)}`);
+  const effectiveCeiling = Math.min(policy.hardCeilingMicro, toMicro(10));
+  const overCeiling = amount > effectiveCeiling;
+  add("HARD_CEILING", !overCeiling, "deny", `${fmtUsdc(amount)} ${overCeiling ? ">" : "≤"} hard ceiling ${fmtUsdc(effectiveCeiling)}`);
 
   add("MISSION_ACTIVE", state.missionActive, "deny", state.missionActive ? "Mission is active" : "Mission is not active");
+  if (action.action === "send_payment" && state.experimentActive !== undefined) {
+    add("EXPERIMENT_ACTIVE", state.experimentActive, "deny", state.experimentActive ? "Experiment belongs to this mission and is active" : "Experiment is stopped, finished, or does not belong to this mission");
+    const total = (state.experimentCommittedMicro ?? 0) + amount;
+    add("EXPERIMENT_BUDGET", total <= (state.experimentBudgetMicro ?? 0), "deny", `${fmtUsdc(total)} committed of ${fmtUsdc(state.experimentBudgetMicro ?? 0)} experiment budget`);
+  }
 
   if (action.action !== "bridge_funds") {
     const after = state.missionCommittedMicro + amount;
@@ -150,6 +163,16 @@ export function evaluatePolicy(
   add("APPROVED_CATEGORIES", known, "deny", known ? `Category "${category}" is permitted` : `Category "${category}" is not permitted by policy`);
 
   // ── APPROVAL rules: a founder can approve past these ──
+  const autonomous = policy.autonomyEnabled === true;
+  add(
+    "MAINNET_FOUNDER_APPROVAL",
+    autonomous,
+    "approval",
+    autonomous ? "Founder allowed autonomous spend within the limits below" : "Autonomous spend is off — every payment needs approval of this exact request",
+  );
+  // Money sent to a person (creator, bounty, partner) is always the founder's call.
+  const toPerson = action.action === "send_payment";
+  add("PAYMENT_TO_PERSON", !toPerson, "approval", toPerson ? "Payments to people always need founder approval" : "Not a payment to a person");
   const needsApprovalCategory = policy.approvalCategories.includes(category);
   add("CATEGORY_REQUIRES_APPROVAL", !needsApprovalCategory, "approval", needsApprovalCategory ? `"${category}" spend always requires founder approval` : `"${category}" may be spent autonomously`);
 

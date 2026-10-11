@@ -13,11 +13,28 @@ export interface ExperimentPerformance {
   status: string;
   budgetMicro: number;
   spentMicro: number;
+  /** Settled, in-flight and pending payments; reserved money cannot be reallocated. */
+  committedMicro?: number;
   conversions: number; // qualified conversions (mission goal event)
   visits: number;
   successTarget: number;
   stopMaxCpaMicro: number;
   stopAfterSpendMicro: number;
+  startsAt?: Date | null;
+  endsAt?: Date | null;
+  timeframeDays?: number;
+}
+
+/**
+ * Close running experiments that are done: reaching the success target is a success; running
+ * past the timeframe without it is a failure. Returns null while an experiment is still live.
+ */
+export function experimentOutcome(p: ExperimentPerformance, now: number): { status: "succeeded" | "failed"; reason: string } | null {
+  if (p.status !== "running") return null;
+  if (p.conversions >= p.successTarget) return { status: "succeeded", reason: `Reached ${p.conversions} of ${p.successTarget} target conversions${p.spentMicro ? ` for ${fmtUsdc(p.spentMicro)}` : " without paid spend"}` };
+  const end = p.endsAt?.getTime() ?? (p.startsAt && p.timeframeDays ? p.startsAt.getTime() + p.timeframeDays * 86_400_000 : null);
+  if (end != null && now >= end) return { status: "failed", reason: `Timeframe ended with ${p.conversions} of ${p.successTarget} target conversions` };
+  return null;
 }
 
 export interface Finding {
@@ -55,11 +72,11 @@ export function evaluateExperiments(perf: ExperimentPerformance[]): Finding[] {
     const c = cpa(p.spentMicro, p.conversions);
     const label = `#${p.number} ${p.title}`;
     const base = { experimentId: p.experimentId, label, spentMicro: p.spentMicro, conversions: p.conversions, cpaMicro: c };
-    if (p.spentMicro < MIN_SPEND_FOR_SIGNAL_MICRO)
-      return { ...base, verdict: "INSUFFICIENT_DATA" as const, reason: `Only ${fmtUsdc(p.spentMicro)} spent — below the ${fmtUsdc(MIN_SPEND_FOR_SIGNAL_MICRO)} signal threshold` };
-    const stopTriggered = p.spentMicro >= p.stopAfterSpendMicro && (c == null || c > p.stopMaxCpaMicro);
+    const stopTriggered = p.spentMicro > 0 && p.spentMicro >= p.stopAfterSpendMicro && (c == null || c > p.stopMaxCpaMicro);
     if (stopTriggered)
       return { ...base, verdict: "STOP" as const, reason: `Stop condition hit: CPA ${c == null ? "∞ (no conversions)" : fmtUsdc(c)} > ${fmtUsdc(p.stopMaxCpaMicro)} after ${fmtUsdc(p.spentMicro)}` };
+    if (p.spentMicro < MIN_SPEND_FOR_SIGNAL_MICRO)
+      return { ...base, verdict: "INSUFFICIENT_DATA" as const, reason: `Only ${fmtUsdc(p.spentMicro)} spent — below the ${fmtUsdc(MIN_SPEND_FOR_SIGNAL_MICRO)} signal threshold` };
     if (c == null) return { ...base, verdict: "REDUCE" as const, reason: `${fmtUsdc(p.spentMicro)} spent, no qualified conversions yet` };
     if (median != null && c <= median * 0.6 && p.conversions >= MIN_CONVERSIONS_FOR_SCALE)
       return { ...base, verdict: "SCALE" as const, reason: `CPA ${fmtUsdc(c)} is ≤60% of the mission median ${fmtUsdc(median)} with ${p.conversions} conversions` };
@@ -74,14 +91,14 @@ export function evaluateExperiments(perf: ExperimentPerformance[]): Finding[] {
  */
 export function planReallocation(perf: ExperimentPerformance[], findings: Finding[]): Reallocation[] {
   const byId = new Map(perf.map((p) => [p.experimentId, p]));
-  const winners = findings.filter((f) => f.verdict === "SCALE").sort((a, b) => (a.cpaMicro ?? Infinity) - (b.cpaMicro ?? Infinity));
+  const winners = findings.filter((f) => f.verdict === "SCALE" && byId.get(f.experimentId)?.status === "running").sort((a, b) => (a.cpaMicro ?? Infinity) - (b.cpaMicro ?? Infinity));
   const losers = findings.filter((f) => f.verdict === "STOP" || f.verdict === "REDUCE");
   if (!winners.length || !losers.length) return [];
 
   const moves: Reallocation[] = [];
   for (const loser of losers) {
     const p = byId.get(loser.experimentId)!;
-    const unspent = Math.max(0, p.budgetMicro - p.spentMicro);
+    const unspent = Math.max(0, p.budgetMicro - Math.max(p.spentMicro, p.committedMicro ?? p.spentMicro));
     const movable = loser.verdict === "STOP" ? unspent : Math.floor(unspent / 2);
     // Round down to whole cents so receipts read cleanly.
     let remaining = Math.floor(movable / 10_000) * 10_000;
@@ -109,7 +126,7 @@ export function growthEfficiency(input: { goal: number; achieved: number; budget
   const attainment = Math.min(1, input.achieved / Math.max(1, input.goal));
   const plannedCpa = input.budgetMicro / Math.max(1, input.goal);
   const actualCpa = input.achieved ? input.spentMicro / input.achieved : Infinity;
-  const costEff = actualCpa === Infinity ? 0 : Math.min(1, plannedCpa / actualCpa);
+  const costEff = actualCpa === Infinity ? 0 : actualCpa === 0 ? 1 : Math.min(1, plannedCpa / actualCpa);
   const hit = input.experiments ? input.successful / input.experiments : 0;
   return Math.round((attainment * 0.5 + costEff * 0.3 + hit * 0.2) * 100);
 }

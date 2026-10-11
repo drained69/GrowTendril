@@ -129,7 +129,7 @@ export default async function Creator({ params }: { params: Promise<{ id: string
                 items={[
                   { k: "Followers", v: <span className="num">{k.followers?.toLocaleString() ?? "unknown"}</span> },
                   { k: "Estimated campaign cost", v: <span className="num">{fmtUsdc(estimateKolCostMicro(k.followers))} <span className="text-ink-3">est.</span></span> },
-                  ...(k.url ? [{ k: "Profile", v: external ? <ExternalLink href={k.url}>Open</ExternalLink> : <span className="text-ink-3">Demo source</span> }] : []),
+                  ...(k.url && external ? [{ k: "Profile", v: <ExternalLink href={k.url}>Open</ExternalLink> }] : []),
                 ]}
               />
               <div className="border-t border-line pt-4">

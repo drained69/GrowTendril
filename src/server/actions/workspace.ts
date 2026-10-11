@@ -9,45 +9,23 @@ import { audit } from "@/server/db/helpers";
 import { ProductProfileSchema } from "@/server/domain/intel/product-analyst";
 import { toMicro } from "@/lib/money";
 import { fail, guard, type ActionResult } from "@/server/actions/_common";
+import { LAUNCH_CEILING_USDC, policyValues } from "@/server/domain/workspace/setup";
 
 const Amount = z.string().regex(/^\d+(\.\d{1,6})?$/, "Enter a USDC amount");
 const PolicyForm = z.object({
-  maxTransaction: Amount,
   dailySpend: Amount,
-  kolThreshold: Amount,
-  bountyThreshold: Amount,
   hardCeiling: Amount,
-  autonomous: z.array(z.string()),
-  approval: z.array(z.string()),
-  chains: z.array(z.string()).min(1, "Allow at least one chain"),
+  autonomousLimit: Amount,
 });
 
 export async function updatePolicyAction(_: unknown, form: FormData): Promise<ActionResult> {
   try {
     const { project, db, user } = await guard("manage_policy");
-    const f = PolicyForm.parse({
-      maxTransaction: form.get("maxTransaction"),
-      dailySpend: form.get("dailySpend"),
-      kolThreshold: form.get("kolThreshold"),
-      bountyThreshold: form.get("bountyThreshold"),
-      hardCeiling: form.get("hardCeiling"),
-      autonomous: form.getAll("autonomous").map(String),
-      approval: form.getAll("approval").map(String),
-      chains: form.getAll("chains").map(String),
-    });
-    const overlap = f.autonomous.filter((c) => f.approval.includes(c));
-    if (overlap.length) return { ok: false, error: `A category can't be both autonomous and approval-gated: ${overlap.join(", ")}` };
-    const vals = {
-      maxTransactionMicro: toMicro(f.maxTransaction),
-      dailySpendMicro: toMicro(f.dailySpend),
-      kolApprovalThresholdMicro: toMicro(f.kolThreshold),
-      bountyApprovalThresholdMicro: toMicro(f.bountyThreshold),
-      hardCeilingMicro: toMicro(f.hardCeiling),
-      autonomousCategories: f.autonomous,
-      approvalCategories: f.approval,
-      allowedChains: f.chains,
-    };
-    if (vals.maxTransactionMicro > vals.hardCeilingMicro) return { ok: false, error: "The autonomous limit cannot exceed the hard ceiling" };
+    const f = PolicyForm.parse({ dailySpend: form.get("dailySpend"), hardCeiling: form.get("hardCeiling"), autonomousLimit: form.get("autonomousLimit") || "0" });
+    const ceiling = toMicro(f.hardCeiling);
+    if (ceiling <= 0 || ceiling > toMicro(LAUNCH_CEILING_USDC)) return { ok: false, error: `Payments are limited to ${LAUNCH_CEILING_USDC} USDC each` };
+    if (toMicro(f.autonomousLimit) > ceiling) return { ok: false, error: "The autonomous limit can't be higher than the per-payment ceiling" };
+    const vals = policyValues(f);
     const [cur] = await db.select().from(s.policies).where(eq(s.policies.projectId, project.id));
     await db.update(s.policies).set({ ...vals, version: (cur?.version ?? 1) + 1, updatedAt: new Date() }).where(eq(s.policies.projectId, project.id));
     await audit(db, { projectId: project.id, actorType: "user", actorId: user.id, action: "policy.update", data: vals as Record<string, unknown> });
@@ -65,6 +43,7 @@ export async function saveProfileAction(_: unknown, form: FormData): Promise<Act
     const profile = ProductProfileSchema.parse({
       summary: String(form.get("summary") ?? ""),
       category: String(form.get("category") ?? ""),
+      audience: String(form.get("audience") ?? "businesses"),
       targetUsers: list("targetUsers"),
       competitors: list("competitors"),
       valueProps: list("valueProps"),
@@ -103,11 +82,14 @@ export async function saveIcpAction(_: unknown, form: FormData): Promise<ActionR
   }
 }
 
+const WebUrl = z.string().url("Enter a valid web URL").max(300).refine((value) => {
+  try { return ["https:", "http:"].includes(new URL(value).protocol); } catch { return false; }
+}, "Use an http:// or https:// URL");
 const WorkspaceForm = z.object({
   name: z.string().trim().min(1).max(80),
-  website: z.string().url().max(300).optional(),
-  docsUrl: z.string().url().max(300).optional(),
-  githubUrl: z.string().url().max(300).optional(),
+  website: WebUrl.optional(),
+  docsUrl: WebUrl.optional(),
+  githubUrl: WebUrl.optional(),
   xHandle: z.string().max(60).optional(),
 });
 

@@ -1,14 +1,21 @@
 import type { ReactNode } from "react";
 import { AlertTriangle, CheckCircle2, Info, OctagonAlert } from "lucide-react";
 import { cn } from "@/components/ui/cn";
+import { LogoMark } from "@/components/layout/logo";
 
 export function EmptyState({ icon, title, description, action, className }: { icon?: ReactNode; title: string; description?: ReactNode; action?: ReactNode; className?: string }) {
   return (
-    <div className={cn("flex flex-col items-center justify-center rounded-[10px] border border-dashed border-line-strong px-6 py-12 text-center", className)}>
-      {icon && <div className="mb-3 grid size-9 place-items-center rounded-[8px] bg-surface-2 text-ink-3 ring-1 ring-line [&_svg]:size-4.5">{icon}</div>}
-      <div className="text-[13.5px] font-medium text-ink">{title}</div>
-      {description && <div className="mt-1 max-w-md text-[12.5px] leading-relaxed text-ink-3">{description}</div>}
-      {action && <div className="mt-4 flex gap-2">{action}</div>}
+    <div className={cn("group glow-mint relative flex flex-col items-center justify-center overflow-hidden rounded-[20px] border border-dashed border-line-strong px-6 py-12 text-center", className)}>
+      <LogoMark size={190} className="pointer-events-none absolute -bottom-10 -right-8 text-accent opacity-[0.06] transition-transform duration-700 group-hover:-rotate-6" />
+      {icon && (
+        <div className="relative mb-4 grid size-11 place-items-center rounded-full bg-surface text-accent shadow-[var(--shadow-card)] ring-1 ring-line [&_svg]:size-5">
+          <span className="absolute inset-0 rounded-full bg-accent/15" style={{ animation: "ring-out 2.6s ease-out infinite" }} />
+          <span className="relative">{icon}</span>
+        </div>
+      )}
+      <div className="display display-bounce text-[18px] text-ink">{title}</div>
+      {description && <div className="mt-1.5 max-w-md text-[13px] leading-relaxed text-ink-3">{description}</div>}
+      {action && <div className="mt-5 flex gap-2">{action}</div>}
     </div>
   );
 }
@@ -23,7 +30,7 @@ const CALLOUT = {
 export function Callout({ tone = "info", title, children, action, className }: { tone?: keyof typeof CALLOUT; title?: ReactNode; children?: ReactNode; action?: ReactNode; className?: string }) {
   const c = CALLOUT[tone];
   return (
-    <div className={cn("flex gap-3 rounded-[8px] border px-3.5 py-3 text-[12.5px]", c.cls, className)}>
+    <div role={tone === "danger" ? "alert" : undefined} className={cn("flex flex-wrap gap-3 rounded-[14px] border px-4 py-3.5 text-[13px]", c.cls, className)}>
       <span className="mt-px shrink-0 [&_svg]:size-4">{c.icon}</span>
       <div className="min-w-0 flex-1">
         {title && <div className="font-medium text-ink">{title}</div>}
@@ -55,19 +62,19 @@ export function Avatar({ name, size = 24, className, square }: { name: string; s
   const initials = name.split(/[\s@._-]+/).filter(Boolean).slice(0, 2).map((p) => p[0]?.toUpperCase()).join("") || "?";
   const hue = [...name].reduce((h, ch) => (h * 31 + ch.charCodeAt(0)) % 360, 7);
   return (
-    <span className={cn("inline-grid shrink-0 place-items-center font-semibold text-white", square ? "rounded-[6px]" : "rounded-full", className)} style={{ width: size, height: size, fontSize: size * 0.4, background: `oklch(0.52 0.12 ${hue})` }}>
+    <span className={cn("inline-grid shrink-0 place-items-center font-semibold text-white shadow-[inset_0_0_0_1px_rgb(255_255_255/0.12)]", square ? "rounded-[9px]" : "rounded-full", className)} style={{ width: size, height: size, fontSize: size * 0.4, background: `oklch(0.52 0.12 ${hue})` }}>
       {initials}
     </span>
   );
 }
 
 export function Kbd({ children }: { children: ReactNode }) {
-  return <kbd className="num inline-flex h-[18px] min-w-[18px] items-center justify-center rounded-[4px] border border-line-strong bg-surface-2 px-1 text-[10.5px] text-ink-3">{children}</kbd>;
+  return <kbd className="num inline-flex h-[18px] min-w-[18px] items-center justify-center rounded-[6px] border border-line-strong bg-surface px-1.5 text-[10.5px] text-ink-3 shadow-[0_1px_0_var(--color-line-strong)]">{children}</kbd>;
 }
 
 export function ExternalLink({ href, children, className }: { href: string; children: ReactNode; className?: string }) {
   return (
-    <a href={href} target="_blank" rel="noreferrer" className={cn("text-s1 underline-offset-2 hover:underline", className)}>
+    <a href={href} target="_blank" rel="noreferrer" className={cn("text-accent underline decoration-accent/30 underline-offset-3 transition-colors hover:decoration-accent", className)}>
       {children}
       <span aria-hidden> ↗</span>
     </a>

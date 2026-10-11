@@ -8,6 +8,8 @@ import { kickWorker } from "@/server/jobs/worker";
 import { purchaseCompanyIntel } from "@/server/domain/agent/purchase";
 import { buildDailyBrief } from "@/server/domain/growth/brief";
 import { generateKolBrief } from "@/server/domain/growth/kol-brief";
+import { balanceMicro, canAfford, chargeService, InsufficientCredit, refundCharge } from "@/server/domain/billing";
+import { newId } from "@/server/lib/ids";
 import { collector, fail, guard, limited, type ActionResult, type LogLine } from "@/server/actions/_common";
 
 /** Queue an operator cycle. The worker runs it; the client polls jobStatusAction for progress. */
@@ -17,6 +19,8 @@ export async function runCycleAction(): Promise<ActionResult<{ jobId: string }>>
     await limited(`cycle:${user.id}`, 4, 1 / 60);
     const existing = await activeJob(db, project.id, "cycle");
     if (existing) return { ok: true, data: { jobId: existing.id }, message: "A cycle is already queued or running" };
+    // The scan is charged when the worker starts it; check now so the person hears why at once.
+    if (!(await canAfford(db, project.ownerId, "scan"))) throw new InsufficientCredit("scan", await balanceMicro(db, project.ownerId));
     const job = await enqueue(db, { kind: "cycle", projectId: project.id, trigger: "user", maxAttempts: 1 });
     kickWorker();
     return { ok: true, data: { jobId: job!.id } };
@@ -25,7 +29,7 @@ export async function runCycleAction(): Promise<ActionResult<{ jobId: string }>>
   }
 }
 
-export async function jobStatusAction(jobId: string): Promise<ActionResult<{ status: string; log: LogLine[]; error: string | null }>> {
+export async function jobStatusAction(jobId: string): Promise<ActionResult<{ status: string; log: LogLine[]; error: string | null; skipped: string | null }>> {
   try {
     const { project, db } = await guard("view");
     const [job] = await db.select().from(s.jobs).where(and(eq(s.jobs.id, jobId), eq(s.jobs.projectId, project.id)));
@@ -39,7 +43,8 @@ export async function jobStatusAction(jobId: string): Promise<ActionResult<{ sta
         : [];
     if (run) log = run.log.map((l) => ({ agent: l.agent, message: l.message }));
     if (job.status === "done" || job.status === "failed") revalidatePath("/app", "layout");
-    return { ok: true, data: { status: job.status, log, error: job.lastError } };
+    const skipped = (job.result as { skipped?: unknown } | null)?.skipped;
+    return { ok: true, data: { status: job.status, log, error: job.lastError, skipped: typeof skipped === "string" ? skipped : null } };
   } catch (e) {
     return fail(e);
   }
@@ -61,10 +66,21 @@ export async function purchaseIntelAction(companyId: string): Promise<ActionResu
 
 export async function generateBriefAction(kolId: string, experimentId?: string): Promise<ActionResult> {
   try {
-    const { project, db } = await guard("operate");
+    const { project, db, user } = await guard("operate");
     const [k] = await db.select().from(s.kols).where(and(eq(s.kols.id, kolId), eq(s.kols.projectId, project.id)));
     if (!k) return { ok: false, error: "Creator not found" };
-    await generateKolBrief(db, kolId, experimentId);
+    if (experimentId) {
+      const [x] = await db.select({ id: s.experiments.id }).from(s.experiments).where(and(eq(s.experiments.id, experimentId), eq(s.experiments.projectId, project.id)));
+      if (!x) return { ok: false, error: "Experiment not found" };
+    }
+    const ref = `brief:${newId()}`;
+    await chargeService(db, { ownerId: project.ownerId, projectId: project.id, service: "campaign_brief", ref, actorId: user.id, note: `@${k.handle}` });
+    try {
+      await generateKolBrief(db, kolId, experimentId);
+    } catch (e) {
+      await refundCharge(db, ref, "Brief failed — refunded");
+      throw e;
+    }
     revalidatePath(`/app/kols/${kolId}`, "layout");
     return { ok: true, message: "Brief regenerated" };
   } catch (e) {

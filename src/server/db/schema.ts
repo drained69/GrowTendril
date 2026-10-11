@@ -30,12 +30,119 @@ export const users = pgTable("users", {
   id: id(),
   email: text("email").notNull().unique(),
   name: text("name").notNull(),
-  passwordHash: text("password_hash").notNull(),
+  /** Null for accounts that only sign in with Google. */
+  passwordHash: text("password_hash"),
+  /** Set once the person proves they own the address (emailed code or Google). Nothing works before. */
+  emailVerifiedAt: timestamp("email_verified_at", { withTimezone: true }),
+  /** Google account subject ("sub"), when they sign in with Google. */
+  googleSub: text("google_sub").unique(),
+  /** Bumped on password reset or "sign out everywhere"; sessions carrying an older version are rejected. */
+  sessionVersion: integer("session_version").notNull().default(0),
   /** Guest accounts are created for anonymous demo visitors and expire. */
   isGuest: boolean("is_guest").notNull().default(false),
   lastLoginAt: timestamp("last_login_at", { withTimezone: true }),
   createdAt: createdAt(),
 });
+
+/** One-time codes sent by email: verify an address, or reset a password. Only a hash is stored. */
+export const emailCodes = pgTable(
+  "email_codes",
+  {
+    id: id(),
+    userId: text("user_id").notNull().references(() => users.id, { onDelete: "cascade" }),
+    email: text("email").notNull(),
+    purpose: text("purpose").notNull(), // verify | reset
+    codeHash: text("code_hash").notNull(),
+    attempts: integer("attempts").notNull().default(0),
+    expiresAt: timestamp("expires_at", { withTimezone: true }).notNull(),
+    consumedAt: timestamp("consumed_at", { withTimezone: true }),
+    createdAt: createdAt(),
+  },
+  (t) => [index("email_codes_user_idx").on(t.userId, t.purpose, t.createdAt)],
+);
+
+/** Every email GrowTendril sends (or would have sent in development), for support and audit. Bodies are not kept. */
+export const emailLog = pgTable(
+  "email_log",
+  {
+    id: id(),
+    userId: text("user_id").references(() => users.id, { onDelete: "set null" }),
+    to: text("to").notNull(),
+    kind: text("kind").notNull(), // verify_code | reset_code | welcome | credit_added | invite | report (older rows: subscription_*, renewal_reminder, payment_failed)
+    subject: text("subject").notNull(),
+    status: text("status").notNull(), // sent | failed | logged
+    providerId: text("provider_id"),
+    error: text("error"),
+    createdAt: createdAt(),
+  },
+  (t) => [index("email_log_user_idx").on(t.userId, t.createdAt)],
+);
+
+/** Legacy: subscription plans, replaced by prepaid credit (credit_ledger). Kept so old rows stay readable. */
+export const subscriptions = pgTable("subscriptions", {
+  id: id(),
+  userId: text("user_id").notNull().unique().references(() => users.id, { onDelete: "cascade" }),
+  provider: text("provider").notNull().default("arc"), // arc | dev
+  plan: text("plan").notNull(), // starter | growth
+  status: text("status").notNull(), // active | past_due (grace after the period ends) | canceled
+  currentPeriodEnd: timestamp("current_period_end", { withTimezone: true }),
+  /** When the "your plan ends soon" email went out for the current period. */
+  renewalReminderAt: timestamp("renewal_reminder_at", { withTimezone: true }),
+  createdAt: createdAt(),
+  updatedAt: updatedAt(),
+});
+
+/**
+ * Prepaid credit, in micro-USDC. Top-ups add (+), services deduct (−), refunds add back. The
+ * balance is the sum. `ref` makes each entry happen once (an invoice pays once; a job is charged once).
+ */
+export const creditLedger = pgTable(
+  "credit_ledger",
+  {
+    id: id(),
+    userId: text("user_id").notNull().references(() => users.id, { onDelete: "cascade" }),
+    projectId: text("project_id").references(() => projects.id, { onDelete: "set null" }),
+    kind: text("kind").notNull(), // topup | charge | refund
+    service: text("service"), // scan | creator_report | campaign_brief
+    amountMicro: micro("amount_micro").notNull(),
+    ref: text("ref").notNull(),
+    note: text("note"),
+    actorId: text("actor_id"),
+    createdAt: createdAt(),
+  },
+  (t) => [index("credit_ledger_user_idx").on(t.userId, t.createdAt), uniqueIndex("credit_ledger_ref_uq").on(t.kind, t.ref)],
+);
+
+/**
+ * A USDC payment request on Arc. The amount carries a unique micro-USDC suffix so an incoming
+ * transfer can be matched to it; the transaction hash is unique so one payment pays once.
+ */
+export const billingInvoices = pgTable(
+  "billing_invoices",
+  {
+    id: id(),
+    userId: text("user_id").notNull().references(() => users.id, { onDelete: "cascade" }),
+    plan: text("plan").notNull(),
+    /** Exact amount to send, micro-USDC (6 decimals, same as USDC's ERC-20 interface on Arc). */
+    amountMicro: micro("amount_micro").notNull(),
+    /** The plan price without the matching suffix; any payment of at least this counts by hash. */
+    priceMicro: micro("price_micro").notNull(),
+    payTo: text("pay_to").notNull(),
+    chain: text("chain").notNull().default("Arc"),
+    /** Arc block height when the invoice was created; earlier transfers can't pay it. */
+    fromBlock: text("from_block").notNull(),
+    status: text("status").notNull().default("pending"), // pending | paid | expired
+    txHash: text("tx_hash").unique(),
+    payer: text("payer"),
+    /** What the transaction actually sent (it can be more than asked). */
+    paidMicro: micro("paid_micro"),
+    periodEnd: timestamp("period_end", { withTimezone: true }),
+    createdAt: createdAt(),
+    expiresAt: timestamp("expires_at", { withTimezone: true }).notNull(),
+    paidAt: timestamp("paid_at", { withTimezone: true }),
+  },
+  (t) => [index("billing_invoices_user_idx").on(t.userId, t.createdAt), index("billing_invoices_status_idx").on(t.status)],
+);
 
 export const projects = pgTable(
   "projects",
@@ -145,6 +252,8 @@ export const productProfiles = pgTable("product_profiles", {
   projectId: text("project_id").notNull().unique().references(() => projects.id, { onDelete: "cascade" }),
   summary: text("summary").notNull(),
   category: text("category").notNull(),
+  /** Who buys: businesses | consumers | developers. Drives sources, templates and copy. */
+  audience: text("audience").notNull().default("businesses"),
   targetUsers: jsonb("target_users").$type<string[]>().notNull().default([]),
   competitors: jsonb("competitors").$type<string[]>().notNull().default([]),
   valueProps: jsonb("value_props").$type<string[]>().notNull().default([]),
@@ -183,7 +292,7 @@ export const missions = pgTable(
   {
     id: id(),
     projectId: text("project_id").notNull().references(() => projects.id, { onDelete: "cascade" }),
-    template: text("template").notNull(), // first_100_devs | find_buyers | own_narrative | kol_discovery | custom
+    template: text("template").notNull(), // first_users | first_customers | find_buyers | own_narrative | kol_discovery | first_100_devs | custom
     name: text("name").notNull(),
     goalDescription: text("goal_description").notNull(),
     /** Conversion event that counts toward the goal. */
@@ -214,6 +323,8 @@ export const missionBudgets = pgTable(
 export const policies = pgTable("policies", {
   id: id(),
   projectId: text("project_id").notNull().unique().references(() => projects.id, { onDelete: "cascade" }),
+  /** Founder opt-in for autonomous research/data/API spend within maxTransaction and the daily limit. */
+  autonomyEnabled: boolean("autonomy_enabled").notNull().default(false),
   maxTransactionMicro: micro("max_transaction_micro").notNull(),
   dailySpendMicro: micro("daily_spend_micro").notNull(),
   kolApprovalThresholdMicro: micro("kol_approval_threshold_micro").notNull(),
@@ -238,7 +349,7 @@ export const sources = pgTable(
   {
     id: id(),
     projectId: text("project_id").notNull().references(() => projects.id, { onDelete: "cascade" }),
-    provider: text("provider").notNull(), // github | hackernews | reddit | youtube | x | rss | website | x402 | demo
+    provider: text("provider").notNull(), // bluesky | github | hackernews | reddit | youtube | x | rss | website | x402 | demo
     url: text("url").notNull(),
     title: text("title"),
     fetchedAt: timestamp("fetched_at", { withTimezone: true }).notNull().defaultNow(),
@@ -336,6 +447,8 @@ export const kols = pgTable(
     overallScore: integer("overall_score").notNull().default(0),
     whyNow: jsonb("why_now").$type<string[]>().notNull().default([]),
     recommendedAngle: text("recommended_angle"),
+    /** What the creator publishes about themselves on that platform: bio, links, public email. */
+    profile: jsonb("profile").$type<{ bio?: string; links?: string[]; publicEmail?: string; location?: string; avatarUrl?: string; fetchedAt?: string }>().notNull().default({}),
     payoutAddress: text("payout_address"),
     status: text("status").notNull().default("candidate"), // candidate | shortlisted | engaged | dismissed
     dataMode: dataMode("data_mode").notNull(),
@@ -343,6 +456,19 @@ export const kols = pgTable(
     updatedAt: updatedAt(),
   },
   (t) => [uniqueIndex("kols_project_handle_uq").on(t.projectId, t.provider, t.handle)],
+);
+
+/** Snapshots of the influencer report, so it can be read, shared and exported as generated. */
+export const creatorReports = pgTable(
+  "creator_reports",
+  {
+    id: id(),
+    projectId: text("project_id").notNull().references(() => projects.id, { onDelete: "cascade" }),
+    data: jsonb("data").$type<Record<string, unknown>>().notNull(),
+    generatedBy: text("generated_by").notNull(), // template | claude
+    createdAt: createdAt(),
+  },
+  (t) => [index("creator_reports_project_idx").on(t.projectId, t.createdAt)],
 );
 
 export const narratives = pgTable(
@@ -440,7 +566,7 @@ export const opportunities = pgTable(
     number: integer("number").notNull(),
     /** e.g. "company:<id>" — one opportunity per subject; re-analysis updates it. */
     subjectKey: text("subject_key").notNull(),
-    type: text("type").notNull(), // CUSTOMER | KOL | NARRATIVE | PARTNERSHIP | CONTENT | COMMUNITY | DEVELOPER | PRODUCT_ISSUE | COMPETITOR | EVENT
+    type: text("type").notNull(), // CUSTOMER | KOL | NARRATIVE | PARTNERSHIP | CONTENT | COMMUNITY | PERSON | PRODUCT_ISSUE | COMPETITOR | EVENT
     secondaryType: text("secondary_type"),
     title: text("title").notNull(),
     whyNow: jsonb("why_now").$type<string[]>().notNull().default([]),
@@ -519,6 +645,14 @@ export const experiments = pgTable(
     startsAt: timestamp("starts_at", { withTimezone: true }),
     endsAt: timestamp("ends_at", { withTimezone: true }),
     status: text("status").notNull().default("proposed"), // proposed | awaiting_approval | running | succeeded | failed | stopped
+    /** Who gets paid when this isn't a creator campaign (a writer, a community, a bounty winner). */
+    recipientAddress: text("recipient_address"),
+    recipientLabel: text("recipient_label"),
+    /** Proof the paid work exists (the post, article or merged PR). The second tranche waits for it. */
+    deliveryUrl: text("delivery_url"),
+    deliveryNote: text("delivery_note"),
+    deliveredAt: timestamp("delivered_at", { withTimezone: true }),
+    deliveredBy: text("delivered_by").references(() => users.id, { onDelete: "set null" }),
     outcome: jsonb("outcome").$type<Record<string, unknown>>(),
     evidenceIds: jsonb("evidence_ids").$type<string[]>().notNull().default([]),
     dataMode: dataMode("data_mode").notNull(),
@@ -549,12 +683,12 @@ export const conversionEvents = pgTable(
     id: id(),
     projectId: text("project_id").notNull().references(() => projects.id, { onDelete: "cascade" }),
     campaignId: text("campaign_id").references(() => campaigns.id, { onDelete: "set null" }),
-    eventType: text("event_type").notNull(), // visit | signup | wallet_connect | sdk_key_created | sdk_install | demo_request | purchase | custom
+    eventType: text("event_type").notNull(), // visit | signup | lead | booking | app_install | demo_request | purchase | wallet_connect | sdk_key_created | sdk_install | custom
     customName: text("custom_name"),
     visitorId: text("visitor_id"),
     referralCode: text("referral_code"),
     valueMicro: micro("value_micro").notNull().default(0),
-    source: text("source").notNull(), // redirect | webhook | demo
+    source: text("source").notNull(), // redirect | webhook | manual (founder-reported) | demo
     idempotencyKey: text("idempotency_key").notNull().unique(),
     metadata: jsonb("metadata").$type<Record<string, unknown>>().notNull().default({}),
     occurredAt: timestamp("occurred_at", { withTimezone: true }).notNull(),
@@ -689,6 +823,9 @@ export const transactions = pgTable(
     batchTxHash: text("batch_tx_hash"),
     explorerUrl: text("explorer_url"),
     error: text("error"),
+    /** Read back from Arc after sending: verified (right amount to the right address) | mismatch | unverified. */
+    chainCheck: text("chain_check"),
+    chainCheckedAt: timestamp("chain_checked_at", { withTimezone: true }),
     dataMode: dataMode("data_mode").notNull(),
     createdAt: createdAt(),
     updatedAt: updatedAt(),
@@ -719,6 +856,42 @@ export const x402Purchases = pgTable("x402_purchases", {
   responseDigest: text("response_digest"),
   responseExcerpt: jsonb("response_excerpt").$type<Record<string, unknown>>(),
   createdAt: createdAt(),
+});
+
+/**
+ * Where the books and the chain disagree, kept in plain sight until a person resolves it (the
+ * job an "Imbalance" account does in bookkeeping). Nothing here is ever rounded away or
+ * auto-corrected: a USDC payment that matched no invoice, a payout whose on-chain transfer
+ * differs from what was approved, or money that left an agent wallet without a record.
+ */
+export const ledgerExceptions = pgTable(
+  "ledger_exceptions",
+  {
+    id: id(),
+    scope: text("scope").notNull(), // billing | wallet
+    projectId: text("project_id").references(() => projects.id, { onDelete: "cascade" }),
+    kind: text("kind").notNull(), // unmatched_payment | payout_mismatch | payout_unverified | unrecorded_outflow
+    /** What the exception is about (a transaction hash or a transaction id); one exception per kind and ref. */
+    ref: text("ref").notNull(),
+    txHash: text("tx_hash"),
+    transactionId: text("transaction_id").references(() => transactions.id, { onDelete: "set null" }),
+    amountMicro: micro("amount_micro"),
+    counterparty: text("counterparty"),
+    detail: text("detail").notNull(),
+    status: text("status").notNull().default("open"), // open | resolved
+    resolution: text("resolution"),
+    resolvedBy: text("resolved_by"),
+    resolvedAt: timestamp("resolved_at", { withTimezone: true }),
+    createdAt: createdAt(),
+  },
+  (t) => [uniqueIndex("ledger_exceptions_kind_ref_uq").on(t.kind, t.ref), index("ledger_exceptions_status_idx").on(t.scope, t.status), index("ledger_exceptions_project_idx").on(t.projectId, t.status)],
+);
+
+/** How far a chain scan has read (e.g. transfers into the billing address), so each run continues where the last stopped. */
+export const chainCursors = pgTable("chain_cursors", {
+  key: text("key").primaryKey(),
+  block: text("block").notNull(),
+  updatedAt: updatedAt(),
 });
 
 export const approvals = pgTable(
@@ -778,3 +951,36 @@ export const auditLogs = pgTable(
   },
   (t) => [index("audit_project_idx").on(t.projectId, t.at)],
 );
+
+/** A creator pilot reserves its complete reward pool as one mission experiment. */
+export const creatorPrograms = pgTable("creator_programs", {
+  id: id(), projectId: text("project_id").notNull().references(() => projects.id, { onDelete: "cascade" }),
+  experimentId: text("experiment_id").notNull().unique().references(() => experiments.id, { onDelete: "cascade" }),
+  topic: text("topic").notNull(), platform: text("platform").notNull(), brief: text("brief").notNull(),
+  slots: integer("slots").notNull(), cashLimitMicro: micro("cash_limit_micro").notNull(),
+  baseMicro: micro("base_micro").notNull(), qualityBonusMicro: micro("quality_bonus_micro").notNull(),
+  outcomeBonusMicro: micro("outcome_bonus_micro").notNull(), outcomeCap: integer("outcome_cap").notNull(),
+  createdAt: createdAt(),
+});
+export const creatorParticipants = pgTable("creator_participants", {
+  id: id(), programId: text("program_id").notNull().references(() => creatorPrograms.id, { onDelete: "cascade" }),
+  kolId: text("kol_id").notNull().references(() => kols.id),
+  campaignId: text("campaign_id").notNull().unique().references(() => campaigns.id),
+  tokenHash: text("token_hash").notNull().unique(), challenge: text("challenge").notNull(),
+  userId: text("user_id").references(() => users.id),
+  status: text("status").notNull().default("invited"),
+  payoutAddress: text("payout_address"), proofUrl: text("proof_url"),
+  acceptedAt: timestamp("accepted_at", { withTimezone: true }),
+  verifiedAt: timestamp("verified_at", { withTimezone: true }), verifiedBy: text("verified_by").references(() => users.id),
+  createdAt: createdAt(),
+}, t => [uniqueIndex("creator_participant_program_kol_uq").on(t.programId, t.kolId), uniqueIndex("creator_participant_program_user_uq").on(t.programId, t.userId)]);
+export const creatorContributions = pgTable("creator_contributions", {
+  id: id(), programId: text("program_id").notNull().references(() => creatorPrograms.id, { onDelete: "cascade" }),
+  participantId: text("participant_id").notNull().unique().references(() => creatorParticipants.id),
+  postUrl: text("post_url").notNull(), publishedAt: timestamp("published_at", { withTimezone: true }).notNull(),
+  status: text("status").notNull().default("submitted"),
+  review: jsonb("review").$type<Record<string, unknown>>(), score: integer("score"), rewardMicro: micro("reward_micro"),
+  outcomeIds: jsonb("outcome_ids").$type<string[]>().notNull().default([]),
+  reviewedAt: timestamp("reviewed_at", { withTimezone: true }), reviewedBy: text("reviewed_by").references(() => users.id),
+  createdAt: createdAt(),
+}, t => [uniqueIndex("creator_contribution_program_post_uq").on(t.programId, t.postUrl)]);

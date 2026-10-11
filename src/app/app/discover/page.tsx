@@ -2,6 +2,7 @@ import Link from "next/link";
 import { and, desc, eq, gte } from "drizzle-orm";
 import { ArrowRight, ArrowUpRight, Plug, Radar, Tags } from "lucide-react";
 import { requireProject } from "@/server/auth/current";
+import { priced } from "@/server/domain/billing";
 import { can } from "@/server/auth/access";
 import { schema as s } from "@/server/db/client";
 import { classifySignals, SIGNAL_LABEL, termHits } from "@/server/domain/intel/signals";
@@ -12,6 +13,7 @@ import { relTime, DAY_MS } from "@/lib/time";
 import { Badge, Callout, Card, CardBody, CardHeader, EmptyState, LinkButton, ModeBadge, PageHeader, StatusDot } from "@/components/ui";
 import { LinkTabs } from "@/components/ui/tabs";
 import { ActionButton } from "@/components/features/agent/action-button";
+import { sourceAppliesTo, sourceAudienceLabel } from "@/lib/source-readiness";
 
 const FILTERS = [
   { key: "all", label: "All" },
@@ -25,11 +27,12 @@ type FilterKey = (typeof FILTERS)[number]["key"];
 
 const CUSTOMER_SIGNALS = ["recommendation_request", "initiative", "hiring", "funding", "migration"];
 
-function sourceState(c: ProviderConnection): { tone: "good" | "warn" | "idle" | "bad"; label: string } {
+function sourceState(c: ProviderConnection, audience?: string | null): { tone: "good" | "warn" | "idle" | "bad"; label: string } {
   if (c.source === "restricted") return { tone: "idle", label: "Restricted" };
+  if (!sourceAppliesTo(c, audience)) return { tone: "idle", label: sourceAudienceLabel(c) };
   if (c.lastError) return { tone: "bad", label: "Error" };
   if (c.ready) return { tone: "good", label: c.source === "workspace" ? "Connected" : c.source === "platform" ? "Platform key" : "Keyless" };
-  return { tone: "warn", label: "Needs key" };
+  return { tone: "warn", label: c.provider.id === "rss" ? "Needs feeds" : "Needs setup" };
 }
 
 export default async function Discover({ searchParams }: { searchParams: Promise<{ filter?: string }> }) {
@@ -71,15 +74,14 @@ export default async function Discover({ searchParams }: { searchParams: Promise
       case "feedback":
         return r.mentionsUs;
       default:
-        return r.topics.length > 0 || r.mentionsUs;
+        return true;
     }
   };
   const counts = Object.fromEntries(FILTERS.map((f) => [f.key, rows.filter((r) => match(r, f.key)).length])) as Record<FilterKey, number>;
   const filtered = rows.filter((r) => match(r, filter));
 
-  const usable = connections.filter((c) => c.ready);
-  const missing = connections.filter((c) => !c.ready && c.source !== "restricted");
-  const demo = project.dataMode === "DEMO";
+  const usable = connections.filter((c) => c.ready && sourceAppliesTo(c, profile?.audience));
+  const missing = connections.filter((c) => !c.ready && c.source !== "restricted" && sourceAppliesTo(c, profile?.audience));
 
   return (
     <div className="space-y-4">
@@ -94,7 +96,7 @@ export default async function Discover({ searchParams }: { searchParams: Promise
             </span>
             <span className="text-ink-4">·</span>
             <span>
-              <span className="num text-ink-2">{usable.length}</span> of {connections.length} sources ready
+              <span className="num text-ink-2">{usable.length}</span> of {connections.length} sources ready for your audience
             </span>
           </>
         }
@@ -103,7 +105,7 @@ export default async function Discover({ searchParams }: { searchParams: Promise
             <LinkButton href="/app/integrations" icon={<Plug />}>
               Sources
             </LinkButton>
-            {can(role, "operate") && <ActionButton action={runCycleAction} label="Run scan" variant="primary" icon={<Radar />} />}
+            {can(role, "operate") && <ActionButton action={runCycleAction} label={priced("Run scan", "scan")} variant="primary" icon={<Radar />} />}
           </>
         }
       />
@@ -111,7 +113,7 @@ export default async function Discover({ searchParams }: { searchParams: Promise
       <Card>
         <CardHeader
           title="Source status"
-          description={missing.length ? `${missing.length} source${missing.length === 1 ? "" : "s"} need credentials before they can contribute` : "Every available source is ready"}
+          description={missing.length ? `${missing.length} relevant source${missing.length === 1 ? "" : "s"} need setup before they can contribute` : "Every available source for your audience is ready"}
           icon={<Plug />}
           action={
             <Link href="/app/integrations" className="inline-flex items-center gap-1 text-[12px] text-ink-3 hover:text-ink">
@@ -121,7 +123,7 @@ export default async function Discover({ searchParams }: { searchParams: Promise
         />
         <CardBody className="flex flex-wrap gap-2">
           {connections.map((c) => {
-            const st = sourceState(c);
+            const st = sourceState(c, profile?.audience);
             return (
               <Link
                 key={c.provider.id}
@@ -130,7 +132,7 @@ export default async function Discover({ searchParams }: { searchParams: Promise
                 className="inline-flex h-7 items-center gap-2 rounded-[6px] border border-line bg-surface-2/50 px-2.5 text-[12px] transition-colors hover:border-line-strong hover:bg-surface-2"
               >
                 <StatusDot tone={st.tone} />
-                <span className={c.ready ? "font-medium text-ink" : "text-ink-3"}>{c.provider.name}</span>
+                <span className={c.ready && sourceAppliesTo(c, profile?.audience) ? "font-medium text-ink" : "text-ink-3"}>{c.provider.name}</span>
                 <span className="text-[11px] text-ink-4">{st.label}</span>
               </Link>
             );
@@ -138,7 +140,6 @@ export default async function Discover({ searchParams }: { searchParams: Promise
         </CardBody>
       </Card>
 
-      {demo && <Callout tone="info">This DEMO project analyzes a seeded fictional corpus. Live providers are used by non-demo workspaces.</Callout>}
 
       <div className="grid gap-4 lg:grid-cols-[1fr_280px]">
         <div className="min-w-0">
@@ -177,8 +178,8 @@ export default async function Discover({ searchParams }: { searchParams: Promise
                             {SIGNAL_LABEL[x.type]}
                           </Badge>
                         ))}
-                      {topics.slice(0, 4).map((t) => (
-                        <Badge key={t}>{t}</Badge>
+                      {topics.slice(0, 4).map((t, it) => (
+                        <Badge key={`${it}:${t}`}>{t}</Badge>
                       ))}
                       {comp.map((c) => (
                         <Badge key={c} tone="warn">

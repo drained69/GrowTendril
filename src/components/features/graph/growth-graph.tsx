@@ -134,8 +134,8 @@ export function GrowthGraph({ nodes, edges }: { nodes: GraphNode[]; edges: Graph
             <p className="text-[12.5px] leading-relaxed text-ink-3">Click any node to trace it from product → market → opportunity → experiment → spend → result → learning, and open its evidence.</p>
           )}
           <div className="mt-4 grid grid-cols-2 gap-x-3 gap-y-1.5 border-t border-line pt-3">
-            {(Object.keys(TYPE_COLOR) as NodeType[]).map((t) => (
-              <div key={t} className="flex items-center gap-2 text-[11.5px] capitalize text-ink-2">
+            {(Object.keys(TYPE_COLOR) as NodeType[]).map((t, it) => (
+              <div key={`${it}:${t}`} className="flex items-center gap-2 text-[11.5px] capitalize text-ink-2">
                 <span className="size-2 rounded-sm" style={{ background: TYPE_COLOR[t] }} /> {t}
               </div>
             ))}

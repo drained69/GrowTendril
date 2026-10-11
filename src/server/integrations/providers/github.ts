@@ -1,5 +1,6 @@
 import { getJson } from "@/server/integrations/providers/http";
-import type { FetchedPost, MarketProvider } from "@/server/integrations/providers/types";
+import type { CreatorProfile, FetchedPost, MarketProvider } from "@/server/integrations/providers/types";
+import { linksIn } from "@/server/domain/growth/creator-contacts";
 
 /** GitHub REST search (issues/discussions + repositories). Works unauthenticated at low rate; GITHUB_TOKEN raises limits. */
 const headers = (token?: string): Record<string, string> => ({
@@ -35,18 +36,19 @@ interface Repo {
 export const github: MarketProvider = {
   id: "github",
   name: "GitHub",
-  description: "Issues, discussions and repositories via the GitHub REST search API. Works without a token at a low rate limit.",
+  description: "Issues and repositories via the GitHub REST search API. Used for developer products. Works without a token at a low rate limit.",
   category: "code",
   docsUrl: "https://docs.github.com/en/rest/search",
   access: "official_api",
   credentialFields: [{ key: "token", label: "Personal access token", secret: true, optional: true, placeholder: "github_pat_…", help: "Read-only public access is enough. Raises the rate limit from 10 to 30 searches/min." }],
   envFallback: { token: "GITHUB_TOKEN" },
+  audiences: ["developers"],
   isReady: () => true,
   async search(query, { since, limit }, creds) {
     const day = since.toISOString().slice(0, 10);
     const per = Math.min(Math.ceil(limit / 2), 30);
     const [issues, repos] = await Promise.all([
-      getJson<{ items: Issue[] }>("github", `https://api.github.com/search/issues?q=${encodeURIComponent(`${query} created:>${day}`)}&sort=created&order=desc&per_page=${per}`, { headers: headers(creds.token) }),
+      getJson<{ items: Issue[] }>("github", `https://api.github.com/search/issues?q=${encodeURIComponent(`${query} is:issue created:>${day}`)}&sort=created&order=desc&per_page=${per}`, { headers: headers(creds.token) }),
       getJson<{ items: Repo[] }>("github", `https://api.github.com/search/repositories?q=${encodeURIComponent(`${query} pushed:>${day}`)}&sort=updated&order=desc&per_page=${per}`, { headers: headers(creds.token) }),
     ]);
     const fromIssues = issues.items.map(
@@ -75,5 +77,15 @@ export const github: MarketProvider = {
       }),
     );
     return [...fromIssues, ...fromRepos];
+  },
+  async profile(handle, creds): Promise<CreatorProfile | null> {
+    const u = await getJson<{ login: string; name: string | null; bio: string | null; blog: string | null; email: string | null; twitter_username: string | null; location: string | null; followers: number; avatar_url: string; html_url: string }>(
+      "github",
+      `https://api.github.com/users/${encodeURIComponent(handle)}`,
+      { headers: headers(creds.token) },
+    ).catch(() => null);
+    if (!u) return null;
+    const links = [...(u.blog ? [/^https?:/.test(u.blog) ? u.blog : `https://${u.blog}`] : []), ...(u.twitter_username ? [`https://x.com/${u.twitter_username}`] : []), ...linksIn(u.bio ?? "")];
+    return { handle: u.login, displayName: u.name ?? undefined, bio: u.bio ?? undefined, followers: u.followers, links, publicEmail: u.email ?? undefined, location: u.location ?? undefined, avatarUrl: u.avatar_url, url: u.html_url };
   },
 };

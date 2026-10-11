@@ -18,7 +18,7 @@ export function WebhookSecret({ canManage }: { canManage: boolean }) {
       {secret ? (
         <Callout tone="warn" title="Copy this secret now — it won't be shown again">
           <CopyField value={secret} className="mt-2" />
-          <p className="mt-2 text-[11.5px]">Store it in your product's server environment (e.g. GROWTHOS_WEBHOOK_SECRET). The previous secret no longer verifies.</p>
+          <p className="mt-2 text-[11.5px]">Store it in your product's server environment (e.g. GROWTENDRIL_WEBHOOK_SECRET). The previous secret no longer verifies.</p>
         </Callout>
       ) : (
         <div className="flex items-center gap-2 rounded-[6px] border border-line-strong bg-bg py-1.5 pl-2.5 pr-2">

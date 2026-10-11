@@ -1,0 +1,71 @@
+{
+  "version": "0.0.1",
+  "configurations": [
+    {
+      "name": "growtendril-dev",
+      "runtimeExecutable": "env",
+      "runtimeArgs": [
+        "-u",
+        "ANTHROPIC_API_KEY",
+        "-u",
+        "ANTHROPIC_AUTH_TOKEN",
+        "-u",
+        "ANTHROPIC_BASE_URL",
+        "npm",
+        "run",
+        "dev"
+      ],
+      "port": 3000
+    },
+    {
+      "name": "growtendril-test",
+      "runtimeExecutable": "env",
+      "runtimeArgs": [
+        "-u",
+        "ANTHROPIC_API_KEY",
+        "-u",
+        "ANTHROPIC_AUTH_TOKEN",
+        "-u",
+        "ANTHROPIC_BASE_URL",
+        "PGLITE_DIR=/private/tmp/claude-501/gt-test-db",
+        "NEXT_DIST_DIR=.next-ui",
+        "APP_URL=http://localhost:3100",
+        "EMAIL_FROM=",
+        "RESEND_API_KEY=",
+        "BILLING_ARC_ADDRESS=",
+        "BILLING_DEV=1",
+        "npx",
+        "next",
+        "dev",
+        "-p",
+        "3100"
+      ],
+      "port": 3100
+    },
+    {
+      "name": "growtendril-audit",
+      "runtimeExecutable": "env",
+      "runtimeArgs": [
+        "-u",
+        "ANTHROPIC_API_KEY",
+        "-u",
+        "ANTHROPIC_AUTH_TOKEN",
+        "-u",
+        "ANTHROPIC_BASE_URL",
+        "PGLITE_DIR=/private/tmp/claude-501/gt-audit-db",
+        "NEXT_DIST_DIR=.next-audit",
+        "APP_URL=http://localhost:3200",
+        "EMAIL_FROM=",
+        "RESEND_API_KEY=",
+        "BILLING_ARC_ADDRESS=",
+        "BILLING_DEV=1",
+        "npx",
+        "next",
+        "dev",
+        "-p",
+        "3200"
+      ],
+      "port": 3200
+    }
+  ]
+}

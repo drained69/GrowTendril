@@ -14,15 +14,16 @@ import { refreshSettlements } from "@/server/domain/agent/execute";
 import { enqueue } from "@/server/jobs/queue";
 import { kickWorker } from "@/server/jobs/worker";
 import { fail, guard, limited, type ActionResult } from "@/server/actions/_common";
+import { ARC } from "@/server/integrations/circle/config";
+import { resolveException } from "@/server/domain/reconcile/exceptions";
 
 export async function provisionWalletAction(): Promise<ActionResult> {
   try {
     const { project, db, user } = await guard("manage_wallet");
-    if (project.dataMode === "DEMO") return { ok: false, error: "Demo workspaces run in simulation — create a real workspace for a wallet" };
     await limited(`wallet:${user.id}`, 3, 0.01);
     const w = await provisionWallet(db, { projectId: project.id, userId: user.id, projectName: project.name });
     revalidatePath("/app", "layout");
-    return { ok: true, message: `Wallet ${w.address?.slice(0, 10)}… created on Arc Testnet` };
+    return { ok: true, message: `Wallet ${w.address?.slice(0, 10)}… created on Arc mainnet` };
   } catch (e) {
     return fail(e);
   }
@@ -71,13 +72,13 @@ export async function depositToGatewayAction(amount: string): Promise<ActionResu
       projectId: project.id,
       agent: "founder",
       kind: "gateway_deposit",
-      action: { action: "gateway_deposit", amount: a, currency: "USDC", chain: "Arc_Testnet" },
+      action: { action: "gateway_deposit", amount: a, currency: "USDC", chain: ARC.appKitChain },
       rationale: `${user.name} moved ${a} USDC from the agent wallet into Circle Gateway to fund x402 nanopayments.`,
       status: "approved",
       autonomous: false,
-      dataMode: "TESTNET",
+      dataMode: "LIVE",
     });
-    const { tx } = await createTransaction(db, { projectId: project.id, walletId: w!.id, decisionId: d.id, kind: "gateway_deposit", rail: "gateway_deposit", budgetCategory: "treasury", amountMicro: micro, chain: "Arc_Testnet", recipient: null, idempotencyKey: sha256(`deposit:${d.id}`), dataMode: "TESTNET" });
+    const { tx } = await createTransaction(db, { projectId: project.id, walletId: w!.id, decisionId: d.id, kind: "gateway_deposit", rail: "gateway_deposit", budgetCategory: "treasury", amountMicro: micro, chain: ARC.appKitChain, recipient: null, idempotencyKey: sha256(`deposit:${d.id}`), dataMode: "LIVE" });
     await transition(db, tx.id, "AUTHORIZED", {}, `founder ${user.email}`);
     await writeReceipt(db, d.id);
     await enqueue(db, { kind: "gateway_deposit", projectId: project.id, payload: { transactionId: tx.id, amount: a }, trigger: "user", maxAttempts: 1 });
@@ -104,11 +105,30 @@ export async function setKolPayoutAction(kolId: string, address: string): Promis
   try {
     const { project, db, user } = await guard("manage_wallet");
     const a = address.trim();
-    if (a && !/^0x[0-9a-fA-F]{40}$/.test(a)) return { ok: false, error: "Enter a 0x… EVM address" };
+    if (a && (!/^0x[0-9a-fA-F]{40}$/.test(a) || /^0x0{40}$/i.test(a) || /^0x0{36}dead$/i.test(a))) return { ok: false, error: "Enter a valid recipient EVM address" };
+    const [k] = await db.select({ payoutAddress: s.kols.payoutAddress }).from(s.kols).where(and(eq(s.kols.id, kolId), eq(s.kols.projectId, project.id)));
+    if (!k) return { ok: false, error: "Creator not found" };
+    if ((k.payoutAddress ?? "").toLowerCase() === a.toLowerCase()) return { ok: true, message: "No change" };
     await db.update(s.kols).set({ payoutAddress: a || null, updatedAt: new Date() }).where(and(eq(s.kols.id, kolId), eq(s.kols.projectId, project.id)));
-    await audit(db, { projectId: project.id, actorType: "user", actorId: user.id, action: "kol.payout_address", target: kolId });
+    // Old and new address on record: payee changes are reviewed at approval time (see agent/payees.ts).
+    await audit(db, { projectId: project.id, actorType: "user", actorId: user.id, action: "kol.payout_address", target: kolId, data: { from: k.payoutAddress ?? null, to: a || null } });
     revalidatePath(`/app/kols/${kolId}`);
     return { ok: true, message: a ? "Payout address saved" : "Payout address cleared" };
+  } catch (e) {
+    return fail(e);
+  }
+}
+
+/** Close a ledger exception with a note saying what was found. Nothing is changed in the books. */
+export async function resolveLedgerExceptionAction(exceptionId: string, _: unknown, form: FormData): Promise<ActionResult> {
+  try {
+    const { project, db, user } = await guard("manage_wallet");
+    const resolution = String(form.get("resolution") ?? "");
+    const done = await resolveException(db, { id: exceptionId, userId: user.id, resolution, projectId: project.id });
+    if (!done) return { ok: false, error: "Already resolved, or not in this workspace" };
+    await audit(db, { projectId: project.id, actorType: "user", actorId: user.id, action: "ledger.exception_resolved", target: exceptionId, data: { resolution: resolution.trim().slice(0, 500) } });
+    revalidatePath("/app", "layout");
+    return { ok: true, message: "Marked resolved" };
   } catch (e) {
     return fail(e);
   }

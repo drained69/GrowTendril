@@ -1,7 +1,8 @@
 import { createHmac, timingSafeEqual } from "node:crypto";
 
 /**
- * Conversion webhook signature: header `x-growthos-signature: t=<unix>,v1=<hex hmac>` where
+ * Conversion webhook signature: header `x-growtendril-signature: t=<unix>,v1=<hex hmac>` where
+ * Legacy `x-morrowloop-signature` and `x-growthos-signature` requests remain accepted for existing integrations.
  * hmac = HMAC-SHA256(secret, `${t}.${rawBody}`). Rejects stale timestamps (replay window 5 min).
  */
 export function signWebhook(secret: string, body: string, t = Math.floor(Date.now() / 1000)): string {
@@ -9,13 +10,13 @@ export function signWebhook(secret: string, body: string, t = Math.floor(Date.no
 }
 
 export function verifyWebhook(secret: string, body: string, header: string | null, toleranceS = 300): { ok: boolean; reason?: string } {
-  if (!header) return { ok: false, reason: "missing signature" };
+  if (!header || !secret) return { ok: false, reason: "missing signature" };
   const parts = Object.fromEntries(header.split(",").map((kv) => kv.split("=") as [string, string]));
   const t = Number(parts.t);
-  if (!t || !parts.v1) return { ok: false, reason: "malformed signature" };
+  if (!/^\d+$/.test(parts.t ?? "") || !Number.isSafeInteger(t) || !/^[0-9a-f]{64}$/i.test(parts.v1 ?? "")) return { ok: false, reason: "malformed signature" };
   if (Math.abs(Date.now() / 1000 - t) > toleranceS) return { ok: false, reason: "timestamp outside tolerance" };
-  const expected = Buffer.from(createHmac("sha256", secret).update(`${t}.${body}`).digest("hex"));
-  const got = Buffer.from(parts.v1);
+  const expected = createHmac("sha256", secret).update(`${t}.${body}`).digest();
+  const got = Buffer.from(parts.v1, "hex");
   if (expected.length !== got.length || !timingSafeEqual(expected, got)) return { ok: false, reason: "bad signature" };
   return { ok: true };
 }

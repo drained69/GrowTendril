@@ -1,7 +1,10 @@
 import Link from "next/link";
-import { and, count, desc, eq, gte, ne } from "drizzle-orm";
-import { ArrowRight, Building2, CircleDollarSign, Flag, Plug, Radar, Sparkles, TrendingUp, Users } from "lucide-react";
+import { and, desc, eq, gte, ne } from "drizzle-orm";
+import { ArrowRight, Building2, CircleDollarSign, Coins, Flag, Globe, Newspaper, Plug, Radar, ShieldCheck, TrendingUp, Users } from "lucide-react";
 import { requireProject } from "@/server/auth/current";
+import { balanceMicro, billingMode, priced } from "@/server/domain/billing";
+import { autopilotCostLabel, servicePriceMicro } from "@/lib/services";
+import { AUTOPILOT_LABEL } from "@/server/jobs/scheduler";
 import { can } from "@/server/auth/access";
 import { schema as s } from "@/server/db/client";
 import { activeMission, missionSummary, CATEGORY_LABEL } from "@/server/queries/missions";
@@ -12,9 +15,12 @@ import { activeJob } from "@/server/jobs/queue";
 import { runCycleAction } from "@/server/actions/agent";
 import { fmtUsdc } from "@/lib/money";
 import { relTime, DAY_MS } from "@/lib/time";
-import { Badge, Callout, Card, CardBody, CardFooter, CardHeader, Confidence, EmptyState, LinkButton, ModeBadge, PageHeader, Stat, StatusDot, TxStateBadge, Velocity, VerdictBadge, shortHash } from "@/components/ui";
+import { Badge, Callout, Card, CardBody, CardFooter, CardHeader, Confidence, EmptyState, LinkButton, ModeBadge, Stat, StatusDot, TxStateBadge, Velocity, VerdictBadge, shortHash } from "@/components/ui";
 import { GoalProgress, StackedBar, BarList, Sparkline } from "@/components/charts";
 import { ActionButton } from "@/components/features/agent/action-button";
+import { OverviewHero } from "@/components/features/workspace/overview-hero";
+import { SetupSummary } from "@/components/features/workspace/setup-summary";
+import { sourceAppliesTo } from "@/lib/source-readiness";
 
 const more = (href: string, label = "View all") => (
   <Link href={href} className="inline-flex items-center gap-1 text-[12px] text-ink-3 hover:text-ink">
@@ -24,9 +30,8 @@ const more = (href: string, label = "View all") => (
 
 export default async function Overview({ searchParams }: { searchParams: Promise<{ welcome?: string }> }) {
   const { welcome } = await searchParams;
-  const { project, role, db } = await requireProject();
+  const { user, project, role, db } = await requireProject();
   const pid = project.id;
-  const demo = project.dataMode === "DEMO";
 
   const [mission, wallet, connections, scanning, decisions, txs, spentToday] = await Promise.all([
     activeMission(db, pid),
@@ -37,64 +42,94 @@ export default async function Overview({ searchParams }: { searchParams: Promise
     recentTransactions(db, pid, 6),
     spentTodayMicro(db, pid),
   ]);
-  const sum = mission ? await missionSummary(db, mission) : null;
-  const [[policy], qualified, [topNarr], [topKol], issues, posts, [counts]] = await Promise.all([
+  const billingOn = billingMode() !== "off";
+  const [[policy], [customerProfile], qualified, [topNarr], [topKol], issues, posts, credit, sum] = await Promise.all([
     db.select().from(s.policies).where(eq(s.policies.projectId, pid)),
+    db.select({ audience: s.productProfiles.audience }).from(s.productProfiles).where(eq(s.productProfiles.projectId, pid)),
     db.select().from(s.companies).where(eq(s.companies.projectId, pid)).orderBy(desc(s.companies.overallScore)).limit(6),
     db.select().from(s.narratives).where(eq(s.narratives.projectId, pid)).orderBy(desc(s.narratives.relevance), desc(s.narratives.velocityPct)).limit(1),
     db.select().from(s.opportunities).where(and(eq(s.opportunities.projectId, pid), eq(s.opportunities.type, "KOL"), ne(s.opportunities.status, "dismissed"))).orderBy(desc(s.opportunities.overallScore)).limit(1),
     db.select().from(s.productIssues).where(and(eq(s.productIssues.projectId, pid), gte(s.productIssues.mentions7d, 3))),
     db.select({ at: s.socialPosts.publishedAt }).from(s.socialPosts).where(and(eq(s.socialPosts.projectId, pid), gte(s.socialPosts.publishedAt, new Date(Date.now() - 14 * DAY_MS)))),
-    db.select({ n: count() }).from(s.evidence).where(eq(s.evidence.projectId, pid)),
+    billingOn ? balanceMicro(db, project.ownerId) : Promise.resolve(null),
+    mission ? missionSummary(db, mission) : Promise.resolve(null),
   ]);
+  const quick =
+    welcome === "quick"
+      ? await Promise.all([db.select().from(s.productProfiles).where(eq(s.productProfiles.projectId, pid)), db.select().from(s.icps).where(eq(s.icps.projectId, pid))]).then(([[profile], icps]) => (profile ? { profile, icps } : null))
+      : null;
   const daily = Array.from({ length: 14 }, (_, i) => posts.filter((p) => Math.floor((Date.now() - p.at.getTime()) / DAY_MS) === 13 - i).length);
   const live = walletIsLive(wallet);
-  const connected = connections.filter((c) => c.source === "workspace" || c.source === "platform" || c.source === "keyless").length;
+  const connected = connections.filter((c) => c.ready && sourceAppliesTo(c, customerProfile?.audience)).length;
 
+  const lowCredit = credit != null && credit < servicePriceMicro("scan");
   const setup = [
     { done: !!mission, label: "Set a mission", detail: "A goal and a USDC budget to work against", href: "/app/missions", icon: <Flag /> },
+    { done: !!(project.website || project.docsUrl), label: "Add your website", detail: "Your site, shop or booking page — where tracked links send people", href: "/app/settings#workspace", icon: <Globe /> },
     { done: connected > 0, label: "Connect market sources", detail: `${connected} of ${connections.length} sources ready`, href: "/app/integrations", icon: <Plug /> },
-    { done: live, label: "Create the agent wallet", detail: "Arc Testnet wallet the agent spends from", href: "/app/wallet", icon: <CircleDollarSign /> },
-    { done: (counts?.n ?? 0) > 0, label: "Run the first scan", detail: scanning ? "Scan in progress…" : "Collect evidence from connected sources", href: "/app/runs", icon: <Radar /> },
+    { done: live, label: "Create the agent wallet", detail: "Arc mainnet wallet the agent spends from", href: "/app/wallet", icon: <CircleDollarSign /> },
+    ...(credit != null ? [{ done: !lowCredit, label: "Add credit", detail: lowCredit ? `${fmtUsdc(credit)} left — a scan costs ${fmtUsdc(servicePriceMicro("scan"))}` : `${fmtUsdc(credit)} on the balance`, href: "/billing", icon: <Coins /> }] : []),
+    { done: !!project.lastCycleAt, label: "Run the first scan", detail: scanning?.status === "queued" ? "Queued — waiting for the worker" : scanning ? "Scan in progress…" : "Collect evidence from connected sources", href: "/app/runs", icon: <Radar /> },
   ];
   const setupLeft = setup.filter((x) => !x.done).length;
 
   return (
     <div className="space-y-4">
-      <PageHeader
-        title="Overview"
-        description={`${project.name} — goal, money, evidence, and what the operator decided.`}
-        meta={
+      <OverviewHero
+        name={user.isGuest ? "there" : user.name.split(" ")[0] || "there"}
+        workspace={project.name}
+        chips={
           <>
             <ModeBadge mode={project.dataMode} />
-            {project.lastCycleAt ? <span>Last cycle {relTime(project.lastCycleAt)}</span> : <span>No cycle has run yet</span>}
+            <span className="inline-flex items-center gap-1.5 rounded-full border border-line bg-surface-2/60 px-2.5 py-0.5">
+              <StatusDot tone={scanning ? "info" : "good"} pulse />
+              {scanning?.status === "queued" ? "Scan queued — waiting for the worker" : scanning ? "Scanning the market now" : project.lastCycleAt ? `Last cycle ${relTime(project.lastCycleAt)}` : "No cycle has run yet"}
+            </span>
+            {mission && sum && <span className="inline-flex items-center gap-1.5 rounded-full border border-line bg-surface-2/60 px-2.5 py-0.5"><Flag className="size-3" />{sum.daysLeft} days left in “{mission.name}”</span>}
           </>
         }
         actions={
           <>
-            {demo && (
-              <LinkButton href="/app/demo" icon={<Sparkles />}>
-                Guided demo
-              </LinkButton>
-            )}
-            {can(role, "operate") && <ActionButton action={runCycleAction} label="Run cycle" variant="primary" icon={<Radar />} />}
+            {can(role, "operate") && <ActionButton action={runCycleAction} label={priced("Run cycle", "scan")} variant="primary" icon={<Radar />} />}
+            <LinkButton href="/app/discover" variant="outline" icon={<Radar />}>Browse evidence</LinkButton>
+            <LinkButton href="/app/approvals" variant="outline" icon={<ShieldCheck />}>Approvals</LinkButton>
+            <LinkButton href="/app/brief" variant="ghost" icon={<Newspaper />}>Daily brief</LinkButton>
           </>
         }
       />
 
-      {welcome && !demo && (
+      {welcome === "quick" && quick && <SetupSummary website={project.website} profile={quick.profile} icps={quick.icps} mission={mission ?? null} scanning={!!scanning} scanStatus={scanning?.status} lowCredit={lowCredit} autopilot={credit != null ? `${AUTOPILOT_LABEL[project.autopilot] ?? project.autopilot} · ${autopilotCostLabel(project.autopilot)}` : undefined} />}
+
+      {welcome && welcome !== "quick" && (
         <Callout tone="success" title="Workspace created">
-          {scanning ? "The first market scan is running in the background — evidence will appear here as it lands." : "Your workspace is ready. Finish the checklist below so the operator can work end to end."}
+          {scanning?.status === "queued"
+            ? "The first market scan is queued, waiting for the worker. Check Agent runs for progress."
+            : scanning
+            ? "The first market scan is running in the background — evidence will appear here as it lands."
+            : lowCredit
+              ? `Your workspace is ready. Add credit to run its first market scan (${fmtUsdc(servicePriceMicro("scan"))}).`
+              : "Your workspace is ready. Finish the checklist below so the operator can work end to end."}
         </Callout>
       )}
 
-      {!demo && setupLeft > 0 && (
+      {setupLeft > 0 && (
         <Card>
-          <CardHeader title="Get the operator running" description={`${setup.length - setupLeft} of ${setup.length} steps complete`} />
-          <div className="grid divide-line sm:grid-cols-2 sm:divide-x lg:grid-cols-4">
+          <CardHeader
+            title="Get the operator running"
+            description={`${setup.length - setupLeft} of ${setup.length} steps complete`}
+            action={
+              <span className="flex items-center gap-2">
+                <span className="relative hidden h-1.5 w-28 overflow-hidden sm:block rounded-full bg-surface-3">
+                  <span className="bar-grow absolute inset-y-0 left-0 rounded-full bg-good" style={{ width: `${((setup.length - setupLeft) / setup.length) * 100}%` }} />
+                </span>
+                <span className="num text-[11px] text-ink-3">{Math.round(((setup.length - setupLeft) / setup.length) * 100)}%</span>
+              </span>
+            }
+          />
+          <div className={`grid divide-line sm:grid-cols-2 sm:divide-x ${setup.length > 5 ? "lg:grid-cols-3" : "lg:grid-cols-5"}`}>
             {setup.map((x) => (
               <Link key={x.label} href={x.href} className="group flex items-start gap-3 border-t border-line px-4 py-3.5 transition-colors first:border-t-0 hover:bg-surface-2 sm:border-t-0">
-                <span className={`mt-0.5 grid size-7 shrink-0 place-items-center rounded-[7px] ring-1 [&_svg]:size-3.5 ${x.done ? "bg-good/10 text-good ring-good/25" : "bg-surface-2 text-ink-3 ring-line-strong"}`}>{x.icon}</span>
+                <span className={`mt-0.5 grid size-7 shrink-0 place-items-center rounded-[7px] ring-1 transition-transform duration-200 group-hover:-translate-y-0.5 group-hover:rotate-[-6deg] [&_svg]:size-3.5 ${x.done ? "bg-good/10 text-good ring-good/25" : "bg-surface-2 text-ink-3 ring-line-strong"}`}>{x.icon}</span>
                 <span className="min-w-0">
                   <span className={`block text-[12.5px] font-medium ${x.done ? "text-ink-3 line-through" : "text-ink"}`}>{x.label}</span>
                   <span className="block text-[11.5px] text-ink-3">{x.detail}</span>
@@ -121,7 +156,7 @@ export default async function Overview({ searchParams }: { searchParams: Promise
                 <div className="grid grid-cols-3 gap-6">
                   <Stat size="sm" label="Attributed" value={sum.attributed} sub="to experiments" />
                   <Stat size="sm" label="Cost / qualified" value={sum.costPerQualified ? fmtUsdc(sum.costPerQualified, { unit: false }) : "—"} sub="USDC, measured" />
-                  <Stat size="sm" label="Efficiency" value={sum.efficiency} sub="growth per USDC" />
+                  <Stat size="sm" label="Efficiency" value={sum.efficiency} sub="score out of 100" />
                 </div>
               </div>
               <div className="mt-4">
@@ -153,7 +188,7 @@ export default async function Overview({ searchParams }: { searchParams: Promise
               </span>
               <span className="flex items-center gap-1.5">
                 <StatusDot tone={wallet?.frozen ? "bad" : live ? "good" : "warn"} />
-                {wallet?.frozen ? "Frozen" : live ? "Wallet live · Arc Testnet" : "Simulation only"}
+                {wallet?.frozen ? "Frozen" : live ? "Wallet live · Arc mainnet" : "Payments disabled"}
               </span>
             </CardFooter>
           </Card>
@@ -229,8 +264,8 @@ export default async function Overview({ searchParams }: { searchParams: Promise
               <Link href={`/app/opportunities/${topKol.id}`} className="block">
                 <div className="text-[14px] font-semibold leading-snug">{topKol.title}</div>
                 <ul className="mt-2.5 space-y-1.5 text-[12px] leading-snug text-ink-2">
-                  {topKol.whyNow.slice(0, 3).map((w) => (
-                    <li key={w} className="flex gap-2">
+                  {topKol.whyNow.slice(0, 3).map((w, iw) => (
+                    <li key={`${iw}:${w}`} className="flex gap-2">
                       <span className="mt-[6px] size-1 shrink-0 rounded-full bg-ink-4" />
                       {w}
                     </li>

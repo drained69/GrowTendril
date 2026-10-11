@@ -15,6 +15,83 @@
       "when": 1791035826557,
       "tag": "0001_teams_vault_jobs",
       "breakpoints": true
+    },
+    {
+      "idx": 2,
+      "version": "7",
+      "when": 1791193690655,
+      "tag": "0002_audience",
+      "breakpoints": true
+    },
+    {
+      "idx": 3,
+      "version": "7",
+      "when": 1791214439993,
+      "tag": "0003_creators_autonomy",
+      "breakpoints": true
+    },
+    {
+      "idx": 4,
+      "version": "7",
+      "when": 1791243225020,
+      "tag": "0004_experiment_recipient",
+      "breakpoints": true
+    },
+    {
+      "idx": 5,
+      "version": "7",
+      "when": 1791309607587,
+      "tag": "0005_auth_billing_email",
+      "breakpoints": true
+    },
+    {
+      "idx": 6,
+      "version": "7",
+      "when": 1791311644052,
+      "tag": "0006_drop_stripe",
+      "breakpoints": true
+    },
+    {
+      "idx": 7,
+      "version": "7",
+      "when": 1791311644658,
+      "tag": "0007_arc_billing",
+      "breakpoints": true
+    },
+    {
+      "idx": 8,
+      "version": "7",
+      "when": 1791312463123,
+      "tag": "0008_invoice_paid_amount",
+      "breakpoints": true
+    },
+    {
+      "idx": 9,
+      "version": "7",
+      "when": 1791362512763,
+      "tag": "0009_prepaid_credit",
+      "breakpoints": true
+    },
+    {
+      "idx": 10,
+      "version": "7",
+      "when": 1791429187173,
+      "tag": "0010_ledger_controls",
+      "breakpoints": true
+    },
+    {
+      "idx": 11,
+      "version": "7",
+      "when": 1791540000000,
+      "tag": "0011_redact_email_codes",
+      "breakpoints": true
+    },
+    {
+      "idx": 12,
+      "version": "7",
+      "when": 1791700000000,
+      "tag": "0012_creator_campaigns",
+      "breakpoints": true
     }
   ]
 }

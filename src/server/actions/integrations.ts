@@ -29,7 +29,7 @@ export async function removeIntegrationAction(providerId: string): Promise<Actio
 
 export async function testIntegrationAction(providerId: string): Promise<ActionResult> {
   try {
-    const { project, db, user } = await guard("view");
+    const { project, db, user } = await guard("manage_integrations");
     await limited(`test-int:${user.id}`, 6, 0.1);
     const r = await testIntegration(db, { projectId: project.id, providerId });
     revalidatePath("/app/integrations");

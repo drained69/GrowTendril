@@ -111,14 +111,14 @@ export function scoreCompany(
   // ENGAGEMENT OPPORTUNITY — is there a legitimate, public way to engage (not cold spam)?
   const publicAsk = evidence.some((e) => e.signalType === "recommendation_request" || e.signalType === "question");
   const namedPerson = evidence.some((e) => e.hasNamedPerson);
-  const publicThread = evidence.some((e) => ["github", "hackernews", "reddit"].includes(e.provider));
+  const publicThread = evidence.some((e) => ["github", "hackernews", "reddit", "bluesky", "x", "youtube"].includes(e.provider));
   const engagement = clamp((publicAsk ? 45 : 0) + (namedPerson ? 25 : 0) + (publicThread ? 30 : 10));
   const engagementOpportunity: ScoreComponent = {
     score: engagement,
     weight: COMPANY_WEIGHTS.engagementOpportunity,
     reasons: [
       publicAsk ? "Asked a public question we can answer in-thread" : "No open public question",
-      publicThread ? "Active public thread (GitHub / HN / Reddit)" : "No public thread to join",
+      publicThread ? "Active public thread you can join" : "No public thread to join",
       namedPerson ? "A named decision-maker is visible" : "No named contact",
     ],
   };

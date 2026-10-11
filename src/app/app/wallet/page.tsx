@@ -18,6 +18,8 @@ import { CopyField } from "@/components/ui/copy";
 import { ActionButton } from "@/components/features/agent/action-button";
 import { OnrampButton } from "@/components/features/wallet/onramp-button";
 import { AttachWalletForm, DepositForm } from "@/components/features/wallet/wallet-controls";
+import { LedgerExceptions } from "@/components/features/wallet/ledger-exceptions";
+import { exceptionsFor } from "@/server/domain/reconcile/exceptions";
 
 async function attempt<T>(fn: () => Promise<T>): Promise<{ v: T | null; err: string | null }> {
   try {
@@ -27,23 +29,23 @@ async function attempt<T>(fn: () => Promise<T>): Promise<{ v: T | null; err: str
   }
 }
 
-const CUSTODY_LABEL: Record<string, string> = { circle_dcw: "Circle developer-controlled wallet", local_testnet: "Server-side testnet key", unconfigured: "Not configured" };
+const CUSTODY_LABEL: Record<string, string> = { circle_dcw: "Circle developer-controlled wallet", local_testnet: "Legacy testnet key (inactive)", unconfigured: "Not configured" };
 
 const Code = ({ children }: { children: React.ReactNode }) => <code className="num rounded-[4px] bg-surface-3 px-1 py-px text-[11.5px] text-ink">{children}</code>;
 
 export default async function WalletPage() {
   const { project, role, db, user } = await requireProject();
   const pid = project.id;
-  const demo = project.dataMode === "DEMO";
   const manage = can(role, "manage_wallet");
   const custody = platformCustody();
 
-  const [wallet, spentToday, [policy], mission, jobs] = await Promise.all([
+  const [wallet, spentToday, [policy], mission, jobs, exceptions] = await Promise.all([
     getWallet(db, pid),
     spentTodayMicro(db, pid),
     db.select().from(s.policies).where(eq(s.policies.projectId, pid)),
     activeMission(db, pid),
     recentJobs(db, pid, 60),
+    exceptionsFor(db, { projectId: pid, scope: "wallet", limit: 30 }),
   ]);
   const sum = mission ? await missionSummary(db, mission) : null;
   const live = walletIsLive(wallet);
@@ -51,13 +53,12 @@ export default async function WalletPage() {
   const [balances, ub] = await Promise.all([walletBalances(wallet), address ? attempt(() => unifiedBalance(address)) : Promise.resolve(null)]);
   const deposits = jobs.filter((j) => j.kind === "gateway_deposit").slice(0, 8);
 
-  // Earn recommendation input: 7-day run rate of spend that actually moved (or would have).
+  // Earn recommendation input: 7-day run rate of submitted or settled payments.
   const [rate] = await db
     .select({ n: sql<string>`coalesce(sum(${s.transactions.amountMicro}),0)` })
     .from(s.transactions)
-    .where(and(eq(s.transactions.projectId, pid), inArray(s.transactions.state, ["SUBMITTED", "SETTLED", "SIMULATED"]), gte(s.transactions.createdAt, new Date(Date.now() - 7 * DAY_MS))));
+    .where(and(eq(s.transactions.projectId, pid), inArray(s.transactions.state, ["SUBMITTED", "SETTLED"]), gte(s.transactions.createdAt, new Date(Date.now() - 7 * DAY_MS))));
   const weekly = Number(rate?.n ?? 0);
-  const idle = sum ? Math.max(0, sum.available - weekly * 2) : 0;
 
   const statusBadge = !address ? <Badge tone="warn">Not set up</Badge> : wallet?.frozen ? <Badge tone="bad" dot>Frozen</Badge> : live ? <Badge tone="good" dot>Active</Badge> : <Badge tone="warn">Cannot sign</Badge>;
 
@@ -65,10 +66,10 @@ export default async function WalletPage() {
     <div className="space-y-4">
       <PageHeader
         title="Wallet"
-        description="The agent’s operating budget. Keys never reach the AI: Circle custodies them (developer-controlled wallet) or, in testnet-key mode, they stay in server env and only sign through the policy engine."
+        description="USDC operating funds on Arc. Creator payouts always require approval. Research purchases can run within the limits you enable; every payment is capped at 10 USDC."
         meta={
           <>
-            <ModeBadge mode={wallet?.dataMode ?? (demo ? "DEMO" : "SIMULATED")} />
+            <ModeBadge mode={wallet?.dataMode ?? "LIVE"} />
             <span>{ARC.name}</span>
             <span className="text-ink-4">·</span>
             <span>{wallet ? CUSTODY_LABEL[wallet.provider] ?? wallet.provider : "No wallet"}</span>
@@ -96,19 +97,21 @@ export default async function WalletPage() {
         </Callout>
       )}
 
+      <LedgerExceptions items={exceptions} canResolve={manage} />
+
       {!address ? (
-        <WalletSetup custody={custody} manage={manage} demo={demo} />
+        <WalletSetup custody={custody} manage={manage} workspaceId={pid} />
       ) : (
         <div className="grid gap-4 lg:grid-cols-[1.35fr_1fr]">
-          <div className="space-y-4">
+          <div className="min-w-0 space-y-4">
             <Card>
-              <CardHeader title="Workspace wallet" description="Arc Testnet EOA the agent spends from" icon={<WalletIcon />} action={statusBadge} />
+              <CardHeader title="Workspace wallet" description="Arc mainnet EOA the agent spends from" icon={<WalletIcon />} action={statusBadge} />
               <CardBody className="space-y-4">
                 <div>
                   <div className="label mb-1.5">Address</div>
                   <div className="flex items-center gap-2">
                     <CopyField value={address} className="flex-1" />
-                    <a href={addressExplorerUrl("Arc_Testnet", address)} target="_blank" rel="noreferrer" className="inline-flex h-8 shrink-0 items-center gap-1 rounded-[6px] border border-line-strong px-2.5 text-[12px] text-ink-2 hover:bg-surface-2 hover:text-ink">
+                    <a href={addressExplorerUrl(wallet!.blockchain === "ARC" ? "Arc" : "Arc_Testnet", address)} target="_blank" rel="noreferrer" className="inline-flex h-8 shrink-0 items-center gap-1 rounded-[6px] border border-line-strong px-2.5 text-[12px] text-ink-2 hover:bg-surface-2 hover:text-ink">
                       Explorer <ArrowUpRight className="size-3.5" />
                     </a>
                   </div>
@@ -118,21 +121,21 @@ export default async function WalletPage() {
                     { k: "Network", v: `${ARC.name} · chain ${ARC.chainId} · Gateway domain ${ARC.gatewayDomain}` },
                     { k: "Custody", v: CUSTODY_LABEL[wallet!.provider] ?? wallet!.provider },
                     ...(wallet!.circleWalletId ? [{ k: "Circle wallet ID", v: <span className="num text-[11.5px]">{wallet!.circleWalletId}</span> }] : []),
-                    { k: "USDC contract", v: <ExternalLink href={addressExplorerUrl("Arc_Testnet", ARC.usdc)} className="num text-[11.5px]">{shortHash(ARC.usdc)}</ExternalLink> },
-                    { k: "GatewayWallet", v: <ExternalLink href={addressExplorerUrl("Arc_Testnet", ARC.gatewayWallet)} className="num text-[11.5px]">{shortHash(ARC.gatewayWallet)}</ExternalLink> },
+                    { k: "USDC contract", v: <ExternalLink href={addressExplorerUrl(wallet!.blockchain === "ARC" ? "Arc" : "Arc_Testnet", ARC.usdc)} className="num text-[11.5px]">{shortHash(ARC.usdc)}</ExternalLink> },
+                    { k: "GatewayWallet", v: <ExternalLink href={addressExplorerUrl(wallet!.blockchain === "ARC" ? "Arc" : "Arc_Testnet", ARC.gatewayWallet)} className="num text-[11.5px]">{shortHash(ARC.gatewayWallet)}</ExternalLink> },
                     { k: "Created", v: relTime(wallet!.createdAt) },
                   ]}
                 />
                 {!live && (
                   <Callout tone="warn" title="This deployment can’t sign for this wallet">
-                    The wallet is recorded but its custody isn’t available here ({custody ? `custody is “${custody}”` : "no custody configured"}). Payments fall back to SIMULATED until <Code>CIRCLE_API_KEY</Code> and <Code>CIRCLE_ENTITY_SECRET</Code> are set.
+                    The wallet is recorded but its custody isn’t available here ({custody ? `custody is “${custody}”` : "no custody configured"}). Payments are disabled until an Arc mainnet Circle wallet and server credentials are configured.
                   </Callout>
                 )}
               </CardBody>
               <CardFooter>
                 <span className="flex items-center gap-1.5">
                   <StatusDot tone={wallet!.frozen ? "bad" : live ? "good" : "warn"} />
-                  {wallet!.frozen ? "Kill switch on — every spend is denied" : live ? "Spending allowed within policy" : "Simulation only"}
+                  {wallet!.frozen ? "Kill switch on — every spend is denied" : live ? "Spending allowed within policy" : "Payments disabled"}
                 </span>
                 <Link href="/app/settings#policy" className="hover:text-ink">
                   Spend policy →
@@ -144,7 +147,7 @@ export default async function WalletPage() {
               <CardHeader title="Fund Circle Gateway" description="x402 services are paid by signature from the Gateway balance, not the wallet directly" icon={<ArrowLeftRight />} />
               <CardBody>
                 {manage ? (
-                  <DepositForm disabled={!live || wallet!.frozen || demo} reason={demo ? "Demo workspaces run in simulation — create a real workspace to deposit." : !live ? "The wallet can’t sign on this deployment." : wallet!.frozen ? "The wallet is frozen." : undefined} />
+                  <DepositForm disabled={!live || wallet!.frozen} reason={!live ? "An Arc mainnet Circle wallet is required." : wallet!.frozen ? "The wallet is frozen." : undefined} />
                 ) : (
                   <p className="text-[12.5px] text-ink-3">Only owners and admins can move treasury funds.</p>
                 )}
@@ -175,7 +178,7 @@ export default async function WalletPage() {
                           <td className="whitespace-nowrap text-ink-3">{relTime(j.createdAt)}</td>
                           <td className="max-w-[220px] truncate text-[11.5px]">
                             {r.depositTx ? (
-                              <ExternalLink href={txExplorerUrl("Arc_Testnet", r.depositTx)} className="num">
+                              <ExternalLink href={txExplorerUrl("Arc", r.depositTx)} className="num">
                                 {shortHash(r.depositTx, 4)}
                               </ExternalLink>
                             ) : j.lastError ? (
@@ -197,7 +200,7 @@ export default async function WalletPage() {
             </Card>
           </div>
 
-          <div className="space-y-4">
+          <div className="min-w-0 space-y-4">
             <Card>
               <CardHeader title="Controls" icon={<ShieldCheck />} />
               <CardBody className="space-y-3">
@@ -227,8 +230,7 @@ export default async function WalletPage() {
                     <OnrampButton address={address} userId={user.id} disabled={!manage} />
                   ) : (
                     <p className="text-[11.5px] text-ink-3">
-                      Arc Onramp is optional — set <Code>ONRAMP_API_KEY</Code> to buy USDC straight into this wallet. Otherwise fund it from{" "}
-                      <ExternalLink href="https://faucet.circle.com">faucet.circle.com</ExternalLink>.
+                      Arc Onramp is optional — set <Code>ONRAMP_API_KEY</Code> to buy USDC straight into this wallet. Otherwise transfer Arc mainnet USDC to the wallet address above.
                     </p>
                   )}
                 </div>
@@ -236,12 +238,12 @@ export default async function WalletPage() {
             </Card>
 
             <Card>
-              <CardHeader title="Unified balance" description="Gateway balance across chains, via App Kit" icon={<Layers />} />
+              <CardHeader title="Gateway balance on Arc" description="Available USDC reported through Circle" icon={<Layers />} />
               <CardBody>
                 {ub?.v ? (
                   <>
                     <div className="num text-[24px] font-medium tracking-[-0.03em]">{fmtUsdc(ub.v.totalMicro)}</div>
-                    <div className="mt-0.5 text-[11.5px] text-ink-3">Available growth capital across chains</div>
+                    <div className="mt-0.5 text-[11.5px] text-ink-3">Available Gateway capital on Arc</div>
                     {ub.v.byChain.length > 0 && (
                       <KeyValue className="mt-3" items={ub.v.byChain.map((c) => ({ k: c.label, v: <span className="num">{fmtUsdc(c.micro)}</span> }))} />
                     )}
@@ -253,7 +255,7 @@ export default async function WalletPage() {
             </Card>
 
             <AppKitCard />
-            <EarnCard weekly={weekly} idle={idle} />
+            <BudgetPlanCard weekly={weekly} available={sum?.available ?? null} />
           </div>
         </div>
       )}
@@ -261,44 +263,32 @@ export default async function WalletPage() {
       {!address && (
         <div className="grid gap-4 lg:grid-cols-2">
           <AppKitCard />
-          <EarnCard weekly={weekly} idle={idle} />
+          <BudgetPlanCard weekly={weekly} available={sum?.available ?? null} />
         </div>
       )}
     </div>
   );
 }
 
-function WalletSetup({ custody, manage, demo }: { custody: "circle" | "local" | null; manage: boolean; demo: boolean }) {
-  if (demo)
-    return (
-      <EmptyState
-        icon={<WalletIcon />}
-        title="Demo workspaces run in simulation"
-        description="Every payment in the demo is labelled SIMULATED or DEMO — no funds move. Create a real workspace to provision an Arc Testnet wallet."
-      />
-    );
+function WalletSetup({ custody, manage, workspaceId }: { custody: "circle" | null; manage: boolean; workspaceId: string }) {
   return (
     <div className="grid gap-4 lg:grid-cols-[1.35fr_1fr]">
       <Card>
-        <CardHeader title="Create the workspace wallet" description="Each workspace gets its own Arc Testnet wallet — the agent’s operating budget" icon={<WalletIcon />} action={<Badge tone="warn">Not set up</Badge>} />
+        <CardHeader title="Create the workspace wallet" description="Each workspace gets its own Arc mainnet wallet — the agent’s operating budget" icon={<WalletIcon />} action={<Badge tone="warn">Not set up</Badge>} />
         <CardBody className="space-y-4">
           {custody === "circle" ? (
             <Callout tone="info" title="Circle developer-controlled wallets">
-              Keys live in Circle’s custody. GrowthOS holds only the API key and entity secret, server-side, and creates a dedicated EOA on ARC-TESTNET for this workspace.
-            </Callout>
-          ) : custody === "local" ? (
-            <Callout tone="warn" title="Testnet key (development only)">
-              This deployment signs with a single server-side testnet key (<Code>AGENT_PRIVATE_KEY</Code>). It is never sent to the browser or the LLM, and is refused outside testnet. Use Circle custody for anything shared.
+              Keys live in Circle’s custody. GrowTendril holds only the API key and entity secret, server-side, and creates a dedicated EOA on ARC for this workspace.
             </Callout>
           ) : (
             <Callout tone="danger" title="No custody configured on this deployment">
-              Set <Code>CIRCLE_API_KEY</Code> and <Code>CIRCLE_ENTITY_SECRET</Code> in the server environment to create Circle developer-controlled wallets. Until then, every payment runs as SIMULATED and moves nothing.
+              Set <Code>CIRCLE_API_KEY</Code> and <Code>CIRCLE_ENTITY_SECRET</Code> in the server environment to create Circle developer-controlled wallets. Payments remain disabled until then.
             </Callout>
           )}
           {manage ? (
             <div className="flex flex-wrap items-center gap-3">
-              <ActionButton action={provisionWalletAction} label="Create wallet on Arc Testnet" icon={<CircleDollarSign />} variant="primary" disabled={!custody} />
-              <span className="text-[11.5px] text-ink-3">{custody ? "Takes a few seconds. Fund it afterwards from faucet.circle.com." : "Enabled once custody is configured."}</span>
+              <ActionButton action={provisionWalletAction} label="Create wallet on Arc mainnet" icon={<CircleDollarSign />} variant="primary" disabled={!custody} />
+              <span className="text-[11.5px] text-ink-3">{custody ? "Takes a few seconds. Fund with Arc mainnet USDC afterwards." : "Enabled once custody is configured."}</span>
             </div>
           ) : (
             <p className="text-[12.5px] text-ink-3">Ask a workspace owner or admin to create the wallet.</p>
@@ -306,11 +296,11 @@ function WalletSetup({ custody, manage, demo }: { custody: "circle" | "local" | 
         </CardBody>
       </Card>
       <Card>
-        <CardHeader title="Attach an existing Circle wallet" description="Already have an ARC-TESTNET developer-controlled wallet?" icon={<ArrowLeftRight />} />
+        <CardHeader title="Attach an existing Circle wallet" description="A live Arc mainnet EOA registered to this workspace in Circle." icon={<ArrowLeftRight />} />
         <CardBody>
           {manage ? (
             custody === "circle" ? (
-              <AttachWalletForm />
+              <AttachWalletForm workspaceId={workspaceId} />
             ) : (
               <p className="text-[12.5px] text-ink-3">
                 Attaching needs Circle credentials on the server (<Code>CIRCLE_API_KEY</Code>, <Code>CIRCLE_ENTITY_SECRET</Code>).
@@ -328,12 +318,12 @@ function WalletSetup({ custody, manage, demo }: { custody: "circle" | "local" | 
 function AppKitCard() {
   const caps = [
     { icon: <Send />, label: "Send", detail: "USDC transfers on Arc — used for creator payouts after policy and approval." },
-    { icon: <ArrowLeftRight />, label: "Bridge", detail: "Move USDC between Arc, Base Sepolia and Arbitrum Sepolia via CCTP." },
-    { icon: <Layers />, label: "Unified balance", detail: "Read one Gateway balance across chains (read-only, no signing)." },
+    { icon: <ArrowLeftRight />, label: "Bridge", detail: "Off for the mainnet launch — the policy engine refuses cross-chain transfers, so funds stay on Arc." },
+    { icon: <Layers />, label: "Gateway balance", detail: "Read available USDC in Circle Gateway on Arc." },
   ];
   return (
     <Card>
-      <CardHeader title="App Kit capabilities" description="Every call goes through Zod → policy engine → (approval) first" />
+      <CardHeader title="Payment capabilities" description="Transfers follow your spending rules and approval requirements." />
       <ul className="divide-y divide-line">
         {caps.map((c) => (
           <li key={c.label} className="flex items-start gap-3 px-4 py-2.5">
@@ -349,19 +339,18 @@ function AppKitCard() {
   );
 }
 
-function EarnCard({ weekly, idle }: { weekly: number; idle: number }) {
+function BudgetPlanCard({ weekly, available }: { weekly: number; available: number | null }) {
   return (
     <Card>
-      <CardHeader title="Idle funds · Earn" description="Recommendation only — never executed" icon={<PiggyBank />} action={<Badge tone="muted">Advisory</Badge>} />
+      <CardHeader title="Mission budget and payments" description="Planning limits, separate from the wallet balance" icon={<PiggyBank />} action={<Badge tone="muted">Budget</Badge>} />
       <CardBody className="space-y-3">
         <div className="grid grid-cols-2 gap-4">
-          <Stat size="sm" label="7-day run-rate" value={fmtUsdc(weekly, { unit: false })} sub="USDC spent" />
-          <Stat size="sm" label="Idle beyond 2 weeks" value={fmtUsdc(idle, { unit: false })} sub="uncommitted" tone={idle >= 1_000_000_000 ? "good" : undefined} />
+          <Stat size="sm" label="Payments in 7 days" value={fmtUsdc(weekly, { unit: false })} sub="USDC submitted or settled" />
+          <Stat size="sm" label="Uncommitted mission budget" value={fmtUsdc(available, { unit: false })} sub={available == null ? "no active mission" : "USDC within the mission ceiling"} />
         </div>
         <p className="text-[12px] leading-relaxed text-ink-2">
-          {idle >= 1_000_000_000 ? "GrowthOS would recommend placing part of this in a supported App Kit Earn vault — only with explicit founder approval." : "Not enough idle capital to justify moving funds."}
+          The mission budget limits how much the operator may commit. It does not add funds to the wallet; check the live wallet and Gateway balances before funding payments.
         </p>
-        <p className="text-[11.5px] leading-relaxed text-ink-3">GrowthOS never makes yield decisions autonomously; Circle’s Earn Kit is marked “coming soon”, so execution is not enabled in this build. Borrow is intentionally not built.</p>
       </CardBody>
     </Card>
   );

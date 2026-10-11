@@ -7,6 +7,7 @@ import { CONVERSION_EVENTS } from "@/server/domain/growth/attribution-links";
 import { verifyWebhook } from "@/server/security/hmac";
 import { rateLimit, clientIp } from "@/server/security/ratelimit";
 import { toMicro } from "@/lib/money";
+import { readRequestBody, RequestBodyError } from "@/server/security/request-body";
 
 export const dynamic = "force-dynamic";
 
@@ -25,13 +26,18 @@ const Body = z.object({
 export async function POST(req: Request) {
   const ip = clientIp(req.headers);
   if (!rateLimit(`events:${ip}`, { capacity: 120, refillPerSec: 10 }).ok) return NextResponse.json({ error: "rate limited" }, { status: 429 });
-  const projectId = req.headers.get("x-growthos-project");
-  const raw = await req.text();
-  if (!projectId || raw.length > 20_000) return NextResponse.json({ error: "bad request" }, { status: 400 });
+  const projectId = req.headers.get("x-growtendril-project") ?? req.headers.get("x-forage-project") ?? req.headers.get("x-morrowloop-project") ?? req.headers.get("x-growthos-project");
+  if (!projectId || projectId.length > 200) return NextResponse.json({ error: "bad request" }, { status: 400 });
+  let raw: string;
+  try { raw = await readRequestBody(req, 20_000); } catch (error) {
+    if (error instanceof RequestBodyError) return NextResponse.json({ error: error.message }, { status: error.status });
+    throw error;
+  }
   const db = await getDb();
   const [project] = await db.select().from(s.projects).where(eq(s.projects.id, projectId));
-  if (!project) return NextResponse.json({ error: "unauthorized" }, { status: 401 });
-  const sig = verifyWebhook(project.webhookSecret, raw, req.headers.get("x-growthos-signature"));
+  if (!project || project.dataMode !== "LIVE") return NextResponse.json({ error: "unauthorized" }, { status: 401 });
+  const signature = req.headers.get("x-growtendril-signature") ?? req.headers.get("x-forage-signature") ?? req.headers.get("x-morrowloop-signature") ?? req.headers.get("x-growthos-signature");
+  const sig = verifyWebhook(project.webhookSecret, raw, signature);
   if (!sig.ok) return NextResponse.json({ error: `unauthorized: ${sig.reason}` }, { status: 401 });
   let body: z.infer<typeof Body>;
   try {

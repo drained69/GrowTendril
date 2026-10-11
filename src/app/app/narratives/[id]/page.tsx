@@ -84,8 +84,8 @@ export default async function Narrative({ params }: { params: Promise<{ id: stri
               />
               {n.terms.length > 0 && (
                 <div className="mt-4 flex flex-wrap gap-1 border-t border-line pt-3">
-                  {n.terms.map((t) => (
-                    <Badge key={t}>{t}</Badge>
+                  {n.terms.map((t, it) => (
+                    <Badge key={`${it}:${t}`}>{t}</Badge>
                   ))}
                 </div>
               )}

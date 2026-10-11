@@ -6,6 +6,7 @@ import { Button } from "@/components/ui/button";
 import { Field, Input } from "@/components/ui/form";
 import { toast } from "@/components/ui/toast";
 import { attachWalletAction, depositToGatewayAction } from "@/server/actions/wallet";
+import { useHydrated } from "@/components/ui/submit";
 
 type Result = { ok: boolean; error?: string; message?: string };
 
@@ -30,21 +31,24 @@ function useRun() {
 }
 
 /** Attach an existing Circle developer-controlled wallet by its UUID. */
-export function AttachWalletForm({ disabled }: { disabled?: boolean }) {
+export function AttachWalletForm({ disabled, workspaceId }: { disabled?: boolean; workspaceId: string }) {
   const [id, setId] = useState("");
   const { pending, error, run } = useRun();
+  const hydrated = useHydrated();
   return (
     <form
+      method="post"
       className="space-y-2.5"
       onSubmit={(e) => {
         e.preventDefault();
+        if (!hydrated || disabled || pending || !id.trim()) return;
         run(() => attachWalletAction(id), () => setId(""));
       }}
     >
-      <Field label="Circle wallet ID" htmlFor="circle-wallet-id" error={error} hint="An ARC-TESTNET wallet under the Circle entity configured on this deployment.">
+      <Field label="Circle wallet ID" htmlFor="circle-wallet-id" error={error} hint={<>A live Arc mainnet EOA under this deployment&apos;s Circle entity. Its Circle refId must match this workspace: <code className="num break-all">{workspaceId}</code>.</>}>
         <Input id="circle-wallet-id" value={id} onChange={(e) => setId(e.target.value)} placeholder="xxxxxxxx-xxxx-xxxx-xxxx-xxxxxxxxxxxx" className="num text-[12px]" disabled={disabled || pending} autoComplete="off" spellCheck={false} />
       </Field>
-      <Button type="submit" icon={<Link2 />} loading={pending} disabled={disabled || !id.trim()}>
+      <Button type="submit" icon={<Link2 />} loading={pending} disabled={!hydrated || disabled || !id.trim()}>
         Attach wallet
       </Button>
     </form>
@@ -55,12 +59,16 @@ export function AttachWalletForm({ disabled }: { disabled?: boolean }) {
 export function DepositForm({ disabled, reason }: { disabled?: boolean; reason?: string }) {
   const [amount, setAmount] = useState("");
   const { pending, error, run } = useRun();
+  const hydrated = useHydrated();
+  const valid = /^\d+(?:\.\d{1,6})?$/.test(amount.trim()) && Number(amount) > 0;
   return (
     <form
+      method="post"
       className="space-y-2.5"
       onSubmit={(e) => {
         e.preventDefault();
-        if (!window.confirm(`Deposit ${amount} USDC from the agent wallet into Circle Gateway on Arc Testnet?`)) return;
+        if (!hydrated || disabled || pending || !valid) return;
+        if (!window.confirm(`Deposit ${amount} USDC from the agent wallet into Circle Gateway on Arc mainnet?`)) return;
         run(() => depositToGatewayAction(amount), () => setAmount(""));
       }}
     >
@@ -70,7 +78,7 @@ export function DepositForm({ disabled, reason }: { disabled?: boolean; reason?:
             <Input id="gw-amount" inputMode="decimal" value={amount} onChange={(e) => setAmount(e.target.value)} placeholder="5.00" className="num pr-12" disabled={disabled || pending} autoComplete="off" />
             <span className="pointer-events-none absolute inset-y-0 right-2.5 flex items-center text-[11px] text-ink-4">USDC</span>
           </div>
-          <Button type="submit" variant="primary" size="md" icon={<ArrowDownToLine />} loading={pending} disabled={disabled || !amount.trim()}>
+          <Button type="submit" variant="primary" size="md" icon={<ArrowDownToLine />} loading={pending} disabled={!hydrated || disabled || !valid}>
             Deposit
           </Button>
         </div>

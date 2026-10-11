@@ -1,11 +1,14 @@
 import Link from "next/link";
-import { eq } from "drizzle-orm";
-import { AlertTriangle, Bot, Building2, FileText, ShieldCheck, Target } from "lucide-react";
+import { desc, eq } from "drizzle-orm";
+import { AlertTriangle, Bot, Building2, FileText, Mail, ShieldCheck, Target, UserRound } from "lucide-react";
+import { balanceMicro, billingMode } from "@/server/domain/billing";
+import { fmtUsdc } from "@/lib/money";
+import { googleConfigured } from "@/server/auth/google";
+import { signOutEverywhereAction } from "@/server/actions/auth";
 import { requireProject } from "@/server/auth/current";
 import { can, ROLE_LABEL } from "@/server/auth/access";
 import { schema as s } from "@/server/db/client";
 import { listMembers } from "@/server/domain/workspace/members";
-import { CHAINS } from "@/server/integrations/circle/config";
 import { AUTOPILOT_LABEL } from "@/server/jobs/scheduler";
 import { microToDecimal } from "@/lib/money";
 import { relTime } from "@/lib/time";
@@ -18,21 +21,37 @@ const SECTIONS = [
   { id: "icp", label: "Ideal customer", icon: <Target /> },
   { id: "policy", label: "Spend policy", icon: <ShieldCheck /> },
   { id: "autopilot", label: "Autopilot", icon: <Bot /> },
+  { id: "account", label: "Account & billing", icon: <UserRound /> },
   { id: "danger", label: "Danger zone", icon: <AlertTriangle /> },
 ];
+
+const EMAIL_KIND: Record<string, string> = {
+  verify_code: "Verification code",
+  reset_code: "Password reset code",
+  welcome: "Welcome",
+  subscription_active: "Payment received",
+  renewal_reminder: "Renewal reminder",
+  payment_failed: "Payment failed",
+  subscription_canceled: "Plan ended",
+  credit_added: "Credit added",
+  invite: "Workspace invite",
+  report: "Report",
+};
 
 export default async function Settings() {
   const { project, role, db, user } = await requireProject();
   const pid = project.id;
-  const [[profile], icps, [policy], members] = await Promise.all([
+  const [[profile], icps, [policy], members, credit, emails] = await Promise.all([
     db.select().from(s.productProfiles).where(eq(s.productProfiles.projectId, pid)),
     db.select().from(s.icps).where(eq(s.icps.projectId, pid)),
     db.select().from(s.policies).where(eq(s.policies.projectId, pid)),
     listMembers(db, pid),
+    balanceMicro(db, project.ownerId),
+    db.select().from(s.emailLog).where(eq(s.emailLog.userId, user.id)).orderBy(desc(s.emailLog.createdAt)).limit(6),
   ]);
+  const mode = billingMode();
   const canWorkspace = can(role, "manage_workspace");
   const canPolicy = can(role, "manage_policy");
-  const demo = project.dataMode === "DEMO";
   const owners = members.filter((m) => m.role === "owner").length;
   const leaveBlocked = role === "owner" && owners <= 1 ? "You are the only owner — promote another member to owner first." : undefined;
 
@@ -82,7 +101,7 @@ export default async function Settings() {
           <Card id="profile" className="scroll-mt-4">
             <CardHeader
               title="Product intelligence profile"
-              description="What GrowthOS believes your product is. Edit anything that is wrong — search terms here drive discovery."
+              description="What GrowTendril believes your product is. Edit anything that is wrong — search terms here drive discovery."
               icon={<FileText />}
               action={
                 profile && (
@@ -132,22 +151,23 @@ export default async function Settings() {
               title="Spend policy"
               description="Enforced in code by a deterministic policy engine on every structured action — not in a prompt."
               icon={<ShieldCheck />}
-              action={policy && <Badge className="num">v{policy.version}</Badge>}
+              action={
+                policy && (
+                  <span className="flex items-center gap-1.5">
+                    <Badge tone={policy.autonomyEnabled ? "good" : "muted"}>{policy.autonomyEnabled ? `Autonomous ≤ ${microToDecimal(policy.maxTransactionMicro)} USDC` : "Asks first"}</Badge>
+                    <Badge className="num">v{policy.version}</Badge>
+                  </span>
+                )
+              }
             />
             {policy ? (
               <>
                 <PolicyForm
                   disabled={!canPolicy}
-                  chains={Object.entries(CHAINS).map(([id, c]) => ({ id, label: c.label }))}
                   p={{
-                    maxTransaction: microToDecimal(policy.maxTransactionMicro),
+                    autonomousLimit: policy.autonomyEnabled ? microToDecimal(policy.maxTransactionMicro) : "0",
                     dailySpend: microToDecimal(policy.dailySpendMicro),
-                    kolThreshold: microToDecimal(policy.kolApprovalThresholdMicro),
-                    bountyThreshold: microToDecimal(policy.bountyApprovalThresholdMicro),
                     hardCeiling: microToDecimal(policy.hardCeilingMicro),
-                    autonomous: policy.autonomousCategories,
-                    approval: policy.approvalCategories,
-                    chains: policy.allowedChains,
                     forbidden: policy.forbiddenActions,
                     tokens: policy.allowedTokens,
                   }}
@@ -166,18 +186,86 @@ export default async function Settings() {
               icon={<Bot />}
               action={<Badge tone={project.autopilot === "off" ? "muted" : "good"} dot={project.autopilot !== "off"}>{AUTOPILOT_LABEL[project.autopilot] ?? project.autopilot}</Badge>}
             />
-            {demo && (
-              <div className="px-4 pt-4">
-                <Callout tone="info">Autopilot runs on live workspaces only. Demo workspaces run cycles on demand.</Callout>
-              </div>
-            )}
-            <AutopilotControl value={project.autopilot} labels={AUTOPILOT_LABEL} disabled={!canPolicy} demo={demo} />
+            <AutopilotControl value={project.autopilot} labels={AUTOPILOT_LABEL} disabled={!canPolicy} billing={mode !== "off"} />
             <CardFooter>
               <span>{project.lastCycleAt ? `Last cycle ${relTime(project.lastCycleAt)}` : "No cycle has run yet"}</span>
               <Link href="/app/runs" className="hover:text-ink">
                 View runs →
               </Link>
             </CardFooter>
+          </Card>
+
+          <Card id="account" className="scroll-mt-4">
+            <CardHeader title="Account & billing" description="Your sign-in, your credit, and what GrowTendril has emailed you." icon={<UserRound />} />
+            <ul className="divide-y divide-line text-[12.5px]">
+              <li className="flex flex-wrap items-center justify-between gap-3 px-4 py-3">
+                <div className="min-w-0">
+                  <div className="font-medium text-ink">{user.email}</div>
+                  <div className="mt-0.5 text-[12px] text-ink-3">
+                    Sign-in: {[user.hasPassword && "password", user.googleLinked && "Google"].filter(Boolean).join(" and ") || "—"}
+                  </div>
+                </div>
+                <span className="flex flex-wrap items-center gap-2">
+                  <Badge tone={user.emailVerified ? "good" : "warn"}>{user.emailVerified ? "Email verified" : "Not verified"}</Badge>
+                  {googleConfigured() && !user.googleLinked && (
+                    <a href="/api/auth/google?next=/app/settings%23account" className="text-[12px] text-ink-2 underline-offset-2 hover:underline">
+                      Link Google
+                    </a>
+                  )}
+                  <Link href={`/forgot?email=${encodeURIComponent(user.email)}`} className="text-[12px] text-ink-2 underline-offset-2 hover:underline">
+                    {user.hasPassword ? "Change password" : "Add a password"}
+                  </Link>
+                </span>
+              </li>
+              {mode !== "off" && (
+                <li className="flex flex-wrap items-center justify-between gap-3 px-4 py-3">
+                  <div>
+                    <div className="font-medium text-ink">
+                      Credit balance <span className="num ml-1">{fmtUsdc(credit)}</span>
+                    </div>
+                    <div className="mt-0.5 text-[12px] text-ink-3">{project.ownerId === user.id ? "Services in workspaces you own are paid from this balance." : "Services in this workspace are paid from its owner's balance."}</div>
+                  </div>
+                  <span className="flex items-center gap-2">
+                    <LinkButton href="/billing" size="sm">
+                      Billing
+                    </LinkButton>
+                  </span>
+                </li>
+              )}
+              <li className="px-4 py-3">
+                <div className="mb-1.5 flex items-center gap-1.5 font-medium text-ink">
+                  <Mail className="size-3.5 text-ink-3" /> Emails sent to you
+                </div>
+                {emails.length ? (
+                  <ul className="space-y-1 text-[12px] text-ink-3">
+                    {emails.map((e) => (
+                      <li key={e.id} className="flex items-center justify-between gap-3">
+                        <span className="truncate">
+                          <span className="text-ink-2">{EMAIL_KIND[e.kind] ?? e.kind}</span> — {e.subject.replace(/^\d{6} is your /, "Your ")}
+                        </span>
+                        <span className="flex shrink-0 items-center gap-2">
+                          <Badge tone={e.status === "sent" ? "good" : e.status === "logged" ? "muted" : "bad"}>{e.status === "logged" ? "dev console" : e.status}</Badge>
+                          <span className="num">{relTime(e.createdAt)}</span>
+                        </span>
+                      </li>
+                    ))}
+                  </ul>
+                ) : (
+                  <p className="text-[12px] text-ink-3">Nothing yet.</p>
+                )}
+              </li>
+              <li className="flex flex-wrap items-center justify-between gap-3 px-4 py-3">
+                <div>
+                  <div className="font-medium text-ink">Sign out everywhere</div>
+                  <div className="mt-0.5 text-[12px] text-ink-3">Ends every session on every device, including this one.</div>
+                </div>
+                <form action={signOutEverywhereAction}>
+                  <button type="submit" className="rounded-[6px] border border-line-strong px-2.5 py-1.5 text-[12px] font-medium text-ink hover:bg-surface-2">
+                    Sign out everywhere
+                  </button>
+                </form>
+              </li>
+            </ul>
           </Card>
 
           <Card id="danger" className="scroll-mt-4 border-critical/30">

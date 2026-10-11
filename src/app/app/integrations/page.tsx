@@ -1,5 +1,5 @@
 import type { ReactNode } from "react";
-import { headers } from "next/headers";
+import { eq } from "drizzle-orm";
 import { BookOpen, Code2, Globe, Lock, MessagesSquare, Newspaper, PlaySquare, Plug, Webhook } from "lucide-react";
 import { requireProject } from "@/server/auth/current";
 import { can } from "@/server/auth/access";
@@ -10,6 +10,9 @@ import { Badge, Callout, Card, CardBody, CardFooter, CardHeader, ExternalLink, K
 import { CopyButton, CopyField } from "@/components/ui/copy";
 import { ConnectionForm } from "@/components/features/integrations/connection-form";
 import { WebhookSecret } from "@/components/features/integrations/webhook-secret";
+import { appOrigin } from "@/server/lib/origin";
+import { schema as s } from "@/server/db/client";
+import { sourceAppliesTo, sourceAudienceLabel } from "@/lib/source-readiness";
 
 const CATEGORY: Record<string, { label: string; icon: ReactNode }> = {
   social: { label: "Social", icon: <Globe /> },
@@ -29,7 +32,7 @@ const SOURCE: Record<CredentialSource, { label: string; tone: Tone; help: string
   workspace: { label: "Workspace key", tone: "good", help: "Using credentials stored for this workspace." },
   platform: { label: "Platform default", tone: "info", help: "Using the deployment's shared credentials. Add your own for separate rate limits." },
   keyless: { label: "Keyless", tone: "info", help: "Public endpoint — no credentials needed." },
-  missing: { label: "Missing", tone: "warn", help: "Not connected. This source returns nothing until credentials are added." },
+  missing: { label: "Missing", tone: "warn", help: "Not configured. Add its required settings or credentials before it can contribute." },
   restricted: { label: "Unavailable", tone: "muted", help: "" },
 };
 
@@ -41,13 +44,12 @@ function dotTone(c: ProviderConnection): "good" | "warn" | "bad" | "idle" {
 
 export default async function Integrations() {
   const { project, role, db } = await requireProject();
-  const connections = await listConnections(db, project.id);
+  const [connections, [profile]] = await Promise.all([listConnections(db, project.id), db.select({ audience: s.productProfiles.audience }).from(s.productProfiles).where(eq(s.productProfiles.projectId, project.id))]);
   const canManage = can(role, "manage_integrations");
-  const h = await headers();
-  const origin = `${h.get("x-forwarded-proto") ?? "http"}://${h.get("host") ?? "localhost:3000"}`;
+  const origin = await appOrigin();
   const endpoint = `${origin}/api/events`;
 
-  const ready = connections.filter((c) => c.ready).length;
+  const ready = connections.filter((c) => c.ready && sourceAppliesTo(c, profile?.audience)).length;
   const own = connections.filter((c) => c.source === "workspace").length;
   const missing = connections.filter((c) => c.source === "missing").length;
   const errors = connections.filter((c) => c.status === "error").length;
@@ -55,12 +57,12 @@ export default async function Integrations() {
 
   const curl = `BODY='{"event":"signup","ref":"<gos_ref>","visitorId":"user_123","idempotencyKey":"signup-user_123"}'
 T=$(date +%s)
-SIG=$(printf '%s' "$T.$BODY" | openssl dgst -sha256 -hmac "$GROWTHOS_WEBHOOK_SECRET" | sed 's/^.* //')
+SIG=$(printf '%s' "$T.$BODY" | openssl dgst -sha256 -hmac "$GROWTENDRIL_WEBHOOK_SECRET" | sed 's/^.* //')
 
 curl -X POST ${endpoint} \\
   -H "content-type: application/json" \\
-  -H "x-growthos-project: ${project.id}" \\
-  -H "x-growthos-signature: t=$T,v1=$SIG" \\
+  -H "x-growtendril-project: ${project.id}" \\
+  -H "x-growtendril-signature: t=$T,v1=$SIG" \\
   -d "$BODY"`;
 
   return (
@@ -71,22 +73,23 @@ curl -X POST ${endpoint} \\
         meta={<span>Official and public APIs only, within their terms and rate limits. Unavailable sources return nothing — never invented data.</span>}
       />
 
-      {!canManage && <Callout tone="info" title="Read-only">Your role can test connections but not change credentials. Owners and admins manage integrations.</Callout>}
+      {!canManage && <Callout tone="info" title="Read-only">Owners and admins test connections and manage credentials.</Callout>}
 
       <StatStrip className="grid-cols-2 sm:grid-cols-4">
-        <Stat label="Sources ready" value={`${ready} / ${connections.length}`} tone={ready ? "good" : "warn"} />
+        <Stat label="Sources ready" value={`${ready} / ${connections.length}`} sub="for your customer audience" tone={ready ? "good" : "warn"} />
         <Stat label="Workspace keys" value={own} sub="stored encrypted" />
-        <Stat label="Need credentials" value={missing} tone={missing ? "warn" : undefined} />
+        <Stat label="Need setup" value={missing} tone={missing ? "warn" : undefined} />
         <Stat label="Failing checks" value={errors} tone={errors ? "bad" : undefined} />
       </StatStrip>
 
-      <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-3">
+      <div className="grid gap-4 lg:grid-cols-2 xl:grid-cols-3">
         {ordered.map((c) => {
           const p = c.provider;
           const cat = CATEGORY[p.category] ?? { label: p.category, icon: <Plug /> };
           const access = ACCESS[p.access];
           const src = SOURCE[c.source];
           const restricted = c.source === "restricted";
+          const applies = sourceAppliesTo(c, profile?.audience);
           return (
             <Card key={p.id} className={restricted ? "opacity-75" : undefined}>
               <CardHeader
@@ -98,10 +101,11 @@ curl -X POST ${endpoint} \\
                 }
                 description={p.description}
                 icon={cat.icon}
-                action={<Badge tone={src.tone}>{src.label}</Badge>}
               />
               <CardBody className="space-y-3">
                 <div className="flex flex-wrap items-center gap-1.5">
+                  <Badge tone={src.tone}>{src.label}</Badge>
+                  {!applies && <Badge tone="muted">{sourceAudienceLabel(c)}</Badge>}
                   <Badge tone="muted">{cat.label}</Badge>
                   <Badge tone={access.tone}>
                     {restricted && <Lock className="size-2.5" />}
@@ -114,7 +118,7 @@ curl -X POST ${endpoint} \\
                   <>
                     <KeyValue
                       items={[
-                        { k: "Credentials", v: c.hint ? <span className="num text-ink-2">{c.hint}</span> : <span className="text-ink-3">{c.source === "keyless" ? "None needed" : c.source === "platform" ? "Platform default" : "Not stored"}</span> },
+                        { k: "Credentials", v: c.hint ? <span className="num text-ink-2">{c.hint}</span> : <span className="text-ink-3">{c.source === "keyless" ? "None needed" : c.source === "platform" ? "Platform default" : c.source === "workspace" ? "Saved settings (no secret)" : "Not stored"}</span> },
                         { k: "Last checked", v: c.lastCheckedAt ? relTime(c.lastCheckedAt) : <span className="text-ink-3">Never</span> },
                       ]}
                     />
@@ -146,7 +150,7 @@ curl -X POST ${endpoint} \\
       <Card id="events">
         <CardHeader
           title="Inbound events"
-          description="Report conversions (signups, SDK keys, demo requests…) with the visitor's gos_ref so they are attributed to the experiment that produced them."
+          description="Report conversions (signups, purchases, leads, bookings…) with the visitor's gos_ref so they are attributed to the experiment that produced them."
           icon={<Webhook />}
         />
         <div className="grid gap-0 lg:grid-cols-[minmax(0,1fr)_minmax(0,1.3fr)] lg:divide-x lg:divide-line">
@@ -162,7 +166,7 @@ curl -X POST ${endpoint} \\
               <div className="label mb-1.5">Project ID</div>
               <CopyField value={project.id} />
               <p className="mt-1.5 text-[11.5px] text-ink-3">
-                Sent as <code className="num text-ink-2">x-growthos-project</code>.
+                Sent as <code className="num text-ink-2">x-growtendril-project</code>.
               </p>
             </div>
             <div>
@@ -175,8 +179,8 @@ curl -X POST ${endpoint} \\
               <div className="label mb-1.5">Headers</div>
               <KeyValue
                 items={[
-                  { k: <code className="num">x-growthos-project</code>, v: <span className="text-ink-2">your project ID</span> },
-                  { k: <code className="num">x-growthos-signature</code>, v: <code className="num text-ink-2">t=&lt;unix&gt;,v1=&lt;hex&gt;</code> },
+                  { k: <code className="num">x-growtendril-project</code>, v: <span className="text-ink-2">your project ID</span> },
+                  { k: <code className="num">x-growtendril-signature</code>, v: <code className="num text-ink-2">t=&lt;unix&gt;,v1=&lt;hex&gt;</code> },
                 ]}
               />
               <p className="mt-2 text-[11.5px] leading-snug text-ink-3">

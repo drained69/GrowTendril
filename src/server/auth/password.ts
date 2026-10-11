@@ -7,8 +7,9 @@ export function hashPassword(password: string): string {
 }
 
 export function verifyPassword(password: string, stored: string): boolean {
-  const [alg, saltHex, hashHex] = stored.split("$");
-  if (alg !== "scrypt" || !saltHex || !hashHex) return false;
+  const parts = stored.split("$");
+  const [alg, saltHex, hashHex] = parts;
+  if (parts.length !== 3 || alg !== "scrypt" || !/^[0-9a-f]{32}$/i.test(saltHex ?? "") || !/^[0-9a-f]{128}$/i.test(hashHex ?? "")) return false;
   const expected = Buffer.from(hashHex, "hex");
   const actual = scryptSync(password, Buffer.from(saltHex, "hex"), expected.length, { N: 16384, r: 8, p: 1 });
   return timingSafeEqual(expected, actual);

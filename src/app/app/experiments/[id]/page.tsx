@@ -1,20 +1,28 @@
 import Link from "next/link";
-import { notFound } from "next/navigation";
+import { notFound, redirect } from "next/navigation";
 import { and, desc, eq, inArray, sql } from "drizzle-orm";
-import { ArrowRight, Beaker, CreditCard, FileText, Gauge, Link2, Play, Rocket, Search } from "lucide-react";
+import { ArrowRight, ArrowUpRight, Beaker, CircleStop, ClipboardPen, CreditCard, FileText, Gauge, Hand, Link2, PackageCheck, Play, Rocket, Search } from "lucide-react";
 import { requireProject } from "@/server/auth/current";
 import { can } from "@/server/auth/access";
 import { schema as s } from "@/server/db/client";
 import { experimentSpend } from "@/server/domain/agent/ledger";
-import { buildUtmUrl, EVENT_LABEL, type ConversionEventType } from "@/server/domain/growth/attribution-links";
+import { buildUtmUrl, CONVERSION_EVENTS, EVENT_LABEL, type ConversionEventType } from "@/server/domain/growth/attribution-links";
 import { txExplorerUrl } from "@/server/integrations/circle/config";
-import { launchExperimentAction } from "@/server/actions/growth";
+import { launchExperimentAction, startExperimentAction, stopExperimentAction } from "@/server/actions/growth";
+import { deliveryEvidence, experimentCommitted, isPayableAddress } from "@/server/domain/growth/experiments";
+import { loadPolicy } from "@/server/domain/agent/ledger";
+import { DEFAULT_POLICY } from "@/server/domain/agent/policy";
 import { fmtUsdc } from "@/lib/money";
 import { relTime } from "@/lib/time";
 import { Badge, Card, CardBody, CardFooter, CardHeader, ExternalLink, KeyValue, LinkButton, ModeBadge, PageHeader, Progress, Stat, StatusBadge, Table, TxStateBadge, shortHash } from "@/components/ui";
 import { CopyField } from "@/components/ui/copy";
 import { EvidenceList } from "@/components/features/intel/evidence";
 import { ActionButton } from "@/components/features/agent/action-button";
+import { ChainCheckBadge } from "@/components/features/wallet/chain-check-badge";
+import { ManualConversionForm } from "@/components/features/experiments/manual-conversion";
+import { RecipientForm } from "@/components/features/experiments/recipient-form";
+import { DeliveryForm } from "@/components/features/experiments/delivery-form";
+import { appOrigin } from "@/server/lib/origin";
 
 const RAIL: Record<string, string> = { gateway_x402: "x402 · Gateway", app_kit_send: "App Kit Send", app_kit_bridge: "App Kit Bridge", gateway_deposit: "Gateway deposit" };
 
@@ -23,7 +31,11 @@ export default async function Experiment({ params }: { params: Promise<{ id: str
   const { project, role, db } = await requireProject();
   const [x] = await db.select().from(s.experiments).where(and(eq(s.experiments.id, id), eq(s.experiments.projectId, project.id)));
   if (!x) notFound();
-  const [[camp], spent, txs, funnel, ev] = await Promise.all([
+  if (x.channel === "creator_program") {
+    const [program] = await db.select().from(s.creatorPrograms).where(eq(s.creatorPrograms.experimentId, x.id));
+    if (program) redirect(`/app/campaigns/${program.id}`);
+  }
+  const [[camp], spent, txs, funnel, ev, [manual]] = await Promise.all([
     db.select().from(s.campaigns).where(eq(s.campaigns.experimentId, x.id)),
     experimentSpend(db, x.id),
     db.select().from(s.transactions).where(and(eq(s.transactions.experimentId, x.id), eq(s.transactions.projectId, project.id))).orderBy(desc(s.transactions.createdAt)),
@@ -34,11 +46,26 @@ export default async function Experiment({ params }: { params: Promise<{ id: str
       .where(eq(s.attribution.experimentId, x.id))
       .groupBy(s.conversionEvents.eventType),
     x.evidenceIds.length ? db.select().from(s.evidence).where(and(inArray(s.evidence.id, x.evidenceIds), eq(s.evidence.projectId, project.id))) : Promise.resolve([]),
+    db
+      .select({ n: sql<number>`count(*)::int` })
+      .from(s.attribution)
+      .innerJoin(s.conversionEvents, eq(s.attribution.conversionEventId, s.conversionEvents.id))
+      .where(and(eq(s.attribution.experimentId, x.id), eq(s.conversionEvents.source, "manual"))),
   ]);
+  const [kol] = camp?.kolId ? await db.select({ id: s.kols.id, handle: s.kols.handle, payoutAddress: s.kols.payoutAddress }).from(s.kols).where(eq(s.kols.id, camp.kolId)) : [];
+  const recipient = kol ? kol.payoutAddress : x.recipientAddress;
+  const payable = isPayableAddress(recipient);
+  const [{ committedMicro }, policy, delivery] = await Promise.all([experimentCommitted(db, x.id), loadPolicy(db, project.id).catch(() => DEFAULT_POLICY), deliveryEvidence(db, x)]);
+  const firstEnd = Math.min(x.stopAfterSpendMicro, x.budgetMicro);
+  // The next payment: finish tranche 1 first, then tranche 2 — never more than the per-payment ceiling at once.
+  const next = committedMicro < firstEnd ? { tranche: "first" as const, amount: Math.min(firstEnd - committedMicro, policy.hardCeilingMicro) } : committedMicro < x.budgetMicro ? { tranche: "second" as const, amount: Math.min(x.budgetMicro - committedMicro, policy.hardCeilingMicro) } : null;
   const conv = funnel.find((f) => f.type === x.successEvent)?.n ?? 0;
-  const link = camp ? buildUtmUrl(camp.destinationUrl, { source: camp.utmSource, medium: camp.utmMedium, campaign: camp.utmCampaign, ref: camp.referralCode }) : null;
+  const origin = await appOrigin();
+  const link = camp?.destinationUrl ? buildUtmUrl(camp.destinationUrl, { source: camp.utmSource, medium: camp.utmMedium, campaign: camp.utmCampaign, ref: camp.referralCode }) : null;
   const firstPaid = txs.some((t) => t.state !== "REJECTED" && t.state !== "DENIED" && t.state !== "FAILED");
   const operate = can(role, "operate");
+  // Tranche 2 pays on delivery: the link to the paid work has to be on record first.
+  const awaitingDelivery = next?.tranche === "second" && !delivery;
   const cpa = conv ? Math.round(spent / conv) : null;
   const overStop = cpa != null && spent >= x.stopAfterSpendMicro && cpa > x.stopMaxCpaMicro;
   const outcome = x.outcome as { reason?: string; verdict?: string } | null;
@@ -71,14 +98,14 @@ export default async function Experiment({ params }: { params: Promise<{ id: str
                 Creator brief
               </LinkButton>
             )}
-            {operate && x.status === "proposed" && <ActionButton action={launchExperimentAction.bind(null, x.id, "first")} label="Launch — pay first tranche" icon={<Rocket />} variant="primary" logTitle="Launch experiment" />}
-            {operate && x.status === "running" && firstPaid && <ActionButton action={launchExperimentAction.bind(null, x.id, "second")} label="Release second tranche" icon={<Play />} logTitle="Second tranche" />}
+            {operate && x.status === "proposed" && payable && next && <ActionButton action={launchExperimentAction.bind(null, x.id, next.tranche)} label={`Launch — pay ${fmtUsdc(next.amount)}`} icon={<Rocket />} variant="primary" logTitle="Launch experiment" />}
+            {operate && x.status === "running" && firstPaid && !awaitingDelivery && next?.tranche === "second" && <ActionButton action={launchExperimentAction.bind(null, x.id, "second")} label="Release second tranche" icon={<Play />} logTitle="Second tranche" />}
           </>
         }
       />
 
-      <div className="grid gap-4 lg:grid-cols-[1fr_360px]">
-        <div className="space-y-4">
+      <div className="grid gap-4 lg:grid-cols-[minmax(0,1fr)_360px]">
+        <div className="min-w-0 space-y-4">
           <Card>
             <CardHeader title="Measured result" description="Spend from the ledger; conversions from attribution" icon={<Gauge />} action={outcome?.verdict ? <Badge tone={outcome.verdict === "SCALE" ? "good" : outcome.verdict === "STOP" || outcome.verdict === "REDUCE" ? "bad" : "neutral"}>{outcome.verdict}</Badge> : undefined} />
             <CardBody className="space-y-4">
@@ -105,8 +132,9 @@ export default async function Experiment({ params }: { params: Promise<{ id: str
                   ))}
                 </div>
               ) : (
-                <p className="text-[12px] text-ink-3">No attributed events yet — they arrive through the tracked link or the conversion webhook with this campaign’s referral code.</p>
+                <p className="text-[12px] text-ink-3">No attributed events yet — they arrive through the tracked link, the conversion webhook, or conversions you record by hand with this campaign’s referral code.</p>
               )}
+              {(manual?.n ?? 0) > 0 && <p className="text-[11.5px] text-ink-3">{manual!.n} of these were recorded by hand (self-reported).</p>}
               {outcome?.reason && (
                 <p className="rounded-[8px] border border-line bg-bg/50 px-3 py-2 text-[12.5px] text-ink-2">
                   <span className="label mr-2">Learning</span>
@@ -134,7 +162,7 @@ export default async function Experiment({ params }: { params: Promise<{ id: str
           </Card>
 
           <Card>
-            <CardHeader title="Payments" description="Every tranche goes through Zod → policy engine → (approval) → App Kit" icon={<CreditCard />} />
+            <CardHeader title="Payments" description="Every payment follows your budget and spending rules and requires your approval." icon={<CreditCard />} />
             {txs.length ? (
               <Table>
                 <thead>
@@ -156,6 +184,7 @@ export default async function Experiment({ params }: { params: Promise<{ id: str
                         <span className="flex items-center gap-1">
                           <TxStateBadge state={t.state} />
                           {t.dataMode !== t.state && <ModeBadge mode={t.dataMode} />}
+                          <ChainCheckBadge check={t.chainCheck} />
                         </span>
                       </td>
                       <td className="text-[11.5px]">
@@ -212,10 +241,20 @@ export default async function Experiment({ params }: { params: Promise<{ id: str
                       { k: "Experiment ID", v: <span className="num text-[11.5px]">{x.id.slice(0, 8)}</span> },
                     ]}
                   />
-                  <div>
-                    <div className="label mb-1.5">Tracked short link · records a visit</div>
-                    <CopyField value={`/r/${camp.referralCode}`} />
-                  </div>
+                  {camp.destinationUrl ? (
+                    <div>
+                      <div className="label mb-1.5">Tracked short link · records a visit</div>
+                      <CopyField value={`${origin}/r/${camp.referralCode}`} />
+                    </div>
+                  ) : (
+                    <p className="rounded-[8px] border border-line bg-bg/40 px-3 py-2 text-[12px] text-ink-2">
+                      No website yet, so there&apos;s no tracked link. Ask customers to mention code <span className="num text-ink">{camp.referralCode}</span> and record them below.{" "}
+                      <Link href="/app/settings" className="underline">
+                        Add a website
+                      </Link>{" "}
+                      for future campaigns.
+                    </p>
+                  )}
                   {link && (
                     <div>
                       <div className="label mb-1.5">Destination with UTM</div>
@@ -237,23 +276,128 @@ export default async function Experiment({ params }: { params: Promise<{ id: str
             )}
           </Card>
 
+          {camp && operate && (
+            <Card>
+              <CardHeader title="Record conversions by hand" description="No webhook? Log orders, bookings or signups that came from this campaign — for example customers who quoted the referral code." icon={<ClipboardPen />} />
+              <CardBody>
+                <ManualConversionForm experimentId={x.id} defaultEvent={x.successEvent} events={CONVERSION_EVENTS.filter((e) => e !== "visit").map((e) => ({ value: e, label: EVENT_LABEL[e] }))} />
+              </CardBody>
+            </Card>
+          )}
+
           <Card>
             <CardHeader title="Run" icon={<Rocket />} />
             <CardBody className="space-y-3">
-              {operate ? (
-                x.status === "proposed" ? (
-                  <ActionButton action={launchExperimentAction.bind(null, x.id, "first")} label="Launch — pay first tranche" icon={<Rocket />} variant="primary" logTitle="Launch experiment" className="w-full" />
-                ) : x.status === "running" && firstPaid ? (
-                  <ActionButton action={launchExperimentAction.bind(null, x.id, "second")} label="Release second tranche" icon={<Play />} logTitle="Second tranche" className="w-full" />
-                ) : (
-                  <p className="text-[12.5px] text-ink-3">Nothing to run — the experiment is {x.status.replace(/_/g, " ")}.</p>
-                )
-              ) : (
+              {!operate ? (
                 <p className="text-[12.5px] text-ink-3">Viewers can’t launch experiments.</p>
+              ) : ["succeeded", "failed", "stopped"].includes(x.status) ? (
+                <p className="text-[12.5px] text-ink-3">This experiment is {x.status}.{outcome?.reason ? ` ${outcome.reason}.` : ""}</p>
+              ) : (
+                <>
+                  {payable && (
+                    <div className="rounded-[8px] border border-line px-3 py-2 text-[12px] text-ink-2">
+                      Pays <span className="text-ink">{kol ? `@${kol.handle}` : x.recipientLabel || "recipient"}</span> · <span className="num">{shortHash(recipient!)}</span>
+                      {!kol && can(role, "manage_wallet") && (
+                        <details className="mt-2">
+                          <summary className="cursor-pointer text-[11.5px] text-ink-3 hover:text-ink">Change recipient</summary>
+                          <div className="pt-2">
+                            <RecipientForm experimentId={x.id} address={x.recipientAddress} label={x.recipientLabel} />
+                          </div>
+                        </details>
+                      )}
+                    </div>
+                  )}
+                  {x.status === "awaiting_approval" && (
+                    <p className="text-[12.5px] text-ink-2">
+                      The first payment is waiting for your decision in{" "}
+                      <Link href="/app/approvals" className="text-ink underline">
+                        Approvals
+                      </Link>
+                      .
+                    </p>
+                  )}
+                  {committedMicro > 0 && (
+                    <div className="text-[11.5px] text-ink-3">
+                      Paid or awaiting approval: <span className="num text-ink-2">{fmtUsdc(committedMicro)}</span> of <span className="num">{fmtUsdc(x.budgetMicro)}</span>
+                    </div>
+                  )}
+                  {x.status === "proposed" && payable && next && (
+                    <ActionButton action={launchExperimentAction.bind(null, x.id, next.tranche)} label={`Launch — pay ${fmtUsdc(next.amount)}`} icon={<Rocket />} variant="primary" logTitle="Launch experiment" className="w-full" />
+                  )}
+                  {x.status === "running" && payable && next && awaitingDelivery && (
+                    <p className="rounded-[8px] border border-line bg-bg/50 px-3 py-2 text-[12.5px] text-ink-2">
+                      Tranche 2 ({fmtUsdc(x.budgetMicro - committedMicro)}) pays on delivery. Record the link to the delivered work under <span className="text-ink">Delivery</span> to release it.
+                    </p>
+                  )}
+                  {x.status === "running" && payable && next && !awaitingDelivery && (
+                    <ActionButton
+                      action={launchExperimentAction.bind(null, x.id, next.tranche)}
+                      label={next.tranche === "first" ? (firstPaid ? `Pay the rest of tranche 1 — ${fmtUsdc(next.amount)}` : `Fund it — pay ${fmtUsdc(next.amount)}`) : `Release tranche 2 — ${fmtUsdc(next.amount)}`}
+                      icon={next.tranche === "first" ? <Rocket /> : <Play />}
+                      logTitle={next.tranche === "first" ? "Fund experiment" : "Second tranche"}
+                      className="w-full"
+                    />
+                  )}
+                  {(x.status === "proposed" || (x.status === "running" && !firstPaid)) && !payable && next && (
+                    kol ? (
+                      <p className="text-[12.5px] text-ink-2">
+                        To pay @{kol.handle}, add their USDC payout address on{" "}
+                        <Link href={`/app/kols/${kol.id}`} className="text-ink underline">
+                          their creator page
+                        </Link>
+                        . Ask them for it when you make contact.
+                      </p>
+                    ) : (
+                      <RecipientForm experimentId={x.id} address={x.recipientAddress} label={x.recipientLabel} disabled={!can(role, "manage_wallet")} />
+                    )
+                  )}
+                  {x.status === "proposed" && (
+                    <ActionButton action={startExperimentAction.bind(null, x.id)} label="Run it myself — no payment" icon={<Hand />} logTitle="Start experiment" className="w-full" />
+                  )}
+                  <ActionButton action={stopExperimentAction.bind(null, x.id)} label="Stop experiment" icon={<CircleStop />} variant="ghost" confirm="Stop this experiment? Any payment still waiting for approval is rejected." className="w-full" />
+                </>
               )}
-              <p className="text-[11.5px] leading-relaxed text-ink-3">Payments go through Zod → policy engine → (approval) → App Kit. Tranche 1 is the amount at risk before the stop condition is evaluated.</p>
+              <p className="text-[11.5px] leading-relaxed text-ink-3">
+                Every payment follows your spending rules and requires approval. Tranche 1 ({fmtUsdc(firstEnd)}) is the amount at risk before the stop condition is evaluated; tranche 2 pays once the delivered work is on record. No single payment exceeds {fmtUsdc(Math.min(policy.hardCeilingMicro, 10_000_000))}. Running it yourself costs nothing: share the tracked link and record results here.
+              </p>
             </CardBody>
           </Card>
+
+          {(delivery || (x.status === "running" && firstPaid)) && (
+            <Card>
+              <CardHeader title="Delivery" description="Tranche 2 pays once the paid work exists" icon={<PackageCheck />} action={delivery ? <Badge tone="good">Recorded</Badge> : <Badge tone="warn">Waiting</Badge>} />
+              <CardBody className="space-y-3">
+                {delivery ? (
+                  <>
+                    <a href={delivery.url} target="_blank" rel="noreferrer" className="flex items-center gap-1 break-all text-[12.5px] text-s1 hover:underline">
+                      {delivery.url} <ArrowUpRight className="size-3 shrink-0" />
+                    </a>
+                    {delivery.note && <p className="text-[12px] text-ink-2">{delivery.note}</p>}
+                    <KeyValue
+                      items={[
+                        { k: "Recorded", v: `${relTime(new Date(delivery.recordedAt))}${delivery.recordedBy ? ` by ${delivery.recordedBy}` : ""}` },
+                        { k: "Tracked visits since tranche 1", v: <span className="num">{delivery.visits}</span> },
+                        { k: EVENT_LABEL[x.successEvent as ConversionEventType] ?? x.successEvent, v: <span className="num">{delivery.conversions}</span> },
+                      ]}
+                    />
+                    {delivery.visits === 0 && <p className="text-[11.5px] text-ink-3">No tracked visits yet. Check the post includes the tracked link before releasing tranche 2.</p>}
+                    {operate && x.status === "running" && (
+                      <details>
+                        <summary className="cursor-pointer text-[11.5px] text-ink-3 hover:text-ink">Change the link</summary>
+                        <div className="pt-2">
+                          <DeliveryForm experimentId={x.id} url={x.deliveryUrl} note={x.deliveryNote} />
+                        </div>
+                      </details>
+                    )}
+                  </>
+                ) : operate ? (
+                  <DeliveryForm experimentId={x.id} url={null} note={null} />
+                ) : (
+                  <p className="text-[12.5px] text-ink-3">Waiting for someone to record the delivered work.</p>
+                )}
+              </CardBody>
+            </Card>
+          )}
         </div>
       </div>
     </div>

@@ -70,7 +70,7 @@ export async function upsertService(db: DB, svc: { vendor: string; vendorSource:
   return row;
 }
 
-/** Map marketplace categories/text to the capabilities GrowthOS needs. */
+/** Map marketplace categories/text to the capabilities GrowTendril needs. */
 export function inferCapabilities(text: string): string[] {
   const t = text.toLowerCase();
   const caps: string[] = [];
@@ -107,33 +107,6 @@ export async function refreshMarketplace(db: DB, queries = ["company data", "web
     return { found, arcPayable };
   } catch (e) {
     return { found, arcPayable, error: (e as Error).message };
-  }
-}
-
-export const SIGNALS_API_URL = process.env.SIGNALS_API_URL ?? "http://localhost:4021";
-
-/** Register the bundled x402 seller (services/signals-api) so the agent can discover it alongside marketplace services. */
-export async function registerBundledSignalsService(db: DB) {
-  const base = SIGNALS_API_URL.replace(/\/$/, "");
-  const defs = [
-    { path: "/v1/company-intel", price: 10_000, caps: ["company_enrichment"], desc: "Company intent enrichment: GitHub org activity, recent HN discussion, hiring/funding mentions" },
-    { path: "/v1/creator-audience", price: 20_000, caps: ["creator_audience"], desc: "Creator audience composition and authenticity signals" },
-    { path: "/v1/narrative-pulse", price: 5_000, caps: ["narrative_pulse"], desc: "Weekly discussion volume for a term (Hacker News, last 4 weeks)" },
-  ];
-  for (const d of defs) {
-    await upsertService(db, {
-      vendor: "GrowthOS Signals (bundled seller)",
-      vendorSource: "growthos",
-      vendorCategory: "DATA",
-      website: base,
-      resourceUrl: `${base}${d.path}`,
-      method: "GET",
-      description: d.desc,
-      category: "DATA",
-      priceMicro: d.price,
-      network: ARC.caip2,
-      capabilities: d.caps,
-    });
   }
 }
 

@@ -31,7 +31,7 @@ export type ReasonCode = z.infer<typeof ReasonCode>;
 export const BudgetCategory = z.enum(["research", "services", "kol", "bounty", "content", "community", "treasury"]);
 export type BudgetCategory = z.infer<typeof BudgetCategory>;
 
-export const SupportedChain = z.enum(["Arc_Testnet", "Base_Sepolia", "Arbitrum_Sepolia", "Ethereum_Sepolia"]);
+export const SupportedChain = z.enum(["Arc", "Arc_Testnet", "Base_Sepolia", "Arbitrum_Sepolia", "Ethereum_Sepolia"]);
 export type SupportedChain = z.infer<typeof SupportedChain>;
 
 const common = {
@@ -59,6 +59,10 @@ export const SendPaymentAction = z.object({
   amount: usdcAmount,
   chain: SupportedChain,
   experimentId: z.string().min(1),
+  /** Which payment this is for the experiment (1, 2, …). Part of the idempotency key, so a
+   * second equal installment or a retry after a failure is a new payment, not a duplicate. */
+  contributionId: z.string().min(1).optional(),
+  installment: z.number().int().min(1).max(100).optional(),
   reasonCode: ReasonCode,
   ...common,
 });
@@ -103,7 +107,7 @@ export type SendPaymentAction = z.infer<typeof SendPaymentAction>;
 export type BridgeFundsAction = z.infer<typeof BridgeFundsAction>;
 export type ReallocateBudgetAction = z.infer<typeof ReallocateBudgetAction>;
 
-/** Actions the policy can forbid outright even though GrowthOS never implements them. */
+/** Actions the policy can forbid outright even though GrowTendril never implements them. */
 export const FORBIDDEN_ACTION_KINDS = ["mass_unsolicited_messaging", "automated_dm", "automated_cold_email", "automated_mentions"] as const;
 
 export function categoryFor(action: FinancialAction): BudgetCategory {

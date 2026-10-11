@@ -18,13 +18,18 @@ async function open(): Promise<DB> {
   if (process.env.DATABASE_URL) {
     const { Pool } = await import("pg");
     const pool = new Pool({ connectionString: process.env.DATABASE_URL, max: 10 });
-    const db = drizzlePg(pool, { schema });
-    await migratePg(db, { migrationsFolder: MIGRATIONS });
-    // Both drivers expose the same query-builder surface; the cast keeps one type across the app.
-    return db as unknown as DB;
+    try {
+      const db = drizzlePg(pool, { schema });
+      await migratePg(db, { migrationsFolder: MIGRATIONS });
+      // Both drivers expose the same query-builder surface; the cast keeps one type across the app.
+      return db as unknown as DB;
+    } catch (error) {
+      await pool.end();
+      throw error;
+    }
   }
   const { PGlite } = await import("@electric-sql/pglite");
-  const dir = process.env.PGLITE_DIR ?? path.join(process.cwd(), ".data", "pglite");
+  const dir = process.env.PGLITE_DIR || path.join(process.cwd(), ".data", "pglite");
   if (dir !== "memory://") mkdirSync(dir, { recursive: true });
   const client = new PGlite(dir);
   const db = drizzlePglite(client, { schema });
@@ -35,7 +40,12 @@ async function open(): Promise<DB> {
 /** Lazily opens and migrates the database once per process. */
 export function getDb(): Promise<DB> {
   if (holder.db) return Promise.resolve(holder.db);
-  holder.ready ??= open().then((db) => (holder.db = db));
+  holder.ready ??= open()
+    .then((db) => (holder.db = db))
+    .catch((error) => {
+      holder.ready = undefined;
+      throw error;
+    });
   return holder.ready;
 }
 

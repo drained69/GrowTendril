@@ -30,7 +30,7 @@ type Body = {
 
 const RAIL: Record<string, string> = { gateway_x402: "Circle Gateway · x402", app_kit_send: "Arc App Kit · Send", app_kit_bridge: "Arc App Kit · Bridge", gateway_deposit: "Circle Gateway · deposit" };
 const humanize = (k: string) => k.replace(/_/g, " ").toLowerCase().replace(/^\w/, (c) => c.toUpperCase());
-const NETWORK_KEY: Record<string, string> = { "Arc Testnet": "Arc_Testnet", "Base Sepolia": "Base_Sepolia", "Arbitrum Sepolia": "Arbitrum_Sepolia", "Ethereum Sepolia": "Ethereum_Sepolia" };
+const NETWORK_KEY: Record<string, string> = { "Arc Mainnet": "Arc", "Arc Testnet": "Arc_Testnet", "Base Sepolia": "Base_Sepolia", "Arbitrum Sepolia": "Arbitrum_Sepolia", "Ethereum Sepolia": "Ethereum_Sepolia" };
 
 export default async function ReceiptPage({ params }: { params: Promise<{ id: string }> }) {
   const { id } = await params;
@@ -41,7 +41,7 @@ export default async function ReceiptPage({ params }: { params: Promise<{ id: st
   const intact = sha256(canonicalJson(r.body)) === r.digest;
   const status = b.payment?.state ?? b.status;
   const p = b.payment;
-  const chainKey = p ? (NETWORK_KEY[p.network] ?? p.network) : "Arc_Testnet";
+  const chainKey = p ? (NETWORK_KEY[p.network] ?? p.network) : "Arc";
   const txUrl = p?.txHash ? (p.explorerUrl ?? txExplorerUrl(chainKey, p.txHash)) : null;
   const passed = b.policy?.checks.filter((c) => c.passed).length ?? 0;
 
@@ -109,8 +109,8 @@ export default async function ReceiptPage({ params }: { params: Promise<{ id: st
               <p className="text-[13px] leading-relaxed text-ink">{b.why.rationale}</p>
               {b.why.reasons.length > 0 && (
                 <ul className="mt-3 space-y-1.5 text-[12.5px] leading-snug text-ink-2">
-                  {b.why.reasons.map((x) => (
-                    <li key={x} className="flex gap-2">
+                  {b.why.reasons.map((x, ix) => (
+                    <li key={`${ix}:${x}`} className="flex gap-2">
                       <span className="mt-[7px] size-1 shrink-0 rounded-full bg-ink-4" />
                       {x}
                     </li>
@@ -136,7 +136,7 @@ export default async function ReceiptPage({ params }: { params: Promise<{ id: st
           )}
 
           <Card>
-            <CardHeader title="Structured action" description="Zod-validated before the policy engine ran" icon={<Braces />} />
+            <CardHeader title="Action details" description="The request checked against your spending rules" icon={<Braces />} />
             <CardBody>
               <pre className="num overflow-x-auto rounded-[8px] border border-line bg-bg px-3 py-2.5 text-[11.5px] leading-relaxed text-ink-2">{JSON.stringify(b.structuredAction, null, 2)}</pre>
             </CardBody>
@@ -155,7 +155,7 @@ export default async function ReceiptPage({ params }: { params: Promise<{ id: st
                     { k: "Settlement ID", v: p.settlementId ? <span className="num text-[11.5px]" title={p.settlementId}>{shortHash(p.settlementId, 6)}</span> : "—" },
                     { k: "Gateway status", v: p.settlementStatus ?? "—" },
                     { k: "Tx hash", v: p.txHash && txUrl ? <ExternalLink href={txUrl} className="num text-[11.5px]">{shortHash(p.txHash)}</ExternalLink> : "—" },
-                    { k: "Arc batch tx", v: p.batchTxHash ? <ExternalLink href={txExplorerUrl("Arc_Testnet", p.batchTxHash)} className="num text-[11.5px]">{shortHash(p.batchTxHash)}</ExternalLink> : "—" },
+                    { k: "Arc batch tx", v: p.batchTxHash ? <ExternalLink href={txExplorerUrl(chainKey, p.batchTxHash)} className="num text-[11.5px]">{shortHash(p.batchTxHash)}</ExternalLink> : "—" },
                     ...(p.responseDigest ? [{ k: "Response sha256", v: <span className="num text-[11px]" title={p.responseDigest}>{shortHash(p.responseDigest, 8)}</span> }] : []),
                   ]}
                 />

@@ -26,14 +26,14 @@ export interface AnalysisStats {
 }
 
 const RECOMMEND: Partial<Record<SignalType, string>> = {
-  recommendation_request: "Answer in the public thread with an honest comparison and a runnable example. Founder posts it; GrowthOS never auto-replies.",
-  initiative: "Build a personalized technical demo against their announced use case. Founder decides whether and how to reach out.",
-  launch: "Ship an integration example for what they just launched and share it where they announced.",
-  funding: "Prepare a short, specific build plan for their stated roadmap; founder-led outreach only.",
-  hiring: "Their team is growing on this stack — publish a quickstart aimed at their new engineers.",
-  competitor_usage: "Write a migration guide that addresses their stated pain with the competitor.",
+  recommendation_request: "Answer in the public thread with an honest comparison and a concrete example. Founder posts it; GrowTendril never auto-replies.",
+  initiative: "Prepare a tailored demo or proposal for what they announced. Founder decides whether and how to reach out.",
+  launch: "Show how you fit what they just launched, in public and only if it genuinely helps them.",
+  funding: "Prepare a short, specific plan for their stated goals; founder-led outreach only.",
+  hiring: "Their team is growing — share something genuinely useful for their new hires, in public.",
+  competitor_usage: "Publish a switching guide that addresses the pain they described with the alternative.",
   complaint: "Address the pain they described with a concrete fix or guide; reply publicly if appropriate.",
-  migration: "Offer a migration path with a working example for their target stack.",
+  migration: "Offer a clear switching path with a concrete example.",
   github_activity: "Contribute a useful example or integration to their repo only if it adds real value.",
 };
 
@@ -61,7 +61,7 @@ export async function analyzeProject(db: DB, projectId: string, log: Logger = ()
   const keywords = [...new Set([...profile.keywords, ...profile.terminology.slice(0, 6)])].filter(Boolean);
   const competitors = profile.competitors;
   const icpTerms = [...new Set(icpRows.flatMap((i) => i.segments).concat(profile.targetUsers.map((t) => t.toLowerCase())))];
-  const devAudience = icpTerms.some((t) => /develop|engineer|builder/.test(t));
+  const devAudience = profile.audience === "developers";
 
   const posts = await db.select().from(s.socialPosts).where(and(eq(s.socialPosts.projectId, projectId), gte(s.socialPosts.publishedAt, new Date(now - 30 * DAY_MS))));
   log("discovery", `Analyzing ${posts.length} public posts from the last 30 days`);
@@ -249,7 +249,7 @@ export async function analyzeProject(db: DB, projectId: string, log: Logger = ()
     ];
     const angle = profile.valueProps[0]
       ? `“${profile.valueProps[0]}” — shown live, in the context of ${narr?.label ?? keywords[0]}`
-      : `What ${project.name} removes from ${narr?.label ?? keywords[0]} — shown with a working demo`;
+      : `What ${project.name} changes about ${narr?.label ?? keywords[0]} — shown with a real example`;
     const metrics = {
       audienceFit: sc.audienceFit,
       topicAuthority: sc.topicAuthority,
@@ -329,9 +329,9 @@ export async function analyzeProject(db: DB, projectId: string, log: Logger = ()
       subjectKey: `kol:${k.id}`,
       type: "KOL",
       secondaryType: k.narrativeLabel ? "NARRATIVE" : undefined,
-      title: `@${k.handle} — ${k.narrativeLabel ?? "technical creator"}`,
+      title: `@${k.handle} — ${k.narrativeLabel ?? "creator"}`,
       whyNow: k.whyNow,
-      recommendedAction: `Technical creator campaign. Angle: ${k.angle}. Generate an evidence-backed brief; payment above policy threshold needs founder approval.`,
+      recommendedAction: `Creator campaign. Angle: ${k.angle}. Generate an evidence-backed brief; every payment needs founder approval.`,
       confidence: Math.round(Math.min(0.95, (k.campaignFit / 100) * 1.05) * 100) / 100,
       expectedValue: ev(k.overall),
       estimatedCostMicro: estimateKolCostMicro(k.followers),
@@ -352,8 +352,8 @@ export async function analyzeProject(db: DB, projectId: string, log: Logger = ()
       type: "NARRATIVE",
       secondaryType: voices.length ? "KOL" : "CONTENT",
       title: `${n.label} is ${n.status.toLowerCase()} (${n.velocity >= 0 ? "+" : ""}${n.velocity}% WoW)`,
-      whyNow: [n.reason, `${n.v7} relevant posts this week`, voices.length ? `${voices.length} high-fit creator(s) are active in it: ${voices.map((v) => "@" + v.handle).join(", ")}` : "No dominant voice yet — room to lead", `Relevance to ${project.name}: ${n.relevance}/100`],
-      recommendedAction: voices.length ? "Technical creator campaign anchored on this narrative, plus one technical post we own." : "Publish a definitive technical post / demo to own this narrative early.",
+      whyNow: [n.reason, `${n.v7} relevant posts this week`, voices.length ? `${voices.length} creator(s) we track post in it: ${voices.map((v) => "@" + v.handle).join(", ")}` : "No dominant voice yet — room to lead", `Relevance to ${project.name}: ${n.relevance}/100`],
+      recommendedAction: voices.length ? "Creator campaign anchored on this conversation, plus one piece of content we own." : "Publish the definitive guide, post or demo on this topic to lead the conversation early.",
       confidence: Math.round(Math.min(0.92, 0.45 + n.relevance / 250 + Math.min(0.2, n.v7 / 50)) * 100) / 100,
       expectedValue: n.relevance >= 70 && n.velocity >= 30 ? "HIGH" : "MEDIUM",
       estimatedCostMicro: voices.length ? toMicro(75) : toMicro(30),
@@ -377,7 +377,7 @@ export async function analyzeProject(db: DB, projectId: string, log: Logger = ()
       dataMode: i.mode,
     });
   }
-  // Individual developers asking in public for exactly what we do.
+  // Individual people asking in public for exactly what we offer.
   for (const p of posts) {
     if (p.entities.companies.length || !relevant(p)) continue;
     if (kolIds.some((k) => k.handle === p.authorHandle)) continue;
@@ -387,10 +387,10 @@ export async function analyzeProject(db: DB, projectId: string, log: Logger = ()
     const ageD = days(p.publishedAt, now);
     await upsertOpp({
       subjectKey: `post:${p.id}`,
-      type: "DEVELOPER",
+      type: "PERSON",
       title: `${p.authorHandle} on ${p.provider}: ${SIGNAL_LABEL[sig.type].toLowerCase()}`,
       whyNow: [`${SIGNAL_LABEL[sig.type]} ${ageD}d ago${sig.matched ? ` (“${sig.matched}”)` : ""}`, `Matches: ${termHits(text(p), keywords).join(", ")}`, "Public thread — can be answered in the open"],
-      recommendedAction: "Draft a helpful public answer with a runnable example. Founder reviews and posts; no DMs.",
+      recommendedAction: profile.audience === "developers" ? "Draft a helpful public answer with a runnable example. Founder reviews and posts; no DMs." : "Draft a helpful public answer with a concrete example. Founder reviews and posts; no DMs.",
       confidence: Math.round(confidenceFrom(40, 2) * 100) / 100,
       expectedValue: sig.type === "recommendation_request" ? "MEDIUM" : "LOW",
       estimatedCostMicro: 0,

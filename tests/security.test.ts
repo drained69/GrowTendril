@@ -43,3 +43,19 @@ describe("misc security primitives", () => {
     expect(canonicalJson({ b: 1, a: { d: 2, c: 3 } })).toBe(canonicalJson({ a: { c: 3, d: 2 }, b: 1 }));
   });
 });
+
+describe("forms never leak input into URLs", () => {
+  it("every form posts (a server action or method=post), so a native submit can't become a GET", async () => {
+    const { readFileSync, readdirSync, statSync } = await import("node:fs");
+    const { join } = await import("node:path");
+    const walk = (dir: string): string[] => readdirSync(dir).flatMap((f) => (statSync(join(dir, f)).isDirectory() ? walk(join(dir, f)) : f.endsWith(".tsx") ? [join(dir, f)] : []));
+    const offenders: string[] = [];
+    for (const file of walk("src")) {
+      const src = readFileSync(file, "utf8");
+      for (const m of src.matchAll(/<form\b([^>]*)>/g)) {
+        if (!/\baction=\{/.test(m[1]) && !/method="post"/.test(m[1])) offenders.push(`${file}: ${m[0].slice(0, 60)}`);
+      }
+    }
+    expect(offenders).toEqual([]);
+  });
+});

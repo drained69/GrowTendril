@@ -21,8 +21,8 @@ export function ScoreBreakdown({ components, footnote }: { components: Component
             </div>
             <ScoreBar value={c.score} />
             <ul className="mt-1 space-y-0.5 text-[11.5px] leading-snug text-ink-3">
-              {c.reasons.map((r) => (
-                <li key={r}>{r}</li>
+              {c.reasons.map((r, ir) => (
+                <li key={`${ir}:${r}`}>{r}</li>
               ))}
             </ul>
           </div>
@@ -37,8 +37,8 @@ export function WhyNow({ items }: { items: string[] }) {
   if (!items.length) return <p className="text-[12.5px] text-ink-3">No dated signals yet.</p>;
   return (
     <ul className="space-y-2">
-      {items.map((w) => (
-        <li key={w} className="flex gap-2.5 text-[13px] leading-relaxed text-ink-2">
+      {items.map((w, iw) => (
+        <li key={`${iw}:${w}`} className="flex gap-2.5 text-[13px] leading-relaxed text-ink-2">
           <span className="mt-[7px] size-1.5 shrink-0 rounded-full bg-s1" />
           <span>{w}</span>
         </li>

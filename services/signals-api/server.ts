@@ -1,22 +1,20 @@
 /**
- * GrowthOS Signals — a small x402 seller, paywalled with Circle Gateway batching.
+ * GrowTendril Signals — a small x402 seller, paywalled with Circle Gateway batching.
  *
  * It plays the role of an independent data vendor so the agent's purchase path is
- * exercised end-to-end on Arc Testnet: 402 → EIP-712 signature → Circle facilitator
+ * exercised end-to-end on Arc mainnet: 402 → EIP-712 signature → Circle facilitator
  * settles → Gateway batches on-chain. Pattern from the-canteen-dev/circle-agent.
  *
  * Real entities are enriched from public APIs (GitHub, HN Algolia) at request time.
- * The fictional demo entities return fixtures tagged dataMode: "DEMO".
  */
 import express from "express";
 import { createGatewayMiddleware } from "@circle-fin/x402-batching/server";
 import { formatUnits } from "viem";
-import { demoCompanyIntel, demoCreatorAudience } from "../../src/server/demo/enrichment";
 
-const PORT = Number(process.env.SIGNALS_API_PORT ?? 4021);
+const PORT = Number(process.env.SIGNALS_API_PORT || 4021);
 const SELLER = process.env.SIGNALS_SELLER_ADDRESS;
-const FACILITATOR = process.env.GATEWAY_API_URL ?? "https://gateway-api-testnet.circle.com";
-const UA = "GrowthOS-Signals/0.1";
+const FACILITATOR = process.env.GATEWAY_API_URL || "https://gateway-api.circle.com";
+const UA = "GrowTendril-Signals/0.1";
 
 const app = express();
 
@@ -24,10 +22,10 @@ const PRICES = { company: "$0.01", creator: "$0.02", narrative: "$0.005" };
 
 app.get("/", (_req, res) =>
   res.json({
-    name: "GrowthOS Signals",
-    paywall: SELLER ? "Circle Gateway x402 (Arc Testnet)" : "DISABLED — set SIGNALS_SELLER_ADDRESS",
+    name: "GrowTendril Signals",
+    paywall: SELLER ? "Circle Gateway x402 (Arc Mainnet)" : "DISABLED — set SIGNALS_SELLER_ADDRESS",
     seller: SELLER ?? null,
-    network: "eip155:5042002",
+    network: "eip155:5042",
     endpoints: [
       { path: "/v1/company-intel?company=<name>&github=<org>", price: PRICES.company },
       { path: "/v1/creator-audience?handle=<handle>", price: PRICES.creator },
@@ -38,11 +36,11 @@ app.get("/", (_req, res) =>
 
 type Paid = express.Request & { payment?: { payer: string; amount: string; network: string; transaction?: string } };
 
-const gateway = SELLER ? createGatewayMiddleware({ sellerAddress: SELLER, facilitatorUrl: FACILITATOR, networks: ["eip155:5042002"], description: "GrowthOS Signals data" }) : null;
+const gateway = SELLER ? createGatewayMiddleware({ sellerAddress: SELLER, facilitatorUrl: FACILITATOR, networks: ["eip155:5042"], description: "GrowTendril Signals data" }) : null;
 const paywall = (price: string): express.RequestHandler =>
   gateway
     ? (gateway.require(price) as unknown as express.RequestHandler)
-    : (_req, res) => res.status(503).json({ error: "Paywall not configured: set SIGNALS_SELLER_ADDRESS to an Arc Testnet address" });
+    : (_req, res) => res.status(503).json({ error: "Paywall not configured: set SIGNALS_SELLER_ADDRESS to an Arc mainnet address" });
 
 const receipt = (req: Paid) => ({ paidBy: req.payment?.payer, amountUsdc: req.payment ? formatUnits(BigInt(req.payment.amount), 6) : null, network: req.payment?.network, settlementId: req.payment?.transaction ?? null });
 
@@ -58,8 +56,6 @@ async function json<T>(url: string, headers: Record<string, string> = {}): Promi
 app.get("/v1/company-intel", paywall(PRICES.company), async (req: Paid, res) => {
   const company = String(req.query.company ?? "").trim();
   if (!company) return res.status(400).json({ error: "company is required" });
-  const demo = demoCompanyIntel(company);
-  if (demo) return res.json({ ...demo, payment: receipt(req) });
 
   const signals: { signalType: string; summary: string; sourceUrl: string; observedAt: string; confidence: number }[] = [];
   const org = String(req.query.github ?? company).replace(/\s+/g, "");
@@ -84,8 +80,6 @@ app.get("/v1/company-intel", paywall(PRICES.company), async (req: Paid, res) => 
 app.get("/v1/creator-audience", paywall(PRICES.creator), async (req: Paid, res) => {
   const handle = String(req.query.handle ?? "").trim();
   if (!handle) return res.status(400).json({ error: "handle is required" });
-  const demo = demoCreatorAudience(handle);
-  if (demo) return res.json({ ...demo, payment: receipt(req) });
   // No legitimate public source exposes follower demographics; say so instead of inventing them.
   res.json({ handle, dataMode: "LIVE", available: false, reason: "No permitted public source for audience composition of this creator", payment: receipt(req) });
 });
@@ -104,6 +98,6 @@ app.get("/v1/narrative-pulse", paywall(PRICES.narrative), async (req: Paid, res)
 });
 
 app.listen(PORT, () => {
-  console.log(`GrowthOS Signals listening on http://localhost:${PORT}`);
-  console.log(SELLER ? `x402 paywall active — seller ${SELLER} on Arc Testnet` : "x402 paywall DISABLED — set SIGNALS_SELLER_ADDRESS");
+  console.log(`GrowTendril Signals listening on http://localhost:${PORT}`);
+  console.log(SELLER ? `x402 paywall active — seller ${SELLER} on Arc mainnet` : "x402 paywall DISABLED — set SIGNALS_SELLER_ADDRESS");
 });

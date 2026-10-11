@@ -1,3 +1,4 @@
+import { bluesky } from "@/server/integrations/providers/bluesky";
 import { github } from "@/server/integrations/providers/github";
 import { hackernews } from "@/server/integrations/providers/hackernews";
 import { reddit } from "@/server/integrations/providers/reddit";
@@ -7,8 +8,8 @@ import { rss } from "@/server/integrations/providers/rss";
 import { tiktok, discord, telegram } from "@/server/integrations/providers/unavailable";
 import type { MarketProvider, ProviderId } from "@/server/integrations/providers/types";
 
-/** Priority order: X, GitHub, Reddit, YouTube, news/blogs — then restricted sources. */
-export const PROVIDERS: MarketProvider[] = [x, github, reddit, youtube, hackernews, rss, tiktok, discord, telegram];
+/** Priority order: social, communities, video, news — developer sources last — then restricted sources. */
+export const PROVIDERS: MarketProvider[] = [x, bluesky, reddit, youtube, rss, hackernews, github, tiktok, discord, telegram];
 
 export function providerById(id: string): MarketProvider | undefined {
   return PROVIDERS.find((p) => p.id === (id as ProviderId));

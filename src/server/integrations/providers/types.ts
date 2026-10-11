@@ -1,4 +1,6 @@
-export type ProviderId = "x" | "github" | "reddit" | "youtube" | "hackernews" | "rss" | "tiktok" | "discord" | "telegram";
+import type { Audience } from "@/server/domain/intel/market-taxonomy";
+
+export type ProviderId = "x" | "bluesky" | "github" | "reddit" | "youtube" | "hackernews" | "rss" | "tiktok" | "discord" | "telegram";
 
 export interface FetchedPost {
   externalId: string;
@@ -13,6 +15,21 @@ export interface FetchedPost {
   content: string;
   publishedAt: Date;
   engagement: { likes?: number; comments?: number; shares?: number; views?: number; score?: number; stars?: number };
+}
+
+/** What a creator publishes about themselves on the platform where they were found. */
+export interface CreatorProfile {
+  handle: string;
+  displayName?: string;
+  bio?: string;
+  followers?: number;
+  /** Links the creator lists on their own profile (website, other channels). */
+  links: string[];
+  /** A contact email the creator put on their own public profile, if any. */
+  publicEmail?: string;
+  location?: string;
+  avatarUrl?: string;
+  url: string;
 }
 
 export interface SearchOptions {
@@ -47,9 +64,19 @@ export interface MarketProvider {
   credentialFields: CredentialField[];
   /** Field key → env var providing a platform default. */
   envFallback: Record<string, string>;
+  /** Only search this source for these customer audiences (default: all). */
+  audiences?: Audience[];
   /** Whether the provider can run with these credentials (keyless providers: always). */
   isReady(creds: Credentials): boolean;
+  /** When true, a scan sends its queries as one OR search (sources with strict keyless rate limits). */
+  combineQueries?(creds: Credentials): boolean;
   search(query: string, opts: SearchOptions, creds: Credentials): Promise<FetchedPost[]>;
+  /** Search creator profiles by topic (name/bio), where the platform offers it. */
+  findCreators?(query: string, opts: { limit: number }, creds: Credentials): Promise<CreatorProfile[]>;
+  /** A creator's own recent posts, to judge what they actually publish. */
+  recentPosts?(handle: string, opts: SearchOptions, creds: Credentials): Promise<FetchedPost[]>;
+  /** Public profile for a handle (url helps platforms keyed by channel id). */
+  profile?(handle: string, creds: Credentials, url?: string | null): Promise<CreatorProfile | null>;
 }
 
 export class ProviderError extends Error {

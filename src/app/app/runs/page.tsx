@@ -2,6 +2,7 @@ import Link from "next/link";
 import { desc, eq } from "drizzle-orm";
 import { ChevronRight, Clock, ListTree, Radar, Settings2, Workflow } from "lucide-react";
 import { requireProject } from "@/server/auth/current";
+import { priced } from "@/server/domain/billing";
 import { can } from "@/server/auth/access";
 import { schema as s } from "@/server/db/client";
 import { recentJobs } from "@/server/jobs/queue";
@@ -29,6 +30,12 @@ function until(d: Date): string {
   return s < 60 ? `${s}s` : s < 3600 ? `${Math.ceil(s / 60)}m` : `${Math.ceil(s / 3600)}h`;
 }
 
+/** A job that finished without doing its work (e.g. no credit for a scan) records why. */
+const skippedReason = (j: { result: unknown }) => {
+  const r = j.result as { skipped?: unknown } | null;
+  return typeof r?.skipped === "string" ? r.skipped : null;
+};
+
 export default async function Runs() {
   const { project, role, db } = await requireProject();
   const pid = project.id;
@@ -49,7 +56,7 @@ export default async function Runs() {
             {project.lastCycleAt ? <span>Last cycle {relTime(project.lastCycleAt)}</span> : <span>No cycle has run yet</span>}
           </>
         }
-        actions={can(role, "operate") && <ActionButton action={runCycleAction} label="Run cycle" variant="primary" icon={<Radar />} />}
+        actions={can(role, "operate") && <ActionButton action={runCycleAction} label={priced("Run cycle", "scan")} variant="primary" icon={<Radar />} />}
       />
 
       <StatStrip className="grid-cols-2 lg:grid-cols-4">
@@ -93,7 +100,7 @@ export default async function Runs() {
                 </span>
               ),
               trigger: <Badge tone={j.trigger === "schedule" ? "info" : j.trigger === "user" ? "accent" : "muted"}>{TRIGGER_LABEL[j.trigger] ?? j.trigger}</Badge>,
-              status: <StatusBadge status={j.status} />,
+              status: skippedReason(j) ? <Badge tone="warn">Skipped</Badge> : <StatusBadge status={j.status} />,
               attempts: (
                 <span className={`num ${j.attempts > 1 ? "text-warning" : "text-ink-2"}`}>
                   {j.attempts}/{j.maxAttempts}
@@ -116,7 +123,20 @@ export default async function Runs() {
                 <span className="text-ink-4">—</span>
               ),
               duration: <span className="num text-ink-3">{duration(j.startedAt, j.finishedAt)}</span>,
-              error: j.lastError ? (
+              error: skippedReason(j) ? (
+                <span className="flex items-center gap-1.5 text-[11.5px] text-warning">
+                  {skippedReason(j) === "balance too low" ? (
+                    <>
+                      Balance too low ·{" "}
+                      <Link href="/billing" className="underline underline-offset-2">
+                        top up
+                      </Link>
+                    </>
+                  ) : (
+                    `Skipped: ${skippedReason(j)}`
+                  )}
+                </span>
+              ) : j.lastError ? (
                 <span className="block max-w-[320px] truncate text-[11.5px] text-critical" title={j.lastError}>
                   {j.lastError}
                 </span>
@@ -125,7 +145,7 @@ export default async function Runs() {
               ),
             },
             sort: { kind: j.kind, trigger: j.trigger, status: j.status, attempts: j.attempts, created: j.createdAt.getTime(), finished: j.finishedAt?.getTime() ?? null },
-            search: `${KIND_LABEL[j.kind] ?? j.kind} ${j.trigger} ${j.status} ${j.lastError ?? ""} ${j.id}`,
+            search: `${KIND_LABEL[j.kind] ?? j.kind} ${j.trigger} ${j.status} ${skippedReason(j) ?? ""} ${j.lastError ?? ""} ${j.id}`,
           }))}
           empty={<p className="text-center text-[12.5px] text-ink-3">No jobs yet. “Run cycle”, autopilot, settlement checks and Gateway deposits all appear here as they’re queued.</p>}
         />

@@ -26,22 +26,28 @@ function getSecret(): Buffer {
 
 const sign = (data: string) => createHmac("sha256", getSecret()).update(data).digest("base64url");
 
-export function createSessionToken(userId: string): string {
-  const payload = Buffer.from(JSON.stringify({ uid: userId, exp: Math.floor(Date.now() / 1000) + MAX_AGE_S })).toString("base64url");
+/** `v` is the account's session version: bumping it (password reset, sign out everywhere) revokes older sessions. */
+export function createSessionToken(userId: string, version = 0): string {
+  const payload = Buffer.from(JSON.stringify({ uid: userId, v: version, exp: Math.floor(Date.now() / 1000) + MAX_AGE_S })).toString("base64url");
   return `${payload}.${sign(payload)}`;
 }
 
-export function verifySessionToken(token: string | undefined | null): { uid: string } | null {
+/** HMAC with the session secret, for other short-lived signed values (OAuth state). */
+export const signValue = (data: string) => sign(`value:${data}`);
+
+export function verifySessionToken(token: string | undefined | null): { uid: string; v: number } | null {
   if (!token) return null;
-  const [payload, sig] = token.split(".");
-  if (!payload || !sig) return null;
+  const parts = token.split(".");
+  const [payload, sig] = parts;
+  if (parts.length !== 2 || !payload || !sig || token.length > 4096) return null;
   const expected = Buffer.from(sign(payload));
   const actual = Buffer.from(sig);
   if (expected.length !== actual.length || !timingSafeEqual(expected, actual)) return null;
   try {
-    const { uid, exp } = JSON.parse(Buffer.from(payload, "base64url").toString()) as { uid: string; exp: number };
-    if (!uid || exp < Date.now() / 1000) return null;
-    return { uid };
+    const { uid, exp, v } = JSON.parse(Buffer.from(payload, "base64url").toString()) as { uid: unknown; exp: unknown; v?: unknown };
+    if (typeof uid !== "string" || !uid || uid.length > 200 || typeof exp !== "number" || !Number.isFinite(exp) || exp <= Date.now() / 1000) return null;
+    if (v !== undefined && (typeof v !== "number" || !Number.isSafeInteger(v) || v < 0)) return null;
+    return { uid, v: v ?? 0 };
   } catch {
     return null;
   }

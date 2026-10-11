@@ -15,7 +15,7 @@ import { ActionButton } from "@/components/features/agent/action-button";
 import { EvidenceList } from "@/components/features/intel/evidence";
 import { ScoreBreakdown, WhyNow } from "@/components/features/intel/score-breakdown";
 
-const typeLabel = (t: string) => (t === "KOL" ? "Creator" : t.charAt(0) + t.slice(1).toLowerCase().replace(/_/g, " "));
+const typeLabel = (t: string) => (t === "KOL" ? "Creator" : t === "PERSON" ? "Person asking" : t.charAt(0) + t.slice(1).toLowerCase().replace(/_/g, " "));
 const humanize = (k: string) => k.replace(/([A-Z])/g, " $1").replace(/^\w/, (c) => c.toUpperCase());
 
 export default async function Opportunity({ params }: { params: Promise<{ id: string }> }) {
@@ -95,7 +95,7 @@ export default async function Opportunity({ params }: { params: Promise<{ id: st
           <Card>
             <CardHeader title="Act" icon={<Zap />} />
             <CardBody className="space-y-3">
-              {isIssue && <Callout tone="warn">Routed to the product team. GrowthOS will not buy traffic into a growing friction point.</Callout>}
+              {isIssue && <Callout tone="warn">Routed to the product team. GrowTendril will not buy traffic into a growing friction point.</Callout>}
               {needsVerify && (
                 <div className="space-y-2">
                   <p className="flex items-center gap-1.5 text-[12px] text-ink-3">

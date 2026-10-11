@@ -70,8 +70,8 @@ export default async function DailyBrief() {
               <div>
                 <div className="label mb-1.5">Why it matters</div>
                 <ul className="space-y-1.5 text-[12.5px] leading-snug text-ink-2">
-                  {b.topOpportunity.whyNow.slice(0, 4).map((x) => (
-                    <li key={x} className="flex gap-2">
+                  {b.topOpportunity.whyNow.slice(0, 4).map((x, ix) => (
+                    <li key={`${ix}:${x}`} className="flex gap-2">
                       <span className="mt-[7px] size-1 shrink-0 rounded-full bg-ink-4" />
                       {x}
                     </li>

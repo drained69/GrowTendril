@@ -2,8 +2,10 @@ node_modules
 .next
 .data
 .env
-.env.local
+.env*.local
+.env.production
 *.tsbuildinfo
 next-env.d.ts
 recovery_file_*.dat
 coverage
+.next-*

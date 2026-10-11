@@ -1,4 +1,4 @@
-import { Activity, Bot, Building2, FlaskConical, Flag, LayoutDashboard, Megaphone, Network, Newspaper, PlayCircle, Plug, Radar, Receipt, Settings, ShieldCheck, Target, TrendingUp, Users, Wallet } from "lucide-react";
+import { Map as MapIcon, Activity, Bot, Building2, ClipboardList, FlaskConical, Flag, LayoutDashboard, Megaphone, Network, Newspaper, Plug, Radar, Receipt, Settings, ShieldCheck, Target, TrendingUp, Users, Wallet } from "lucide-react";
 import type { LucideIcon } from "lucide-react";
 
 export interface NavItem {
@@ -6,7 +6,6 @@ export interface NavItem {
   label: string;
   icon: LucideIcon;
   badge?: "approvals";
-  demoOnly?: boolean;
   keywords?: string;
 }
 
@@ -16,7 +15,6 @@ export const NAV: { section: string | null; items: NavItem[] }[] = [
     items: [
       { href: "/app", label: "Overview", icon: LayoutDashboard, keywords: "home dashboard mission" },
       { href: "/app/brief", label: "Daily brief", icon: Newspaper, keywords: "report summary today" },
-      { href: "/app/demo", label: "Guided demo", icon: PlayCircle, demoOnly: true },
     ],
   },
   {
@@ -26,6 +24,7 @@ export const NAV: { section: string | null; items: NavItem[] }[] = [
       { href: "/app/customers", label: "Customers", icon: Building2, keywords: "companies intent leads" },
       { href: "/app/narratives", label: "Narratives", icon: TrendingUp, keywords: "trends topics market" },
       { href: "/app/kols", label: "Creators", icon: Megaphone, keywords: "kol influencers voices" },
+      { href: "/app/kols/report", label: "Influencer report", icon: ClipboardList, keywords: "influencers outreach contact creators report export" },
       { href: "/app/graph", label: "Growth graph", icon: Network },
     ],
   },
@@ -33,7 +32,9 @@ export const NAV: { section: string | null; items: NavItem[] }[] = [
     section: "Growth",
     items: [
       { href: "/app/opportunities", label: "Opportunities", icon: Target },
+      { href: "/app/plan", label: "Growth plan", icon: MapIcon, keywords: "plan campaigns content partnerships outreach bounties strategy" },
       { href: "/app/missions", label: "Missions", icon: Flag, keywords: "goal budget" },
+      { href: "/app/campaigns", label: "Creator campaigns", icon: Megaphone, keywords: "rewards mindshare contribution budget" },
       { href: "/app/experiments", label: "Experiments", icon: FlaskConical, keywords: "campaigns tests" },
     ],
   },
@@ -59,10 +60,7 @@ export const NAV: { section: string | null; items: NavItem[] }[] = [
 
 export const ALL_NAV = NAV.flatMap((g) => g.items);
 
-/** Label for a path, used by breadcrumbs. */
-export function navLabel(path: string): string | null {
-  const exact = ALL_NAV.find((n) => n.href === path);
-  if (exact) return exact.label;
-  const prefix = [...ALL_NAV].sort((a, b) => b.href.length - a.href.length).find((n) => n.href !== "/app" && path.startsWith(n.href));
-  return prefix?.label ?? null;
+/** The most specific nav item that contains this path, used by breadcrumbs. */
+export function navMatch(path: string): NavItem | null {
+  return ALL_NAV.find((n) => n.href === path) ?? [...ALL_NAV].sort((a, b) => b.href.length - a.href.length).find((n) => n.href !== "/app" && path.startsWith(`${n.href}/`)) ?? null;
 }

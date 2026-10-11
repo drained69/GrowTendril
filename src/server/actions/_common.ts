@@ -4,6 +4,7 @@ import { currentProject, currentUser } from "@/server/auth/current";
 import { can, type Permission } from "@/server/auth/access";
 import { createSessionToken, sessionCookieOptions, SESSION_COOKIE } from "@/server/auth/session";
 import { rateLimit, clientIp } from "@/server/security/ratelimit";
+import { ZodError } from "zod";
 
 /** Uniform result for server actions consumed by client components. */
 export type ActionResult<T = unknown> = { ok: true; data?: T; log?: { agent: string; message: string }[]; message?: string } | { ok: false; error: string };
@@ -14,10 +15,12 @@ export class ActionError extends Error {}
 export async function guard(permission: Permission) {
   const user = await currentUser();
   if (!user) throw new ActionError("You are signed out — sign in again.");
+  if (!user.emailVerified) throw new ActionError("Confirm your email first — enter the code we sent you.");
   const cur = await currentProject(user.id);
   if (!cur) throw new ActionError("No workspace selected.");
   if (!can(cur.role, permission)) throw new ActionError(`Your role (${cur.role}) cannot do this.`);
-  return { user, project: cur.project, role: cur.role, db: await getDb() };
+  const db = await getDb();
+  return { user, project: cur.project, role: cur.role, db };
 }
 
 export async function limited(key: string, capacity = 10, refillPerSec = 0.2) {
@@ -27,14 +30,20 @@ export async function limited(key: string, capacity = 10, refillPerSec = 0.2) {
 }
 
 export function fail(e: unknown): ActionResult<never> {
-  const msg = e instanceof Error ? e.message : String(e);
-  // Zod errors are verbose; surface the first issue only.
-  const zod = msg.startsWith("[") ? (JSON.parse(msg) as { message: string; path: string[] }[])[0] : null;
-  return { ok: false, error: zod ? `${zod.path.join(".") || "input"}: ${zod.message}` : msg };
+  const zod = e instanceof ZodError ? e.issues[0] : null;
+  // Messages written for people ("Enter a USDC amount") stand alone; terse ones get the field name.
+  const human = !!zod && /^[A-Z]/.test(zod.message) && zod.message.length > 15;
+  if (zod) return { ok: false, error: human ? zod.message : `${zod.path.join(".") || "input"}: ${zod.message}` };
+  if (!(e instanceof Error)) return { ok: false, error: "Something went wrong. Please try again." };
+  // Database/SDK diagnostics can contain SQL parameters, keys and account details.
+  const infrastructure = !(e instanceof ActionError) && (e.name === "DrizzleQueryError" || e instanceof TypeError || e instanceof SyntaxError ||
+    ("code" in e && typeof e.code === "string" && /^(?:[0-9A-Z]{5}|E[A-Z_]+)$/.test(e.code)) ||
+    /^(?:Failed query:|query:|params:)|\b(?:postgres(?:ql)?:\/\/|Bearer\s|sk-ant-|AIza|api[_-]?key[=:])/i.test(e.message));
+  return { ok: false, error: infrastructure ? "Couldn't complete this request. Please try again or contact support if it continues." : e.message.slice(0, 500) || "Something went wrong. Please try again." };
 }
 
-export async function startSession(userId: string) {
-  (await cookies()).set(SESSION_COOKIE, createSessionToken(userId), sessionCookieOptions);
+export async function startSession(userId: string, sessionVersion = 0) {
+  (await cookies()).set(SESSION_COOKIE, createSessionToken(userId, sessionVersion), sessionCookieOptions);
 }
 
 export type LogLine = { agent: string; message: string };

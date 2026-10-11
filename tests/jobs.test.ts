@@ -1,8 +1,13 @@
-import { describe, it, expect, beforeAll } from "vitest";
+import { describe, it, expect, beforeAll, vi } from "vitest";
 import { eq } from "drizzle-orm";
 import type { DB } from "@/server/db/client";
 
 process.env.PGLITE_DIR = "memory://";
+
+const cycles = vi.hoisted(() => ({ count: 0 }));
+vi.mock("@/server/domain/agent/operator", () => ({
+  runCycle: async () => (cycles.count++, { runId: "new-run", log: [] }),
+}));
 
 let db: DB;
 let s: typeof import("@/server/db/schema");
@@ -46,8 +51,79 @@ describe("job queue (real Postgres via PGlite)", () => {
     await db.update(s.jobs).set({ status: "running", lockedUntil: new Date(Date.now() - 1000) }).where(eq(s.jobs.id, j!.id));
     const claimed = await q.claimNext(db, "w3");
     expect(claimed?.id).toBe(j!.id);
-    await q.completeJob(db, j!.id, { ok: true });
+    await q.completeJob(db, claimed!, { ok: true });
     const [done] = await db.select().from(s.jobs).where(eq(s.jobs.id, j!.id));
     expect(done.status).toBe("done");
+  });
+
+  it("keeps a lease short and renews it only for the worker that holds the job", async () => {
+    const j = await q.enqueue(db, { kind: "cleanup", dedupeKey: "k3" });
+    const claimed = await q.claimNext(db, "w4");
+    expect(claimed!.lockedUntil!.getTime() - Date.now()).toBeLessThanOrEqual(q.LEASE_MS);
+    await db.update(s.jobs).set({ lockedUntil: new Date(Date.now() + 1000) }).where(eq(s.jobs.id, j!.id));
+    await q.renewLease(db, j!.id, "someone-else", claimed!.attempts);
+    const [other] = await db.select().from(s.jobs).where(eq(s.jobs.id, j!.id));
+    expect(other.lockedUntil!.getTime() - Date.now()).toBeLessThan(2000);
+    await q.renewLease(db, j!.id, "w4", claimed!.attempts);
+    const [mine] = await db.select().from(s.jobs).where(eq(s.jobs.id, j!.id));
+    expect(mine.lockedUntil!.getTime() - Date.now()).toBeGreaterThan(q.LEASE_MS - 5000);
+    await q.completeJob(db, claimed!);
+  });
+
+  it("fences stale workers after a lease is reclaimed, even if the worker ID is reused", async () => {
+    const j = await q.enqueue(db, { kind: "cleanup", dedupeKey: "stale-worker", maxAttempts: 3 });
+    const first = await q.claimNext(db, "reused-worker");
+    expect(first!.id).toBe(j!.id);
+    await db.update(s.jobs).set({ lockedUntil: new Date(Date.now() - 1000) }).where(eq(s.jobs.id, j!.id));
+    const second = await q.claimNext(db, "reused-worker");
+    expect(second!.attempts).toBe(2);
+    expect(await q.completeJob(db, first!, { stale: true })).toBe(false);
+    await q.failJob(db, first!, "stale error");
+    await q.renewLease(db, j!.id, "reused-worker", first!.attempts);
+    const [current] = await db.select().from(s.jobs).where(eq(s.jobs.id, j!.id));
+    expect(current).toMatchObject({ status: "running", attempts: 2, lastError: expect.stringMatching(/lease expired/) });
+    expect(await q.completeJob(db, second!, { fresh: true })).toBe(true);
+  });
+
+  it("never retries an expired final attempt", async () => {
+    const j = await q.enqueue(db, { kind: "gateway_deposit", dedupeKey: "one-shot", maxAttempts: 1 });
+    const claim = await q.claimNext(db, "deposit-worker");
+    expect(claim!.id).toBe(j!.id);
+    await db.update(s.jobs).set({ lockedUntil: new Date(Date.now() - 1000) }).where(eq(s.jobs.id, j!.id));
+    expect(await q.claimNext(db, "other-worker")).toBeNull();
+    const [failed] = await db.select().from(s.jobs).where(eq(s.jobs.id, j!.id));
+    expect(failed).toMatchObject({ status: "failed", attempts: 1 });
+    expect(await q.completeJob(db, claim!)).toBe(false);
+  });
+});
+
+describe("operator cycle after a crash", () => {
+  it("closes the run a stopped worker left behind and runs the cycle again", async () => {
+    const { HANDLERS } = await import("@/server/jobs/handlers");
+    await db.insert(s.users).values({ id: "u1", email: "owner@example.test", name: "Owner", passwordHash: "x" });
+    await db.insert(s.projects).values({ id: "p1", ownerId: "u1", name: "Crumb Club", webhookSecret: "secret" });
+    await db.insert(s.agentRuns).values({ id: "orphan", projectId: "p1", trigger: "schedule", status: "running" });
+
+    const job = await q.enqueue(db, { kind: "cycle", projectId: "p1", dedupeKey: "c1" });
+    const claimed = await q.claimNext(db, "w5");
+    expect(await HANDLERS.cycle(db, claimed!)).toMatchObject({ runId: "new-run" });
+    expect(cycles.count).toBe(1);
+    const [orphan] = await db.select().from(s.agentRuns).where(eq(s.agentRuns.id, "orphan"));
+    expect(orphan.status).toBe("failed");
+    expect(orphan.log.at(-1)?.message).toMatch(/Interrupted/);
+
+    // A second cycle job for the same workspace waits while one is genuinely running.
+    const second = await q.enqueue(db, { kind: "cycle", projectId: "p1", dedupeKey: "c2" });
+    expect(second!.id).toBe(claimed!.id);
+    expect(await HANDLERS.cycle(db, { ...claimed!, id: "concurrent-cycle" })).toMatchObject({ skipped: expect.stringMatching(/already running/) });
+    expect(cycles.count).toBe(1);
+    expect(job).not.toBeNull();
+  });
+
+  it("concurrent cycle requests share one queued job", async () => {
+    await db.insert(s.projects).values({ id: "p2", ownerId: "u1", name: "Second workspace", webhookSecret: "secret" });
+    const jobs = await Promise.all(Array.from({ length: 5 }, () => q.enqueue(db, { kind: "cycle", projectId: "p2", trigger: "user" })));
+    expect(new Set(jobs.map((j) => j!.id)).size).toBe(1);
+    expect((await db.select().from(s.jobs).where(eq(s.jobs.projectId, "p2")))).toHaveLength(1);
   });
 });

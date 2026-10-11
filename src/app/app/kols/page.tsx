@@ -36,6 +36,7 @@ export default async function Creators() {
         title="Creators"
         description="Ranked by relevance, authority, recency, discussion quality and authenticity. Follower count is shown, but only enters scoring log-damped (max +10 on authority)."
         meta={<ModeBadge mode={project.dataMode} />}
+        actions={<><LinkButton href="/app/campaigns">Creator campaigns</LinkButton><LinkButton href="/app/kols/report" variant="primary">Influencer report</LinkButton></>}
       />
 
       {rows.length > 0 && (

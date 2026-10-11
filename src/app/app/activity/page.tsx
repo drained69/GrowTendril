@@ -5,13 +5,13 @@ import { requireProject } from "@/server/auth/current";
 import { schema as s } from "@/server/db/client";
 import { recentDecisions, recentTransactions } from "@/server/queries/activity";
 import { CHAINS, txExplorerUrl } from "@/server/integrations/circle/config";
-import { DEMO_PAYOUT_FALLBACK } from "@/server/domain/growth/experiments";
 import { refreshSettlementsAction } from "@/server/actions/wallet";
 import { fmtUsdc } from "@/lib/money";
 import { relTime } from "@/lib/time";
 import { Badge, Card, CardFooter, CardHeader, ExternalLink, ModeBadge, PageHeader, Stat, StatStrip, StatusBadge, TxStateBadge, VerdictBadge, shortHash } from "@/components/ui";
 import { DataTable } from "@/components/ui/data-table";
 import { ActionButton } from "@/components/features/agent/action-button";
+import { ChainCheckBadge } from "@/components/features/wallet/chain-check-badge";
 
 const RAIL: Record<string, string> = { gateway_x402: "x402 · Gateway", app_kit_send: "App Kit Send", app_kit_bridge: "App Kit Bridge", gateway_deposit: "Gateway deposit" };
 const AUTH: Record<string, string> = { gateway_x402: "EIP-712 TransferWithAuthorization", app_kit_send: "App Kit adapter tx", app_kit_bridge: "App Kit adapter tx", gateway_deposit: "approve + deposit" };
@@ -38,12 +38,12 @@ export default async function Activity() {
     <div className="space-y-4">
       <PageHeader
         title="Activity"
-        description="Every payment GrowthOS proposed — rail, state, Circle settlement ID, Arc transaction hash and explorer link — and every decision the agents made. SIMULATED rows moved nothing and carry no hashes."
+        description="Every payment GrowTendril proposed, its approval, state, Circle settlement ID and Arc transaction hash."
         meta={
           <>
             <ModeBadge mode={project.dataMode} />
             <span>
-              {txs.length} payments · {decisions.length} decisions
+              {txs.length} payment{txs.length === 1 ? "" : "s"} · {decisions.length} decision{decisions.length === 1 ? "" : "s"}
             </span>
           </>
         }
@@ -54,7 +54,7 @@ export default async function Activity() {
         <Stat label="x402 purchases" value={purchases.length} sub="paid API calls" />
         <Stat label="Gateway settlements" value={txs.filter((t) => t.settlementId).length} sub="with a settlement ID" />
         <Stat label="Arc transfers" value={txs.filter((t) => t.rail === "app_kit_send" && t.txHash).length} sub="App Kit Send with tx hash" />
-        <Stat label="On-chain / testnet" value={real.length} sub={`of ${txs.length} payment rows`} />
+        <Stat label="On-chain payments" value={real.length} sub={`of ${txs.length} payment rows`} />
       </StatStrip>
 
       <Card>
@@ -79,9 +79,7 @@ export default async function Activity() {
               ? purchase.purpose
               : t.kind === "bridge"
                 ? `${CHAINS[t.chain]?.label ?? t.chain} → ${CHAINS[t.destChain ?? ""]?.label ?? t.destChain ?? "—"}`
-                : t.recipient === DEMO_PAYOUT_FALLBACK
-                  ? "Placeholder payout address (set the creator’s)"
-                  : t.recipient
+                : t.recipient
                     ? `to ${shortHash(t.recipient, 4)}`
                     : humanize(t.kind);
             return {
@@ -112,10 +110,11 @@ export default async function Activity() {
                   <span className="flex items-center gap-1">
                     <TxStateBadge state={t.state} />
                     {t.dataMode !== t.state && <ModeBadge mode={t.dataMode} />}
+                    <ChainCheckBadge check={t.chainCheck} />
                   </span>
                 ),
                 tx: t.batchTxHash ? (
-                  <ExternalLink href={txExplorerUrl("Arc_Testnet", t.batchTxHash)} className="num whitespace-nowrap text-[11.5px]">
+                  <ExternalLink href={txExplorerUrl(t.chain, t.batchTxHash)} className="num whitespace-nowrap text-[11.5px]">
                     batch {shortHash(t.batchTxHash, 4)}
                   </ExternalLink>
                 ) : t.txHash ? (

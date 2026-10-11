@@ -11,8 +11,10 @@ export const maxDuration = 300;
  */
 export async function POST(req: Request) {
   const secret = process.env.CRON_SECRET;
-  const got = req.headers.get("authorization")?.replace(/^Bearer /, "") ?? "";
-  if (!secret || got.length !== secret.length || !timingSafeEqual(Buffer.from(got), Buffer.from(secret))) return NextResponse.json({ error: "unauthorized" }, { status: 401 });
+  const authorization = req.headers.get("authorization") ?? "";
+  const got = Buffer.from(authorization.startsWith("Bearer ") ? authorization.slice(7) : "");
+  const expected = Buffer.from(secret ?? "");
+  if (!secret || got.length !== expected.length || !timingSafeEqual(got, expected)) return NextResponse.json({ error: "unauthorized" }, { status: 401 });
   const processed = await runOnce("cron", 10);
   return NextResponse.json({ processed });
 }

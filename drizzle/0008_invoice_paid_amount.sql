@@ -1,0 +1,1 @@
+ALTER TABLE "billing_invoices" ADD COLUMN "paid_micro" bigint;

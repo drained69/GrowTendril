@@ -1,6 +1,6 @@
 import Link from "next/link";
-import { desc, eq } from "drizzle-orm";
-import { ArrowUpRight, CheckCircle2, Inbox, Lock, ShieldAlert } from "lucide-react";
+import { desc, eq, inArray } from "drizzle-orm";
+import { ArrowUpRight, CheckCircle2, Inbox, Lock, PackageCheck, ShieldAlert, UserRoundCheck } from "lucide-react";
 import { requireProject } from "@/server/auth/current";
 import { can } from "@/server/auth/access";
 import { schema as s } from "@/server/db/client";
@@ -9,6 +9,8 @@ import { relTime } from "@/lib/time";
 import { Badge, Callout, Card, CardBody, CardHeader, Confidence, EmptyState, ModeBadge, PageHeader, Stat, StatStrip, StatusBadge } from "@/components/ui";
 import { DataTable } from "@/components/ui/data-table";
 import { ApprovalControls } from "@/components/features/approvals/approval-controls";
+import { currentPayee, payeeContext, payeeHold, PAYEE_HOLD_MS, type PayeeContext } from "@/server/domain/agent/payees";
+import { CopyField } from "@/components/ui/copy";
 
 type Details = {
   rationale?: string;
@@ -17,12 +19,24 @@ type Details = {
   evidence?: { url: string; title: string }[];
   confidence?: number;
   policy?: { rule: string; detail: string }[];
+  tranche?: "first" | "second";
+  delivery?: { url: string; note: string | null; recordedAt: string; recordedBy: string | null; visits: number; conversions: number; successEvent: string } | null;
 };
+
+/** Who a pending payment goes to, with the history an approver needs to spot a swapped address. */
+interface Payee {
+  address: string;
+  label: string | null;
+  ctx: PayeeContext;
+  /** The address the experiment pays now, if it differs from the one in this request. */
+  changedTo: string | null | undefined;
+  hold: string | null;
+}
 
 const humanize = (k: string) => k.replace(/_/g, " ").toLowerCase().replace(/^\w/, (c) => c.toUpperCase());
 
 export default async function Approvals() {
-  const { project, role, db } = await requireProject();
+  const { project, role, db, user } = await requireProject();
   const canApprove = can(role, "approve");
   const rows = await db
     .select({ a: s.approvals, d: s.agentDecisions })
@@ -31,6 +45,7 @@ export default async function Approvals() {
     .where(eq(s.approvals.projectId, project.id))
     .orderBy(desc(s.approvals.createdAt));
   const pending = rows.filter((r) => r.a.status === "pending");
+  const payees = await payeesFor(db, project.id, user.id, pending.map((r) => r.a.transactionId).filter((x): x is string => !!x));
   const done = rows.filter((r) => r.a.status !== "pending");
   const pendingTotal = pending.reduce((n, r) => n + r.a.requestedMicro, 0);
   const approvedTotal = done.filter((r) => r.a.status === "approved").reduce((n, r) => n + (r.a.approvedMicro ?? r.a.requestedMicro), 0);
@@ -65,6 +80,7 @@ export default async function Approvals() {
         <div className="space-y-4">
           {pending.map(({ a, d }) => {
             const det = a.details as Details;
+            const payee = a.transactionId ? payees.get(a.transactionId) : undefined;
             return (
               <Card key={a.id}>
                 <CardHeader
@@ -92,6 +108,8 @@ export default async function Approvals() {
                       </div>
                     </div>
                     {det.rationale && <p className="text-[12.5px] leading-relaxed text-ink-2">{det.rationale}</p>}
+                    {payee && <PayeePanel p={payee} />}
+                    {det.delivery && <DeliveryPanel d={det.delivery} />}
                     {det.expectedOutcome && (
                       <div className="rounded-[8px] border border-line bg-bg/50 px-3 py-2 text-[12.5px]">
                         <span className="label mr-2">Expected outcome</span>
@@ -102,8 +120,8 @@ export default async function Approvals() {
                       <div>
                         <div className="label mb-1.5">Why now</div>
                         <ul className="space-y-1.5 text-[12.5px] leading-snug text-ink-2">
-                          {det.reasons.map((r) => (
-                            <li key={r} className="flex gap-2">
+                          {det.reasons.map((r, ir) => (
+                            <li key={`${ir}:${r}`} className="flex gap-2">
                               <span className="mt-[7px] size-1 shrink-0 rounded-full bg-ink-4" />
                               {r}
                             </li>
@@ -168,7 +186,7 @@ export default async function Approvals() {
           })}
         </div>
       ) : (
-        <EmptyState icon={<Inbox />} title="Nothing waiting for you" description="GrowthOS is operating within its autonomous limits. Spend above your auto-approve threshold (Settings → Spend policy) lands here for a decision." />
+        <EmptyState icon={<Inbox />} title="Nothing waiting for you" description="There are no pending payment requests. Creator payouts and research purchases that require your approval appear here with their recipient, amount and reason." />
       )}
 
       <Card>
@@ -211,6 +229,76 @@ export default async function Approvals() {
           empty={<p className="text-center text-[12.5px] text-ink-3">No approvals resolved yet. Approved and rejected requests are kept here with their receipts.</p>}
         />
       </Card>
+    </div>
+  );
+}
+
+async function payeesFor(db: Awaited<ReturnType<typeof requireProject>>["db"], projectId: string, userId: string, txIds: string[]): Promise<Map<string, Payee>> {
+  const out = new Map<string, Payee>();
+  if (!txIds.length) return out;
+  const txs = await db.select().from(s.transactions).where(inArray(s.transactions.id, txIds));
+  for (const tx of txs) {
+    if (tx.kind !== "send" || !tx.recipient) continue;
+    const ctx = await payeeContext(db, projectId, tx.recipient);
+    let label: string | null = null;
+    let now: string | null | undefined;
+    if (tx.experimentId) {
+      now = await currentPayee(db, tx.experimentId);
+      const [row] = await db
+        .select({ label: s.experiments.recipientLabel, handle: s.kols.handle })
+        .from(s.experiments)
+        .leftJoin(s.campaigns, eq(s.campaigns.experimentId, s.experiments.id))
+        .leftJoin(s.kols, eq(s.campaigns.kolId, s.kols.id))
+        .where(eq(s.experiments.id, tx.experimentId));
+      label = row?.handle ? `@${row.handle}` : row?.label ?? null;
+    }
+    out.set(tx.id, { address: tx.recipient, label, ctx, changedTo: now?.toLowerCase() === tx.recipient.toLowerCase() ? undefined : now, hold: payeeHold(ctx, userId) });
+  }
+  return out;
+}
+
+function PayeePanel({ p }: { p: Payee }) {
+  const recentChange = p.ctx.setBy?.replaced && Date.now() - p.ctx.setBy.at.getTime() < PAYEE_HOLD_MS;
+  return (
+    <div className="space-y-2 rounded-[8px] border border-line px-3 py-2.5">
+      <div className="flex items-center justify-between gap-2">
+        <span className="label flex items-center gap-1.5">
+          <UserRoundCheck className="size-3.5" /> Pays {p.label ?? "this address"}
+        </span>
+        {p.ctx.firstPayment ? <Badge tone="warn">First payment to this address</Badge> : <Badge tone="good">Paid before · {relTime(p.ctx.lastPaidAt)}</Badge>}
+      </div>
+      <CopyField value={p.address} />
+      {p.ctx.setBy && (
+        <p className={recentChange ? "text-[12px] text-warning" : "text-[12px] text-ink-3"}>
+          {p.ctx.setBy.replaced ? "Changed" : "Set"} {relTime(p.ctx.setBy.at)}
+          {p.ctx.setBy.name ? ` by ${p.ctx.setBy.name}` : ""}
+          {p.ctx.setBy.replaced ? ` (replaced ${p.ctx.setBy.replaced.slice(0, 6)}…${p.ctx.setBy.replaced.slice(-4)})` : ""}. Confirm the address with the recipient through a channel you already trust before approving.
+        </p>
+      )}
+      {p.changedTo !== undefined && (
+        <Callout tone="danger" title="The payout address changed after this was proposed">
+          The experiment now pays {p.changedTo ?? "no address"}. Reject this request and propose the payment again so the new address gets its own review.
+        </Callout>
+      )}
+      {p.hold && <Callout tone="warn">{p.hold}</Callout>}
+    </div>
+  );
+}
+
+function DeliveryPanel({ d }: { d: NonNullable<Details["delivery"]> }) {
+  return (
+    <div className="space-y-1.5 rounded-[8px] border border-line px-3 py-2.5 text-[12.5px]">
+      <span className="label flex items-center gap-1.5">
+        <PackageCheck className="size-3.5" /> Paid on delivery
+      </span>
+      <a href={d.url} target="_blank" rel="noreferrer" className="flex items-center gap-1 break-all text-s1 hover:underline">
+        {d.url} <ArrowUpRight className="size-3 shrink-0" />
+      </a>
+      <p className="text-ink-2">
+        Recorded {relTime(new Date(d.recordedAt))}
+        {d.recordedBy ? ` by ${d.recordedBy}` : ""}. Since tranche 1: <span className="num text-ink">{d.visits}</span> tracked visit{d.visits === 1 ? "" : "s"}, <span className="num text-ink">{d.conversions}</span> {d.successEvent.replace(/_/g, " ")} event{d.conversions === 1 ? "" : "s"}.
+      </p>
+      {d.visits === 0 && <p className="text-[12px] text-warning">No tracked visits yet — open the link and check the work is live and includes the tracked link.</p>}
     </div>
   );
 }

@@ -25,14 +25,14 @@ export const SIGNAL_LABEL: Record<SignalType, string> = {
   recommendation_request: "Asked for recommendations",
   competitor_usage: "Uses / evaluates a competitor",
   complaint: "Public pain point",
-  question: "Public technical question",
+  question: "Public question",
   launch: "Product launch",
   initiative: "New initiative announced",
   funding: "Funding announcement",
   hiring: "Hiring for relevant roles",
   partnership: "Partnership announcement",
-  migration: "Ecosystem migration",
-  tech_adoption: "Adopting relevant technology",
+  migration: "Switching providers",
+  tech_adoption: "Adopting something relevant",
   github_activity: "Relevant GitHub activity",
   mention: "Relevant mention",
   x402_enrichment: "Verified via purchased data (x402)",
@@ -57,16 +57,16 @@ export const INTENT_WEIGHT: Record<SignalType, number> = {
 };
 
 const RULES: { type: SignalType; re: RegExp }[] = [
-  { type: "recommendation_request", re: /\b(any (recommendations?|suggestions?)|what (do|should) (you|i|we) use|looking for (a|an|some)\b[^.?!]{0,40}(tool|sdk|api|library|provider|service)|can anyone recommend|alternatives? to)\b/i },
-  { type: "migration", re: /\b(migrat(e|ed|ing)|moving (from|to)|switch(ed|ing)? (from|to)|port(ed|ing) (our|to))\b/i },
+  { type: "recommendation_request", re: /\b(any (recommendations?|suggestions?)|recommendations? for|what (do|should) (you|i|we) use|where (can|do|should) (i|we) (get|buy|find)|looking for (a|an|some)\b[^.?!]{0,40}(tool|sdk|api|library|provider|service|app|platform|software|product|brand|shop|store|place|company|agency|vendor|option|alternative)|can (anyone|someone|you all) recommend|best [a-z]+ (in|near|for)\b|alternatives? to)\b/i },
+  { type: "migration", re: /\b(migrat(e|ed|ing)|moving (from|to)|switch(ed|ing)? (from|to)|port(ed|ing) (our|to)|replac(e|ed|ing) (our|my)|cancel(l?ed|l?ing)? (my|our))\b/i },
   { type: "funding", re: /\b(raised|raises|seed round|series [abc]|pre-seed|funding round|backed by)\b/i },
-  { type: "hiring", re: /\b(we'?re hiring|now hiring|is hiring|join (our|the) team|open roles?|job opening|looking to hire)\b/i },
-  { type: "launch", re: /\b(launch(ed|ing)?|just shipped|now live|introducing|announcing|released|v\d+\.\d+)\b/i },
-  { type: "initiative", re: /\b(we('re| are) (building|exploring|working on)|new initiative|roadmap|pilot(ing)?|rolling out)\b/i },
+  { type: "hiring", re: /\b(we'?re hiring|now hiring|is hiring|join (our|the) team|open roles?|job opening|looking to hire|hiring (a|an))\b/i },
+  { type: "launch", re: /\b(launch(ed|ing)?|just shipped|now live|now open|grand opening|introducing|announcing|released|unveil(s|ed)?|debut(s|ed)?|v\d+\.\d+)\b/i },
+  { type: "initiative", re: /\b(we('re| are) (building|exploring|working on|planning)|new initiative|roadmap|pilot(ing)?|rolling out|expand(s|ing)? (to|into)|opening (a|our) (new|second))\b/i },
   { type: "partnership", re: /\b(partner(ed|ing|ship)? with|integrat(ion|ed) with|teamed up)\b/i },
-  { type: "complaint", re: /\b(frustrat|annoying|painful|broken|doesn'?t work|struggl|nightmare|hate (that|how)|why is it so hard)\w*/i },
+  { type: "complaint", re: /\b(frustrat|annoying|painful|broken|doesn'?t work|struggl|nightmare|hate (that|how)|why is it so hard|disappoint|never (arrived|showed up)|terrible service|so expensive|overpriced)\w*/i },
   { type: "question", re: /(\?\s*$|\bhow (do|can|to)\b|\bis there (a|an|any)\b|\bdoes anyone know\b)/im },
-  { type: "tech_adoption", re: /\b(using|adopt(ed|ing)|integrat(ing|ed)|built (on|with)|implement(ed|ing))\b/i },
+  { type: "tech_adoption", re: /\b(using|adopt(ed|ing)|integrat(ing|ed)|built (on|with)|implement(ed|ing)|signed up for|subscribed to|started using)\b/i },
 ];
 
 export interface ClassifiedSignal {

@@ -1,25 +1,27 @@
 import Link from "next/link";
+import { redirect } from "next/navigation";
 import { eq } from "drizzle-orm";
-import { Check, FileText, Flag, Package, ShieldCheck, Target } from "lucide-react";
+import { Check, FileText, Flag, Globe, Package, ShieldCheck, Target } from "lucide-react";
 import { requireUser, currentProject } from "@/server/auth/current";
 import { getDb, schema as s } from "@/server/db/client";
 import { AUTOPILOT_LABEL } from "@/server/jobs/scheduler";
+import { billingMode } from "@/server/domain/billing";
 import { logoutAction } from "@/server/actions/auth";
 import { Badge, Callout, Card, CardHeader, CardFooter, LinkButton, cn } from "@/components/ui";
 import { Logo } from "@/components/layout/logo";
 import { ProfileForm, IcpForm } from "@/components/features/settings/settings-forms";
-import { ProductStep, GenerateIcp, MissionStep, AutonomyStep } from "@/components/features/onboarding/onboarding-forms";
+import { ProductStep, GenerateIcp, MissionStep, AutonomyStep, QuickStartStep } from "@/components/features/onboarding/onboarding-forms";
 
 export const dynamic = "force-dynamic";
 
 const STEPS = [
-  { label: "Product", sub: "What you're building" },
+  { label: "Product", sub: "What you sell" },
   { label: "Customer", sub: "Profile & ICP" },
   { label: "Mission", sub: "Goal & budget" },
   { label: "Autonomy", sub: "Hard spending rules" },
 ];
 
-export default async function Onboarding({ searchParams }: { searchParams: Promise<{ new?: string; step?: string }> }) {
+export default async function Onboarding({ searchParams }: { searchParams: Promise<{ new?: string; step?: string; manual?: string }> }) {
   const sp = await searchParams;
   const user = await requireUser();
   const db = await getDb();
@@ -61,8 +63,8 @@ export default async function Onboarding({ searchParams }: { searchParams: Promi
 
       <div className="mx-auto max-w-3xl px-4 py-8">
         <div className="mb-6">
-          <h1 className="text-[20px] font-semibold tracking-[-0.02em] text-ink">{project ? `Set up ${project.name}` : "Set up your workspace"}</h1>
-          <p className="mt-1 text-[13px] text-ink-3">Four short steps. Everything here can be changed later in Settings.</p>
+          <h1 className="display display-bounce text-[30px] leading-tight text-ink">{project ? `Set up ${project.name}` : "Set up your workspace"}</h1>
+          <p className="mt-1 text-[13px] text-ink-3">{step === 1 && !sp.manual ? "One link is enough. Everything can be changed later in Settings." : "Four short steps. Everything here can be changed later in Settings."}</p>
         </div>
 
         <ol className="mb-6 grid grid-cols-4 gap-2" aria-label="Onboarding progress">
@@ -88,15 +90,34 @@ export default async function Onboarding({ searchParams }: { searchParams: Promi
         </ol>
 
         {user.isGuest && step === 1 && (
-          <Callout tone="warn" title="You're using a guest demo account" className="mb-4" action={<LinkButton href="/signup" size="xs" variant="primary">Create account</LinkButton>}>
-            Create an account to set up a real workspace. Guest accounts expire after 7 days.
+          <Callout tone="warn" title="Create an account" className="mb-4" action={<LinkButton href="/signup" size="xs" variant="primary">Create account</LinkButton>}>
+            An account is required to set up a workspace.
           </Callout>
         )}
 
-        {step === 1 && (
+        {step === 1 && !sp.manual && (
           <Card>
-            <CardHeader title="Your product" description="Tell GrowthOS what you're building. It drafts a product intelligence profile from your public pages." icon={<Package />} />
+            <CardHeader title="Start with your website" description="Paste one link. GrowTendril reads your site, works out what you sell and who buys it, sets a first goal with safe limits, and starts finding customers and creators." icon={<Globe />} />
+            <QuickStartStep />
+            <CardFooter>
+              <span>No website yet, or want to fill it in yourself?</span>
+              <Link href={`/onboarding?manual=1${sp.new ? "&new=1" : ""}`} className="font-medium text-ink-2 hover:text-ink">
+                Set up step by step →
+              </Link>
+            </CardFooter>
+          </Card>
+        )}
+
+        {step === 1 && sp.manual && (
+          <Card>
+            <CardHeader title="Your product" description="Tell GrowTendril what you sell and who buys it. It drafts a product profile from your public pages." icon={<Package />} />
             <ProductStep />
+            <CardFooter>
+              <span>Have a website?</span>
+              <Link href={`/onboarding${sp.new ? "?new=1" : ""}`} className="font-medium text-ink-2 hover:text-ink">
+                Set up from a link instead →
+              </Link>
+            </CardFooter>
           </Card>
         )}
 
@@ -105,7 +126,7 @@ export default async function Onboarding({ searchParams }: { searchParams: Promi
             <Card>
               <CardHeader
                 title="Product intelligence profile"
-                description="Correct anything that's wrong — this drives what GrowthOS searches for."
+                description="Correct anything that's wrong — this drives what GrowTendril searches for."
                 icon={<FileText />}
                 action={<Badge>{profile.generatedBy}</Badge>}
               />
@@ -127,9 +148,9 @@ export default async function Onboarding({ searchParams }: { searchParams: Promi
               <div className="flex flex-wrap items-center justify-between gap-3 px-4 py-3.5">
                 <div>
                   <div className="text-[13px] font-medium text-ink">Next: your ideal customer</div>
-                  <p className="text-[12px] text-ink-3">Save any edits first, then let GrowthOS propose ICP tiers from the profile.</p>
+                  <p className="text-[12px] text-ink-3">Save any edits first, then let GrowTendril propose ICP tiers from the profile.</p>
                 </div>
-                <GenerateIcp />
+                {canEdit ? <GenerateIcp /> : <span className="text-[12px] text-ink-3">Only the owner can propose the customer profile.</span>}
               </div>
             </Card>
           </div>
@@ -145,7 +166,7 @@ export default async function Onboarding({ searchParams }: { searchParams: Promi
             )}
             <Card>
               <CardHeader title="Growth mission" description="A measurable goal and a USDC budget ceiling. Nothing is spent without one." icon={<Flag />} />
-              {canPolicy ? <MissionStep /> : <CardFooter>Only owners and admins can set missions.</CardFooter>}
+              {canPolicy ? <MissionStep audience={profile?.audience} category={profile?.category} /> : <CardFooter>Only owners and admins can set missions.</CardFooter>}
             </Card>
           </div>
         )}
@@ -153,7 +174,7 @@ export default async function Onboarding({ searchParams }: { searchParams: Promi
         {step === 4 && (
           <Card>
             <CardHeader title="Autonomy: the hard rules" description="Enforced by a deterministic policy engine on every structured action — not by a prompt." icon={<ShieldCheck />} />
-            {canPolicy ? <AutonomyStep autopilot={AUTOPILOT_LABEL} demo={project?.dataMode === "DEMO"} /> : <CardFooter>Only owners and admins can activate the workspace.</CardFooter>}
+            {canPolicy ? <AutonomyStep autopilot={AUTOPILOT_LABEL} billing={billingMode() !== "off"} /> : <CardFooter>Only owners and admins can activate the workspace.</CardFooter>}
           </Card>
         )}
       </div>

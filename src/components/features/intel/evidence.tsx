@@ -14,7 +14,7 @@ export interface EvidenceRow {
   dataMode: string;
 }
 
-const PROVIDER_LABEL: Record<string, string> = { x: "X", github: "GitHub", reddit: "Reddit", youtube: "YouTube", hackernews: "Hacker News", rss: "News", x402: "Purchased data" };
+const PROVIDER_LABEL: Record<string, string> = { x: "X", bluesky: "Bluesky", github: "GitHub", reddit: "Reddit", youtube: "YouTube", hackernews: "Hacker News", rss: "News", x402: "Purchased data" };
 
 /** One attributable piece of evidence: what was said, where, when, and how it was classified. */
 export function EvidenceItem({ e }: { e: EvidenceRow }) {

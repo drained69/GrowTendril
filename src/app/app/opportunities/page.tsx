@@ -7,8 +7,8 @@ import { fmtUsdc } from "@/lib/money";
 import { Badge, Confidence, EmptyState, LinkButton, ModeBadge, PageHeader, StatusBadge, cn, type Tone } from "@/components/ui";
 import { LinkTabs } from "@/components/ui/tabs";
 
-const TYPES = ["ALL", "CUSTOMER", "KOL", "NARRATIVE", "DEVELOPER", "PRODUCT_ISSUE", "COMPETITOR", "PARTNERSHIP", "CONTENT", "COMMUNITY", "EVENT"];
-const TYPE_LABEL: Record<string, string> = { ALL: "All", KOL: "Creator", PRODUCT_ISSUE: "Product issue" };
+const TYPES = ["ALL", "CUSTOMER", "KOL", "NARRATIVE", "PERSON", "PRODUCT_ISSUE", "COMPETITOR", "PARTNERSHIP", "CONTENT", "COMMUNITY", "EVENT"];
+const TYPE_LABEL: Record<string, string> = { ALL: "All", KOL: "Creator", PERSON: "Person asking", PRODUCT_ISSUE: "Product issue" };
 const STATUSES = [
   { key: "active", label: "Active" },
   { key: "all", label: "All" },
@@ -31,7 +31,7 @@ export default async function Opportunities({ searchParams }: { searchParams: Pr
     <div className="space-y-4">
       <PageHeader
         title="Opportunities"
-        description="Everything GrowthOS found, prioritized. Each one answers: why this, why now, what evidence, what to do, and what it is worth spending."
+        description="Everything GrowTendril found, prioritized. Each one answers: why this, why now, what evidence, what to do, and what it is worth spending."
         meta={
           <>
             <ModeBadge mode={project.dataMode} />
@@ -70,8 +70,8 @@ export default async function Opportunities({ searchParams }: { searchParams: Pr
               </div>
               <div className="mt-2 text-[13.5px] font-medium leading-snug text-ink">{o.title}</div>
               <ul className="mb-3 mt-1.5 flex-1 space-y-1 text-[12px] leading-snug text-ink-2">
-                {o.whyNow.slice(0, 2).map((w) => (
-                  <li key={w} className="flex gap-2">
+                {o.whyNow.slice(0, 2).map((w, iw) => (
+                  <li key={`${iw}:${w}`} className="flex gap-2">
                     <span className="mt-[6px] size-1 shrink-0 rounded-full bg-ink-4" />
                     <span className="line-clamp-1">{w}</span>
                   </li>

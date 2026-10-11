@@ -3,7 +3,7 @@ import { escapeRe } from "@/server/domain/intel/signals";
 
 /**
  * Product-mention analysis. Sentiment alone is not useful; we extract *what kind* of
- * feedback it is, and cluster recurring issues so GrowthOS can say "fix this before
+ * feedback it is, and cluster recurring issues so GrowTendril can say "fix this before
  * buying more traffic".
  */
 
@@ -24,10 +24,10 @@ const CAT_RULES: { cat: MentionCategory; re: RegExp }[] = [
   { cat: "praise", re: /\b(love|amazing|awesome|great|excellent|impressed|game.?changer|so easy|just works)\b/i },
   { cat: "competitor_comparison", re: /\b(vs\.?|versus|compared to|better than|worse than|instead of|alternative to)\b/i },
   { cat: "question", re: /(\?|\bhow (do|can|to)\b|\bdoes it\b)/i },
-  { cat: "purchase_intent", re: /\b(pricing|how much|paid plan|upgrade|buy|enterprise plan|trial)\b/i },
-  { cat: "churn_risk", re: /\b(switching (away|from)|moving off|cancel+(ed|ing)?|giving up on|stopped using|leaving)\b/i },
+  { cat: "purchase_intent", re: /\b(pricing|how much|paid plan|upgrade|buy|order(ing)?|book(ing)?|subscribe|enterprise plan|trial|where can i get)\b/i },
+  { cat: "churn_risk", re: /\b(switching (away|from)|moving off|cancel+(ed|ing)?|unsubscrib\w*|giving up on|stopped using|leaving|never (ordering|buying|using) again)\b/i },
   { cat: "confusion", re: /\b(confus\w*|unclear|don'?t understand|no idea how|docs (are|were) (bad|unclear|missing)|where is)\b/i },
-  { cat: "integration_request", re: /\b(integrat\w* with|plugin for|work with|support (for )?(base|solana|langchain|next\.?js|python|rust))\b/i },
+  { cat: "integration_request", re: /\b(integrat\w* with|plugin for|connect(s|ion)? (to|with)|works? with my|sync(s|ing)? with)\b/i },
 ];
 
 const POS = /\b(love|great|amazing|awesome|excellent|easy|fast|impressed|works|smooth|helpful|clean)\b/gi;
@@ -43,12 +43,15 @@ export function sentimentOf(text: string): "positive" | "negative" | "neutral" {
 
 /** Recurring issue themes. Keys are stable so week-over-week changes are comparable. */
 export const ISSUE_THEMES: { key: string; label: string; re: RegExp; segment: string }[] = [
-  { key: "wallet-onboarding", label: "Wallet onboarding friction", re: /\b(wallet (setup|onboarding|creation|connect)|connect(ing)? (a |my )?wallet|seed phrase|onboarding)\b/i, segment: "Developers" },
-  { key: "docs-gaps", label: "Documentation gaps", re: /\b(docs?|documentation|example|tutorial|quickstart)\b/i, segment: "Developers" },
-  { key: "auth-keys", label: "API key / auth issues", re: /\b(api key|auth(entication)?|401|403|token expired|credentials?)\b/i, segment: "Developers" },
-  { key: "latency", label: "Latency / performance", re: /\b(slow|latency|timeout|timed out|performance)\b/i, segment: "All users" },
-  { key: "pricing-clarity", label: "Pricing clarity", re: /\b(pricing|price|cost|fees?|expensive)\b/i, segment: "Buyers" },
-  { key: "chain-support", label: "Chain / network support", re: /\b(support (for )?(base|solana|arbitrum|polygon)|testnet|mainnet|chain support)\b/i, segment: "Developers" },
+  { key: "wallet-onboarding", label: "Signup & onboarding friction", re: /\b(sign ?up|signing up|onboarding|getting started|set ?up|setup|account creation|verify my|verification|wallet (setup|onboarding|creation|connect)|connect(ing)? (a |my )?wallet|seed phrase)\b/i, segment: "New users" },
+  { key: "docs-gaps", label: "Unclear instructions or docs", re: /\b(docs?|documentation|instructions|manual|example|tutorial|quickstart|how[- ]to guide)\b/i, segment: "Users" },
+  { key: "auth-keys", label: "Login & account access", re: /\b(log ?in|logged out|password|locked out|api key|auth(entication)?|401|403|token expired|credentials?)\b/i, segment: "Users" },
+  { key: "latency", label: "Speed & reliability", re: /\b(slow|latency|timeout|timed out|performance|outage|down again|crash(es|ed|ing)?|keeps? crashing)\b/i, segment: "All users" },
+  { key: "pricing-clarity", label: "Pricing & billing", re: /\b(pricing|price|cost|fees?|expensive|overpriced|charged|refund|billing|invoice)\b/i, segment: "Buyers" },
+  { key: "delivery", label: "Delivery & fulfillment", re: /\b(delivery|delivered late|late delivery|shipping|shipped|never arrived|didn'?t arrive|lost package|tracking number|out of stock)\b/i, segment: "Customers" },
+  { key: "support", label: "Customer support", re: /\b(customer (service|support)|support team|no response|never (replied|responded)|can'?t reach|no one answers|waited (hours|days))\b/i, segment: "Customers" },
+  { key: "quality", label: "Product quality", re: /\b(quality|stale|damaged|defective|broke after|cheap(ly)? made|tastes?|smell|wrong (item|order|size))\b/i, segment: "Customers" },
+  { key: "chain-support", label: "Platform & device support", re: /\b(support (for )?(android|ios|iphone|windows|mac|linux|base|solana|arbitrum|polygon)|not available (on|in)|testnet|mainnet|chain support)\b/i, segment: "Users" },
 ];
 
 export interface MentionAnalysis {

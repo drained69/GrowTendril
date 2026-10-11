@@ -8,6 +8,8 @@ export interface ShellProps {
   wallet: { state: "live" | "simulation" | "none" | "frozen"; label: string };
   autopilot: string;
   claude: boolean;
+  /** The workspace owner's prepaid balance; null while billing is off. */
+  credit: { balanceMicro: number; low: boolean; isOwner: boolean } | null;
 }
 
 export interface Notice {

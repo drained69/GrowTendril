@@ -1,4 +1,4 @@
-# GrowthOS — Implementation Plan
+# GrowTendril — Implementation Plan
 
 ## Audit
 
@@ -21,7 +21,7 @@ packages** on npm (READMEs and `.d.ts` type definitions) and the organizer's ref
 | Onramp | `@circle-fin/onramp-kit` | `createOnrampServerKit`, `createSessionRouteHandler` |
 | Arc testnet | chain `eip155:5042002`, Gateway domain 26, USDC `0x3600…0000`, explorer `testnet.arcscan.app` | |
 
-Earn Kit is marked "coming soon" in its own README → GrowthOS only *recommends* idle-fund placement, approval-gated, never executes it autonomously. Borrow is not built.
+Earn Kit is marked "coming soon" in its own README → GrowTendril only *recommends* idle-fund placement, approval-gated, never executes it autonomously. Borrow is not built.
 
 ## Architecture
 

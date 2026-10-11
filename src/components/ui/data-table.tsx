@@ -44,18 +44,18 @@ export function DataTable({ columns, rows, defaultSort, searchable, empty, pageS
       {searchable && (
         <div className="flex items-center gap-2 border-b border-line px-4 py-2">
           <Search className="size-3.5 text-ink-4" />
-          <input value={q} onChange={(e) => setQ(e.target.value)} placeholder="Filter…" className="h-7 flex-1 bg-transparent text-[12.5px] text-ink outline-none placeholder:text-ink-4" />
-          <span className="num text-[11px] text-ink-4">{shown.length}</span>
+          <input aria-label="Filter table rows" value={q} onChange={(e) => { setQ(e.target.value); setLimit(pageSize); }} placeholder="Filter…" className="h-7 min-w-0 flex-1 bg-transparent text-[12.5px] text-ink outline-none placeholder:text-ink-4" />
+          <span role="status" className="num text-[11px] text-ink-4">{shown.length}</span>
         </div>
       )}
       {shown.length === 0 ? (
-        <div className="p-6">{empty ?? <div className="text-center text-[12.5px] text-ink-3">Nothing here yet.</div>}</div>
+        <div className="p-6">{q ? <div className="text-center text-[12.5px] text-ink-3">No rows match this filter. <button type="button" onClick={() => setQ("")} className="text-s1 hover:underline">Clear filter</button></div> : empty ?? <div className="text-center text-[12.5px] text-ink-3">Nothing here yet.</div>}</div>
       ) : (
         <Table>
           <thead>
             <tr>
               {columns.map((c) => (
-                <th key={c.key} className={cn(c.align === "right" && "text-right", c.className)}>
+                <th key={c.key} scope="col" aria-sort={c.sortable ? sort?.key === c.key ? sort.dir === "asc" ? "ascending" : "descending" : "none" : undefined} className={cn(c.align === "right" && "text-right", c.className)}>
                   {c.sortable ? (
                     <button
                       onClick={() => setSort((s) => (s?.key === c.key ? { key: c.key, dir: s.dir === "asc" ? "desc" : "asc" } : { key: c.key, dir: "desc" }))}
@@ -73,7 +73,7 @@ export function DataTable({ columns, rows, defaultSort, searchable, empty, pageS
           </thead>
           <tbody>
             {shown.slice(0, limit).map((r) => (
-              <tr key={r.id} className={cn(r.href && "cursor-pointer")}>
+              <tr key={r.id}>
                 {columns.map((c, i) => (
                   <td key={c.key} className={cn(c.align === "right" && "text-right", c.className)}>
                     {r.href && i === 0 ? (

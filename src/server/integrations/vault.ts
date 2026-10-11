@@ -6,6 +6,7 @@ import { decryptJson, encryptJson, secretHint } from "@/server/security/secrets"
 import { audit } from "@/server/db/helpers";
 import { PROVIDERS, providerById, type Credentials, type MarketProvider } from "@/server/integrations/providers";
 import { daysAgo } from "@/lib/time";
+import { publicUrl } from "@/server/security/public-http";
 
 /**
  * Workspace integrations: per-project provider credentials, encrypted at rest.
@@ -33,41 +34,49 @@ function platformCredentials(p: MarketProvider): Credentials {
   return c;
 }
 
+function credentialsForProvider(p: MarketProvider, projectId: string, row?: typeof s.integrations.$inferSelect): { creds: Credentials; source: CredentialSource } {
+  if (p.access === "restricted") return { creds: {}, source: "restricted" };
+  if (row) return { creds: { ...decryptJson(row.secret, aad(projectId, p.id)), ...row.config }, source: "workspace" };
+  const platform = platformCredentials(p);
+  // Only a key or a required setting makes it a platform credential; optional extras (a user agent) don't.
+  const keyed = p.credentialFields.some((f) => platform[f.key] && (f.secret || !f.optional));
+  if (keyed && p.isReady(platform)) return { creds: platform, source: "platform" };
+  if (!p.credentialFields.some((f) => !f.optional)) return { creds: p.isReady(platform) ? platform : {}, source: "keyless" };
+  return { creds: {}, source: "missing" };
+}
+
 export async function resolveCredentials(db: DB, projectId: string, p: MarketProvider): Promise<{ creds: Credentials; source: CredentialSource }> {
   if (p.access === "restricted") return { creds: {}, source: "restricted" };
   const [row] = await db.select().from(s.integrations).where(and(eq(s.integrations.projectId, projectId), eq(s.integrations.provider, p.id)));
-  if (row) return { creds: { ...decryptJson(row.secret, aad(projectId, p.id)), ...row.config }, source: "workspace" };
-  const platform = platformCredentials(p);
-  if (Object.keys(platform).length && p.isReady(platform)) return { creds: platform, source: "platform" };
-  if (!p.credentialFields.filter((f) => !f.optional).length) return { creds: {}, source: "keyless" };
-  return { creds: {}, source: "missing" };
+  return credentialsForProvider(p, projectId, row);
 }
 
 export async function listConnections(db: DB, projectId: string): Promise<ProviderConnection[]> {
   const rows = await db.select().from(s.integrations).where(eq(s.integrations.projectId, projectId));
-  return Promise.all(
-    PROVIDERS.map(async (p) => {
-      const row = rows.find((r) => r.provider === p.id);
-      const { creds, source } = await resolveCredentials(db, projectId, p);
-      return {
-        provider: p,
-        source,
-        ready: p.access !== "restricted" && p.isReady(creds),
-        hint: row?.hint ?? null,
-        status: row?.status ?? null,
-        lastCheckedAt: row?.lastCheckedAt ?? null,
-        lastError: row?.lastError ?? null,
-        config: row?.config ?? {},
-      };
-    }),
-  );
+  const byProvider = new Map(rows.map((row) => [row.provider, row]));
+  return PROVIDERS.map((p) => {
+    const row = byProvider.get(p.id);
+    const { creds, source } = credentialsForProvider(p, projectId, row);
+    return {
+      provider: p,
+      source,
+      ready: p.access !== "restricted" && p.isReady(creds),
+      hint: row?.hint ?? null,
+      status: row?.status ?? null,
+      lastCheckedAt: row?.lastCheckedAt ?? null,
+      lastError: row?.lastError ?? null,
+      config: row?.config ?? {},
+    };
+  });
 }
 
 /** Providers that can run for this workspace right now, with their credentials. */
 export async function readyProviders(db: DB, projectId: string): Promise<{ provider: MarketProvider; creds: Credentials; source: CredentialSource }[]> {
+  const rows = await db.select().from(s.integrations).where(eq(s.integrations.projectId, projectId));
+  const byProvider = new Map(rows.map((row) => [row.provider, row]));
   const out: { provider: MarketProvider; creds: Credentials; source: CredentialSource }[] = [];
   for (const p of PROVIDERS) {
-    const r = await resolveCredentials(db, projectId, p);
+    const r = credentialsForProvider(p, projectId, byProvider.get(p.id));
     if (r.source !== "restricted" && r.source !== "missing" && p.isReady(r.creds)) out.push({ provider: p, ...r });
   }
   return out;
@@ -85,6 +94,11 @@ export async function saveIntegration(db: DB, a: { projectId: string; providerId
       continue;
     }
     if (v.length > 2000) throw new Error(`${f.label} is too long`);
+    if (p.id === "rss" && f.key === "feeds") {
+      const feeds = v.split(",").map((feed) => feed.trim()).filter(Boolean);
+      if (!feeds.length || feeds.length > 10) throw new Error("Choose between 1 and 10 public RSS feeds");
+      for (const feed of feeds) publicUrl(feed);
+    }
     (f.secret ? secret : config)[f.key] = v;
   }
   if (!p.isReady({ ...secret, ...config })) throw new Error("These credentials are incomplete for this provider");

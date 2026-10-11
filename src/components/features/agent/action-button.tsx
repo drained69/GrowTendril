@@ -48,11 +48,15 @@ export function ActionButton({
         onClick={() => {
           if (confirm && !window.confirm(confirm)) return;
           start(async () => {
-            const r = await action();
-            if (!r.ok) toast.error("Couldn’t complete that", r.error);
-            else if (r.message) toast.success(r.message);
-            if (r.ok && logTitle && r.log?.length) setLog(r.log);
-            router.refresh();
+            try {
+              const r = await action();
+              if (!r.ok) toast.error("Couldn’t complete that", r.error);
+              else if (r.message) toast.success(r.message);
+              if (r.ok && logTitle && r.log?.length) setLog(r.log);
+              router.refresh();
+            } catch {
+              toast.error("Couldn’t complete that", "Check your connection and try again.");
+            }
           });
         }}
       >

@@ -3,7 +3,7 @@ import { NextResponse, type NextRequest } from "next/server";
 /** Coarse gate (cookie presence) + security headers. Signature verification happens server-side. */
 export function middleware(req: NextRequest) {
   const { pathname } = req.nextUrl;
-  if ((pathname.startsWith("/app") || pathname.startsWith("/onboarding")) && !req.cookies.get("gos_session")) {
+  if (["/app", "/onboarding", "/billing", "/verify"].some((p) => pathname === p || pathname.startsWith(`${p}/`)) && !req.cookies.get("gos_session")) {
     const url = req.nextUrl.clone();
     url.pathname = "/login";
     url.searchParams.set("next", pathname);
