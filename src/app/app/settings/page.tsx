@@ -1,6 +1,6 @@
 import Link from "next/link";
 import { eq } from "drizzle-orm";
-import { AlertTriangle, Bot, Building2, FileText, Scale, ShieldCheck, Target } from "lucide-react";
+import { AlertTriangle, Bot, Building2, FileText, MapPin, Scale, ShieldCheck, Target } from "lucide-react";
 import { requireProject } from "@/server/auth/current";
 import { can, ROLE_LABEL } from "@/server/auth/access";
 import { schema as s } from "@/server/db/client";
@@ -12,6 +12,8 @@ import { relTime } from "@/lib/time";
 import { Badge, Callout, Card, CardHeader, CardBody, CardFooter, EmptyState, LinkButton, ModeBadge, PageHeader } from "@/components/ui";
 import { EconomicsForm } from "@/components/features/settings/economics-form";
 import { getEconomics } from "@/server/domain/growth/economics";
+import { MarketCompetitors } from "@/components/features/settings/market-competitors";
+import { allCountries } from "@/server/domain/intel/location";
 import { AutopilotControl, DeleteWorkspace, IcpForm, LeaveWorkspace, PolicyForm, ProfileForm, ReprofileButton, WorkspaceForm } from "@/components/features/settings/settings-forms";
 
 const SECTIONS = [
@@ -133,6 +135,13 @@ export default async function Settings() {
               </CardBody>
             )}
           </Card>
+
+          {profile && !demo && (
+            <Card>
+              <CardHeader title="Market & competitors" description="Where you sell decides who your competitors are. Each competitor listed was checked against real search results and its own website." icon={<MapPin />} />
+              <MarketCompetitors location={profile.location ?? null} competitors={profile.competitorDetails ?? []} countries={allCountries()} disabled={!canWorkspace} />
+            </Card>
+          )}
 
           <Card id="icp" className="scroll-mt-4">
             <CardHeader title="Ideal customer profile" description="Segments are matched against public posts to score companies and creators for ICP fit. The other fields are notes for your team." icon={<Target />} />

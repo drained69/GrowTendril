@@ -56,3 +56,68 @@ export async function claudeStructured<S extends z.ZodType>(opts: {
     return { data: null, error: `Claude call failed: ${(e as Error).message}` };
   }
 }
+
+export interface WebSource {
+  url: string;
+  title: string;
+}
+
+export interface WebSearchResult {
+  text: string | null;
+  /** Every result the search tool actually returned — the only URLs callers should trust. */
+  sources: WebSource[];
+  searches: number;
+  error?: string;
+}
+
+/**
+ * Claude with the server-side web search tool. Returns Claude's prose plus the raw result list;
+ * callers extract structure in a separate call and verify every URL against `sources`.
+ */
+export async function claudeWebSearch(opts: {
+  system: string;
+  user: string;
+  maxSearches?: number;
+  location?: { country?: string | null; region?: string | null; city?: string | null } | null;
+}): Promise<WebSearchResult> {
+  if (!claudeEnabled()) return { text: null, sources: [], searches: 0, error: "Claude not configured (ANTHROPIC_API_KEY unset)" };
+  const loc = opts.location;
+  const tool = {
+    type: "web_search_20260209" as const,
+    name: "web_search" as const,
+    max_uses: opts.maxSearches ?? 5,
+    ...(loc?.country ? { user_location: { type: "approximate" as const, country: loc.country, region: loc.region ?? undefined, city: loc.city ?? undefined } } : {}),
+  };
+  const messages: Anthropic.Beta.Messages.BetaMessageParam[] = [{ role: "user", content: opts.user }];
+  const sources = new Map<string, WebSource>();
+  let searches = 0;
+  try {
+    for (let turn = 0; turn < 4; turn++) {
+      const res = await getClient().beta.messages.create({
+        model: CLAUDE_MODEL,
+        max_tokens: 8000,
+        system: opts.system,
+        messages,
+        tools: [tool],
+        betas: ["server-side-fallback-2026-07-01"],
+        fallbacks: "default",
+      });
+      for (const b of res.content) {
+        if (b.type === "server_tool_use") searches++;
+        if (b.type === "web_search_tool_result" && Array.isArray(b.content)) for (const r of b.content) sources.set(r.url, { url: r.url, title: r.title });
+      }
+      if (res.stop_reason === "pause_turn") {
+        messages.push({ role: "assistant", content: res.content as Anthropic.Beta.Messages.BetaContentBlockParam[] });
+        continue;
+      }
+      if (res.stop_reason === "refusal") return { text: null, sources: [...sources.values()], searches, error: "Claude declined this request" };
+      const text = res.content.flatMap((b) => (b.type === "text" ? [b.text] : [])).join("\n").trim();
+      return { text: text || null, sources: [...sources.values()], searches };
+    }
+    return { text: null, sources: [...sources.values()], searches, error: "web research did not finish" };
+  } catch (e) {
+    if (e instanceof Anthropic.RateLimitError) return { text: null, sources: [], searches, error: "Claude rate limited" };
+    if (e instanceof Anthropic.APIError) return { text: null, sources: [], searches, error: `Claude API error ${e.status ?? ""}`.trim() };
+    return { text: null, sources: [], searches, error: `Claude call failed: ${(e as Error).message}` };
+  }
+}

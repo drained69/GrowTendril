@@ -3,7 +3,7 @@ import { useActionState, useEffect, useState, useTransition, type ReactNode } fr
 import { useRouter } from "next/navigation";
 import { ArrowRight, Check, Sparkles } from "lucide-react";
 import { onboardAutonomyAction, onboardIcpAction, onboardMissionAction, onboardProductAction } from "@/server/actions/onboarding";
-import { Button, Callout, Field, Input, Textarea, cn } from "@/components/ui";
+import { Button, Callout, Field, Input, Select, Textarea, cn } from "@/components/ui";
 import { toast } from "@/components/ui/toast";
 
 function StepFooter({ children, error, note }: { children: ReactNode; error?: string | null; note?: ReactNode }) {
@@ -17,7 +17,7 @@ function StepFooter({ children, error, note }: { children: ReactNode; error?: st
 
 // ───────────────────────────── step 1 ─────────────────────────────
 
-export function ProductStep() {
+export function ProductStep({ countries }: { countries: { code: string; name: string }[] }) {
   const [state, action, pending] = useActionState(onboardProductAction, null);
   const router = useRouter();
   useEffect(() => {
@@ -45,6 +45,19 @@ export function ProductStep() {
           </Field>
           <Field label="GitHub repository" htmlFor="ob-gh" className="sm:col-span-2">
             <Input id="ob-gh" name="githubUrl" type="url" placeholder="https://github.com/org/repo" />
+          </Field>
+          <Field label="Country you sell in" htmlFor="ob-country" hint="Leave on “Detect” and GrowTendril reads it from your website. Competitors are matched to this market.">
+            <Select id="ob-country" name="country" defaultValue="">
+              <option value="">Detect from my website</option>
+              {countries.map((c) => (
+                <option key={c.code} value={c.code}>
+                  {c.name}
+                </option>
+              ))}
+            </Select>
+          </Field>
+          <Field label="City" htmlFor="ob-city" hint="Only if you serve one city or area (a shop, clinic, restaurant…).">
+            <Input id="ob-city" name="city" maxLength={80} placeholder="Optional" />
           </Field>
         </div>
         <Field label="Short description" htmlFor="ob-desc" required hint="What it does, and for whom. At least 10 characters.">

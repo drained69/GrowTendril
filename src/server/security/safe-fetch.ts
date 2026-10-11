@@ -133,12 +133,30 @@ export interface SafeFetchOptions {
   timeoutMs?: number;
   maxBytes?: number;
   maxRedirects?: number;
+  /** POST sends `body` once and never follows redirects (a redirected POST is reported, not replayed). */
+  method?: "GET" | "POST";
+  body?: string;
 }
 
-function once(u: URL, headers: Record<string, string>, signal: AbortSignal, maxBytes: number): Promise<{ status: number; headers: http.IncomingHttpHeaders; body: string; truncated: boolean }> {
+/** Charset from the Content-Type header, else a <meta charset> in the first bytes; utf-8 otherwise. */
+export function decodeBody(buf: Buffer, contentType: string | undefined): string {
+  const fromHeader = /charset=["']?([\w.:-]+)/i.exec(contentType ?? "")?.[1];
+  const head = buf.subarray(0, 2048).toString("latin1");
+  const fromMeta = /<meta[^>]+charset=["']?([\w.:-]+)/i.exec(head)?.[1];
+  const label = (fromHeader ?? fromMeta ?? "utf-8").toLowerCase();
+  try {
+    return new TextDecoder(label).decode(buf);
+  } catch {
+    return buf.toString("utf8");
+  }
+}
+
+function once(u: URL, headers: Record<string, string>, signal: AbortSignal, maxBytes: number, method: "GET" | "POST" = "GET", payload?: string): Promise<{ status: number; headers: http.IncomingHttpHeaders; body: string; truncated: boolean }> {
   return new Promise((resolve, reject) => {
     const mod = u.protocol === "https:" ? https : http;
-    const req = mod.request(u, { method: "GET", headers: { "Accept-Encoding": "gzip, deflate, br", ...headers }, lookup: guardedLookup as never, signal, agent: false });
+    const sendHeaders: Record<string, string> = { "Accept-Encoding": "gzip, deflate, br", ...headers };
+    if (payload !== undefined) sendHeaders["Content-Length"] = String(Buffer.byteLength(payload));
+    const req = mod.request(u, { method, headers: sendHeaders, lookup: guardedLookup as never, signal, agent: false });
     req.on("error", reject);
     req.on("response", (res) => {
       const status = res.statusCode ?? 0;
@@ -154,7 +172,7 @@ function once(u: URL, headers: Record<string, string>, signal: AbortSignal, maxB
       const chunks: Buffer[] = [];
       let size = 0;
       let truncated = false;
-      const done = () => resolve({ status, headers: res.headers, body: Buffer.concat(chunks).toString("utf8"), truncated });
+      const done = () => resolve({ status, headers: res.headers, body: decodeBody(Buffer.concat(chunks), res.headers["content-type"]), truncated });
       stream.on("data", (c: Buffer) => {
         if (truncated) return;
         const room = maxBytes - size;
@@ -173,18 +191,18 @@ function once(u: URL, headers: Record<string, string>, signal: AbortSignal, maxB
       stream.on("error", (e) => !truncated && reject(e));
       if (stream !== res) res.on("error", (e) => !truncated && reject(e));
     });
-    req.end();
+    req.end(payload);
   });
 }
 
 /** GET a user-supplied URL safely. Throws UnsafeUrlError for blocked targets; network errors propagate. */
 export async function safeFetch(input: string | URL, opts: SafeFetchOptions = {}): Promise<SafeResponse> {
-  const { headers = {}, timeoutMs = 10_000, maxBytes = 2_000_000, maxRedirects = 3 } = opts;
+  const { headers = {}, timeoutMs = 10_000, maxBytes = 2_000_000, maxRedirects = 3, method = "GET", body } = opts;
   const signal = AbortSignal.timeout(timeoutMs);
   let u = checkUrl(input);
   for (let hop = 0; ; hop++) {
-    const r = await once(u, headers, signal, maxBytes);
-    if (r.status >= 300 && r.status < 400 && r.headers.location) {
+    const r = await once(u, headers, signal, maxBytes, method, method === "POST" ? (body ?? "") : undefined);
+    if (method === "GET" && r.status >= 300 && r.status < 400 && r.headers.location) {
       if (hop >= maxRedirects) throw new UnsafeUrlError(`too many redirects (max ${maxRedirects})`);
       u = checkUrl(new URL(String(r.headers.location), u));
       continue;

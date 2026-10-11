@@ -9,7 +9,8 @@ import { randomBytes } from "node:crypto";
 import { schema as s } from "@/server/db/client";
 import { audit } from "@/server/db/helpers";
 import { PROJECT_COOKIE } from "@/server/auth/session";
-import { analyzeProduct, ProductProfileSchema } from "@/server/domain/intel/product-analyst";
+import { analyzeProduct, founderLocation, ProductProfileSchema } from "@/server/domain/intel/product-analyst";
+import { discoverCompetitors, syncCompetitorDetails } from "@/server/domain/intel/competitors";
 import { BudgetCategory } from "@/server/domain/agent/actions";
 import { ACTIVE_CHAINS, chainLabel } from "@/server/integrations/circle/config";
 import { newId } from "@/server/lib/ids";
@@ -84,7 +85,9 @@ export async function saveProfileAction(_: unknown, form: FormData): Promise<Act
       keywords: list("keywords"),
     });
     if (!profile.keywords.length) return { ok: false, error: "Add at least one discovery search term" };
-    await db.update(s.productProfiles).set({ ...profile, founderEdited: true, updatedAt: new Date() }).where(eq(s.productProfiles.projectId, project.id));
+    const [cur] = await db.select({ details: s.productProfiles.competitorDetails }).from(s.productProfiles).where(eq(s.productProfiles.projectId, project.id));
+    const competitorDetails = syncCompetitorDetails(profile.competitors, cur?.details ?? []);
+    await db.update(s.productProfiles).set({ ...profile, competitorDetails, founderEdited: true, updatedAt: new Date() }).where(eq(s.productProfiles.projectId, project.id));
     await audit(db, { projectId: project.id, actorType: "user", actorId: user.id, action: "profile.update" });
     revalidatePath("/app", "layout");
     revalidatePath("/onboarding");
@@ -168,12 +171,46 @@ export async function reprofileAction(): Promise<ActionResult> {
     if (user.isGuest || project.dataMode === "DEMO") return { ok: false, error: "Demo workspaces aren't re-read — their product is fictional." };
     await limited(`reprofile:${project.id}`, 3, 0.01);
     if (!project.website && !project.docsUrl && !project.githubUrl) return { ok: false, error: "Add a website, docs or GitHub URL first, and save the workspace." };
-    const analysis = await analyzeProduct({ name: project.name, website: project.website, docsUrl: project.docsUrl, xHandle: project.xHandle, githubUrl: project.githubUrl, description: project.description || project.name });
-    const values = { ...analysis.profile, crawledSources: analysis.crawled, generatedBy: analysis.generatedBy, founderEdited: false, updatedAt: new Date() };
+    const [prev] = await db.select({ location: s.productProfiles.location }).from(s.productProfiles).where(eq(s.productProfiles.projectId, project.id));
+    // A market the founder set survives a re-read; a detected one is detected again.
+    const market = prev?.location?.source === "founder" && prev.location.countryCode ? { countryCode: prev.location.countryCode, region: prev.location.region, city: prev.location.city, scope: prev.location.scope } : null;
+    const analysis = await analyzeProduct({ name: project.name, website: project.website, docsUrl: project.docsUrl, xHandle: project.xHandle, githubUrl: project.githubUrl, description: project.description || project.name, market });
+    const values = { ...analysis.profile, crawledSources: analysis.crawled, location: analysis.location, competitorDetails: analysis.competitorDetails, generatedBy: analysis.generatedBy, founderEdited: false, updatedAt: new Date() };
     await db.insert(s.productProfiles).values({ id: newId(), projectId: project.id, ...values }).onConflictDoUpdate({ target: s.productProfiles.projectId, set: values });
     await audit(db, { projectId: project.id, actorType: "user", actorId: user.id, action: "profile.reprofile", data: { generatedBy: analysis.generatedBy, sources: analysis.crawled.length } });
     revalidatePath("/app", "layout");
     return { ok: true, message: analysis.note };
+  } catch (e) {
+    return fail(e);
+  }
+}
+
+const MarketForm = z.object({
+  country: z.string().regex(/^[A-Z]{2}$/, "Pick a country"),
+  region: z.string().trim().max(80).optional(),
+  city: z.string().trim().max(80).optional(),
+  scope: z.enum(["local", "national", "international"]),
+});
+
+/** Saves the founder's market and re-runs competitor research for it. Founder-entered competitors are kept. */
+export async function saveMarketAction(_: unknown, form: FormData): Promise<ActionResult> {
+  try {
+    const { project, db, user } = await guard("manage_workspace");
+    if (project.dataMode === "DEMO") return { ok: false, error: "Demo workspaces use a fictional product." };
+    await limited(`market:${project.id}`, 5, 0.02);
+    const opt = (k: string) => String(form.get(k) ?? "").trim() || undefined;
+    const f = MarketForm.parse({ country: opt("country"), region: opt("region"), city: opt("city"), scope: opt("scope") });
+    const [profile] = await db.select().from(s.productProfiles).where(eq(s.productProfiles.projectId, project.id));
+    if (!profile) return { ok: false, error: "Build the product profile first" };
+    const location = founderLocation({ countryCode: f.country, region: f.region, city: f.city, scope: f.scope });
+    const kept = (profile.competitorDetails ?? []).filter((c) => c.source !== "web_search");
+    const found = await discoverCompetitors({ name: project.name, summary: profile.summary, category: profile.category, location, ownUrl: project.website, siteNamed: kept });
+    const competitorDetails = found.competitors;
+    await db.update(s.productProfiles).set({ location, competitorDetails, competitors: competitorDetails.map((c) => c.name), updatedAt: new Date() }).where(eq(s.productProfiles.projectId, project.id));
+    await audit(db, { projectId: project.id, actorType: "user", actorId: user.id, action: "profile.market", data: { country: f.country, city: f.city ?? null, scope: f.scope, competitors: competitorDetails.length } });
+    revalidatePath("/app", "layout");
+    revalidatePath("/onboarding");
+    return { ok: true, message: found.note };
   } catch (e) {
     return fail(e);
   }

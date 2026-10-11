@@ -26,6 +26,8 @@ const ProductForm = z.object({
   xHandle: z.string().max(60).optional(),
   githubUrl: z.string().url("GitHub must be a full URL").max(300).optional(),
   description: z.string().trim().min(10, "Describe the product in at least 10 characters").max(2000),
+  country: z.string().regex(/^[A-Z]{2}$/, "Pick a country from the list").optional(),
+  city: z.string().trim().max(80).optional(),
 });
 
 /** Step 1: create the workspace (creator becomes owner) and draft its product profile. */
@@ -36,13 +38,13 @@ export async function onboardProductAction(_: unknown, form: FormData): Promise<
     if (user.isGuest) return { ok: false, error: "Create an account to set up a real workspace" };
     await limited(`onboard:${user.id}`, 6, 0.05);
     const opt = (k: string) => String(form.get(k) ?? "").trim() || undefined;
-    const f = ProductForm.parse({ name: form.get("name"), website: opt("website"), docsUrl: opt("docsUrl"), xHandle: opt("xHandle")?.replace(/^@/, ""), githubUrl: opt("githubUrl"), description: form.get("description") });
+    const f = ProductForm.parse({ name: form.get("name"), website: opt("website"), docsUrl: opt("docsUrl"), xHandle: opt("xHandle")?.replace(/^@/, ""), githubUrl: opt("githubUrl"), description: form.get("description"), country: opt("country"), city: opt("city") });
     const db = await getDb();
-    const analysis = await analyzeProduct(f);
+    const analysis = await analyzeProduct({ ...f, market: f.country ? { countryCode: f.country, city: f.city } : null });
     const projectId = newId();
     await db.insert(s.projects).values({ id: projectId, ownerId: user.id, name: f.name, website: f.website ?? null, docsUrl: f.docsUrl ?? null, xHandle: f.xHandle ?? null, githubUrl: f.githubUrl ?? null, description: f.description, webhookSecret: randomBytes(32).toString("hex"), onboardingStep: 2, dataMode: "LIVE" });
     await db.insert(s.memberships).values({ id: newId(), projectId, userId: user.id, role: "owner" });
-    await db.insert(s.productProfiles).values({ id: newId(), projectId, ...analysis.profile, crawledSources: analysis.crawled, generatedBy: analysis.generatedBy });
+    await db.insert(s.productProfiles).values({ id: newId(), projectId, ...analysis.profile, crawledSources: analysis.crawled, location: analysis.location, competitorDetails: analysis.competitorDetails, generatedBy: analysis.generatedBy });
     (await cookies()).set(PROJECT_COOKIE, projectId, sessionCookieOptions);
     await audit(db, { projectId, actorType: "user", actorId: user.id, action: "workspace.create" });
     return { ok: true, data: { note: analysis.note, generatedBy: analysis.generatedBy } };

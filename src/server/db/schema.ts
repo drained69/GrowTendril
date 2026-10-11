@@ -12,6 +12,8 @@ import {
   primaryKey,
   pgEnum,
 } from "drizzle-orm/pg-core";
+import type { MarketLocation } from "@/server/domain/intel/location";
+import type { CompetitorRecord } from "@/server/domain/intel/competitors";
 
 /**
  * Money is stored as integer micro-USDC (1 USDC = 1_000_000) everywhere.
@@ -155,6 +157,10 @@ export const productProfiles = pgTable("product_profiles", {
   /** Search terms the discovery engine uses across providers. */
   keywords: jsonb("keywords").$type<string[]>().notNull().default([]),
   crawledSources: jsonb("crawled_sources").$type<{ url: string; ok: boolean; note?: string }[]>().notNull().default([]),
+  /** Where the business operates — detected from its pages (with evidence) or set by the founder. */
+  location: jsonb("location").$type<MarketLocation>(),
+  /** Per-competitor provenance and verification; `competitors` holds the names. */
+  competitorDetails: jsonb("competitor_details").$type<CompetitorRecord[]>().notNull().default([]),
   generatedBy: text("generated_by").notNull(), // 'claude' | 'heuristic' | 'founder' | 'demo'
   founderEdited: boolean("founder_edited").notNull().default(false),
   updatedAt: updatedAt(),

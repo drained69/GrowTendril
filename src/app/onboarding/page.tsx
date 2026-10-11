@@ -1,7 +1,7 @@
 import Link from "next/link";
 import { redirect } from "next/navigation";
 import { eq } from "drizzle-orm";
-import { Check, FileText, Flag, Package, ShieldCheck, Target } from "lucide-react";
+import { Check, FileText, Flag, MapPin, Package, ShieldCheck, Target } from "lucide-react";
 import { requireUser, currentProject } from "@/server/auth/current";
 import { getDb, schema as s } from "@/server/db/client";
 import { AUTOPILOT_LABEL } from "@/server/jobs/scheduler";
@@ -10,6 +10,8 @@ import { logoutAction } from "@/server/actions/auth";
 import { Badge, Callout, Card, CardHeader, CardFooter, LinkButton, cn } from "@/components/ui";
 import { Logo } from "@/components/layout/logo";
 import { ProfileForm, IcpForm } from "@/components/features/settings/settings-forms";
+import { MarketCompetitors } from "@/components/features/settings/market-competitors";
+import { allCountries } from "@/server/domain/intel/location";
 import { ProductStep, GenerateIcp, MissionStep, AutonomyStep } from "@/components/features/onboarding/onboarding-forms";
 
 export const dynamic = "force-dynamic";
@@ -101,7 +103,7 @@ export default async function Onboarding({ searchParams }: { searchParams: Promi
         {step === 1 && (
           <Card>
             <CardHeader title="Your product" description="Tell GrowTendril what you're building. It drafts a product intelligence profile from your public pages." icon={<Package />} />
-            <ProductStep />
+            <ProductStep countries={allCountries()} />
           </Card>
         )}
 
@@ -127,6 +129,10 @@ export default async function Onboarding({ searchParams }: { searchParams: Promi
                   : "your description only"}
               </div>
               <ProfileForm p={profile} disabled={!canEdit} />
+            </Card>
+            <Card>
+              <CardHeader title="Market & competitors" description="Where you sell decides who your competitors are. Every competitor listed was checked against real search results and its own website." icon={<MapPin />} />
+              <MarketCompetitors location={profile.location ?? null} competitors={profile.competitorDetails ?? []} countries={allCountries()} disabled={!canEdit} />
             </Card>
             <Card>
               <div className="flex flex-wrap items-center justify-between gap-3 px-4 py-3.5">

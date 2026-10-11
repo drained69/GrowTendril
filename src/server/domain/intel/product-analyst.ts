@@ -1,7 +1,9 @@
 import { z } from "zod";
 import { claudeStructured } from "@/server/integrations/llm/claude";
-import { readPage, readGithubReadme, type PageText } from "@/server/domain/intel/crawl";
+import { readPage, readSite, readGithubReadme, type PageText } from "@/server/domain/intel/crawl";
 import { frequentBigrams, tokenize } from "@/server/domain/intel/narratives";
+import { countryName, describeLocation, detectLocation, NO_LOCATION, type MarketLocation, type MarketScope } from "@/server/domain/intel/location";
+import { discoverCompetitors, mergeCompetitors, siteNamedCompetitors, type CompetitorRecord } from "@/server/domain/intel/competitors";
 
 /**
  * PRODUCT ANALYST — builds the Product Intelligence Profile from public pages the founder
@@ -40,6 +42,13 @@ export const IcpSchema = z.object({
 });
 export type IcpProposal = z.infer<typeof IcpSchema>["icps"][number];
 
+export interface MarketInput {
+  countryCode: string;
+  region?: string | null;
+  city?: string | null;
+  scope?: MarketScope | null;
+}
+
 export interface ProductInput {
   name: string;
   website?: string | null;
@@ -47,13 +56,22 @@ export interface ProductInput {
   xHandle?: string | null;
   githubUrl?: string | null;
   description: string;
+  /** Founder-stated market; overrides detection. */
+  market?: MarketInput | null;
 }
 
 export interface AnalysisResult {
   profile: ProductProfile;
   generatedBy: "claude" | "heuristic";
   crawled: { url: string; ok: boolean; note?: string }[];
+  location: MarketLocation;
+  competitorDetails: CompetitorRecord[];
   note: string;
+}
+
+export function founderLocation(m: MarketInput): MarketLocation {
+  const city = m.city?.trim() || null;
+  return { countryCode: m.countryCode, country: countryName(m.countryCode), region: m.region?.trim() || null, city, scope: m.scope ?? (city ? "local" : "national"), confidence: "high", source: "founder", evidence: ["set by you"] };
 }
 
 const CATEGORIES: { category: string; terms: string[]; competitors: string[]; terminology: string[] }[] = [
@@ -97,14 +115,15 @@ function heuristicProfile(input: ProductInput, pages: PageText[]): ProductProfil
   const bigrams = frequentBigrams(pages.map((p) => [...p.headings, p.description ?? ""].join(" ")).concat(input.description), 1, 15);
   const descTokens = tokenize(input.description).filter((t) => t.length > 3);
   const keywords = [...new Set([...top.terminology.slice(0, 4), ...(second?.terminology.slice(0, 2) ?? []), ...bigrams.slice(0, 4)])].slice(0, 10);
-  const pricing = corpus.match(/\$\s?\d+[\d,.]*\s*(\/|per)\s*(mo|month|year|request|call)/)?.[0] ?? null;
+  const pricing = corpus.match(/(?:[$£€₦₹¥]|ngn|usd|gbp|eur|kes|ghs|zar|inr)\s?\d[\d,.]*\s*(?:\/|per)\s*(?:mo|month|year|yr|user|seat|request|call|hour|session|night)\b/i)?.[0] ?? null;
   return {
     summary: pages.find((p) => p.description)?.description ?? input.description,
     category: second ? `${top.category} · ${second.category}` : top.category,
     targetUsers: TARGET_USERS[top.category] ?? ["People and teams who match the description you gave"],
     competitors: [],
     valueProps: pages.flatMap((p) => p.headings).filter((h) => h.split(" ").length >= 3 && h.split(" ").length <= 12).slice(0, 5),
-    integrations: [...new Set((corpus.match(/\b(base|arc|solana|ethereum|arbitrum|polygon|langchain|openai|anthropic|next\.js|python|typescript|rust|stripe|circle)\b/g) ?? []))].slice(0, 10),
+    // Words like "base", "arc" and "circle" are ordinary English, so they only count with a qualifier.
+    integrations: [...new Set((corpus.match(/\b(base (?:chain|network|mainnet)|arc (?:network|testnet|mainnet)|circle (?:api|wallets|usdc)|solana|ethereum|arbitrum|polygon|langchain|openai|anthropic|next\.js|typescript|stripe|paystack|flutterwave|shopify|woocommerce|salesforce|hubspot|slack|zapier|quickbooks|xero|whatsapp)\b/g) ?? []))].slice(0, 10),
     useCases: [],
     pricing,
     terminology: [...new Set([...top.terminology, ...descTokens.slice(0, 6)])].slice(0, 15),
@@ -112,40 +131,89 @@ function heuristicProfile(input: ProductInput, pages: PageText[]): ProductProfil
   };
 }
 
+const norm = (x: string) => x.toLowerCase().normalize("NFKD").replace(/[\u0300-\u036f]/g, "");
+
+/** Drops claims that the sources don't contain: integrations, named competitors and pricing figures. */
+export function groundProfile(profile: ProductProfile, corpus: string): { profile: ProductProfile; dropped: string[] } {
+  const text = norm(corpus);
+  const has = (v: string) => text.includes(norm(v).trim());
+  const dropped: string[] = [];
+  const keep = (label: string, xs: string[]) =>
+    xs.filter((x) => {
+      const first = x.split(/[\s(]/)[0] ?? "";
+      const ok = has(x) || (first.length >= 5 && has(first));
+      if (!ok) dropped.push(`${label} "${x}"`);
+      return ok;
+    });
+  let pricing = profile.pricing;
+  if (pricing) {
+    const figures = pricing.match(/\d[\d,.]*/g) ?? [];
+    const words = pricing.match(/[a-z]{4,}/gi) ?? [];
+    const grounded = figures.length ? figures.every((f) => text.includes(f.replace(/[.,]$/, ""))) : words.some((w) => has(w));
+    if (!grounded) {
+      dropped.push(`pricing "${pricing}"`);
+      pricing = null;
+    }
+  }
+  return { profile: { ...profile, integrations: keep("integration", profile.integrations), competitors: keep("competitor", profile.competitors), pricing }, dropped };
+}
+
+function structuredFacts(pages: PageText[]): string {
+  const facts: string[] = [];
+  for (const p of pages)
+    for (const o of p.jsonLd ?? []) {
+      const pick = Object.fromEntries(["@type", "name", "description", "address", "areaServed", "priceRange", "telephone", "offers", "openingHours"].filter((k) => o[k] != null).map((k) => [k, o[k]]));
+      if (Object.keys(pick).length > 1) facts.push(JSON.stringify(pick).slice(0, 800));
+    }
+  return facts.slice(0, 6).join("\n");
+}
+
 export async function analyzeProduct(input: ProductInput): Promise<AnalysisResult> {
-  const tasks: Promise<PageText>[] = [];
-  if (input.website) tasks.push(readPage(input.website));
-  if (input.docsUrl) tasks.push(readPage(input.docsUrl));
-  if (input.githubUrl) tasks.push(readGithubReadme(input.githubUrl));
-  const pages = await Promise.all(tasks);
+  const [site, others] = await Promise.all([
+    input.website ? readSite(input.website) : Promise.resolve<PageText[]>([]),
+    Promise.all([input.docsUrl ? readPage(input.docsUrl) : null, input.githubUrl ? readGithubReadme(input.githubUrl) : null].filter((x): x is Promise<PageText> => !!x)),
+  ]);
+  const pages = [...site, ...others];
   const crawled = pages.map((p) => ({ url: p.url, ok: p.ok, note: p.note }));
   const readable = pages.filter((p) => p.ok);
+  const location = input.market ? founderLocation(input.market) : input.website ? detectLocation(site, input.website) : NO_LOCATION;
+  const corpus = [input.description, ...readable.flatMap((p) => [p.title ?? "", p.description ?? "", ...p.headings, p.text, JSON.stringify(p.jsonLd ?? [])])].join("\n");
 
+  const facts = structuredFacts(readable);
   const material = [
     `PRODUCT NAME: ${input.name}`,
     `FOUNDER DESCRIPTION: ${input.description}`,
+    `MARKET: ${describeLocation(location)}${location.evidence.length ? ` (evidence: ${location.evidence.join("; ")})` : ""}`,
     input.xHandle ? `X ACCOUNT: @${input.xHandle.replace(/^@/, "")}` : "",
-    ...readable.map((p) => `\n--- SOURCE ${p.url} ---\nTITLE: ${p.title ?? ""}\nDESCRIPTION: ${p.description ?? ""}\nHEADINGS: ${p.headings.join(" | ")}\nTEXT: ${p.text.slice(0, 9000)}`),
+    facts ? `STRUCTURED DATA FROM THE SITE:\n${facts}` : "",
+    ...readable.map((p) => `\n--- SOURCE ${p.url} ---\nTITLE: ${p.title ?? ""}\nDESCRIPTION: ${p.description ?? ""}\nHEADINGS: ${p.headings.join(" | ")}\nTEXT: ${p.text.slice(0, p === readable[0] ? 9000 : 4000)}`),
   ].join("\n");
 
   const ai = await claudeStructured({
     schema: ProductProfileSchema,
     system:
       "You are the Product Analyst inside GrowTendril. Build a factual product profile strictly from the provided sources. " +
-      "Never invent competitors, integrations, customers or pricing that the sources do not state or clearly imply; use empty arrays or null instead. " +
-      "Keywords must be short search phrases people actually use in public conversations about this space.",
+      "Never invent competitors, integrations, customers or pricing that the sources do not state; use empty arrays or null instead. " +
+      "Pricing must quote figures exactly as written, with their currency. Describe the business in its real market (see MARKET). " +
+      "Keywords must be short search phrases people actually use in public conversations about this space, including local terms where the business is local.",
     user: material,
     effort: "medium",
   });
-  if (ai.data) {
-    return { profile: ai.data, generatedBy: "claude", crawled, note: `Profile drafted by Claude from ${readable.length} public source(s). Review and correct anything wrong.` };
-  }
-  return {
-    profile: heuristicProfile(input, readable),
-    generatedBy: "heuristic",
-    crawled,
-    note: `${ai.error ?? "Claude unavailable"} — used the deterministic heuristic on ${readable.length} readable source(s). Competitors and use cases need founder input.`,
-  };
+
+  const generatedBy: AnalysisResult["generatedBy"] = ai.data ? "claude" : "heuristic";
+  const grounded = ai.data ? groundProfile(ai.data, corpus) : { profile: heuristicProfile(input, readable), dropped: [] };
+  const ownUrl = input.website ?? null;
+  const named = siteNamedCompetitors(site, input.name, ownUrl ? new URL(/^https?:/i.test(ownUrl) ? ownUrl : `https://${ownUrl}`).hostname.replace(/^www\./, "") : null);
+  const fromProfile: CompetitorRecord[] = grounded.profile.competitors.map((n) => ({ name: n, website: null, reason: "Named on your own website", source: "site", locationCheck: "not_applicable", locationNote: null, evidenceUrls: [], siteStatus: "unchecked" }));
+  const discovery = await discoverCompetitors({ name: input.name, summary: grounded.profile.summary, category: grounded.profile.category, location, ownUrl, siteNamed: mergeCompetitors(named, fromProfile) });
+  const profile = { ...grounded.profile, competitors: discovery.competitors.map((c) => c.name) };
+
+  const head = ai.data
+    ? `Profile drafted by Claude from ${readable.length} public page(s)`
+    : `${ai.error ?? "Claude unavailable"} — used the deterministic heuristic on ${readable.length} readable page(s)`;
+  const where = location.source === "founder" ? `Market: ${describeLocation(location)} (set by you)` : location.countryCode ? `Market detected: ${describeLocation(location)} (${location.confidence} confidence)` : "Market not detected — set it so competitors are local";
+  const checks = grounded.dropped.length ? ` Removed ${grounded.dropped.length} claim(s) not found on your pages.` : "";
+  return { profile, generatedBy, crawled, location, competitorDetails: discovery.competitors, note: `${head}. ${where}. ${discovery.note}${checks} Review and correct anything wrong.` };
 }
 
 function heuristicIcp(profile: ProductProfile): IcpProposal[] {
