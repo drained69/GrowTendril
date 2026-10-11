@@ -1,6 +1,6 @@
 import Link from "next/link";
 import { eq } from "drizzle-orm";
-import { AlertTriangle, Bot, Building2, FileText, ShieldCheck, Target } from "lucide-react";
+import { AlertTriangle, Bot, Building2, FileText, Scale, ShieldCheck, Target } from "lucide-react";
 import { requireProject } from "@/server/auth/current";
 import { can, ROLE_LABEL } from "@/server/auth/access";
 import { schema as s } from "@/server/db/client";
@@ -10,6 +10,8 @@ import { AUTOPILOT_LABEL } from "@/server/jobs/scheduler";
 import { microToDecimal } from "@/lib/money";
 import { relTime } from "@/lib/time";
 import { Badge, Callout, Card, CardHeader, CardBody, CardFooter, EmptyState, LinkButton, ModeBadge, PageHeader } from "@/components/ui";
+import { EconomicsForm } from "@/components/features/settings/economics-form";
+import { getEconomics } from "@/server/domain/growth/economics";
 import { AutopilotControl, DeleteWorkspace, IcpForm, LeaveWorkspace, PolicyForm, ProfileForm, ReprofileButton, WorkspaceForm } from "@/components/features/settings/settings-forms";
 
 const SECTIONS = [
@@ -17,6 +19,7 @@ const SECTIONS = [
   { id: "profile", label: "Product profile", icon: <FileText /> },
   { id: "icp", label: "Ideal customer", icon: <Target /> },
   { id: "policy", label: "Spend policy", icon: <ShieldCheck /> },
+  { id: "economics", label: "Economics", icon: <Scale /> },
   { id: "autopilot", label: "Autopilot", icon: <Bot /> },
   { id: "danger", label: "Danger zone", icon: <AlertTriangle /> },
 ];
@@ -24,6 +27,7 @@ const SECTIONS = [
 export default async function Settings() {
   const { project, role, db, user } = await requireProject();
   const pid = project.id;
+  const econ = await getEconomics(db, pid);
   const [[profile], icps, [policy], members, [wallet]] = await Promise.all([
     db.select().from(s.productProfiles).where(eq(s.productProfiles.projectId, pid)),
     db.select().from(s.icps).where(eq(s.icps.projectId, pid)),
@@ -169,6 +173,31 @@ export default async function Settings() {
             ) : (
               <CardBody className="text-[12.5px] text-ink-3">No policy yet — it is created in the final onboarding step.</CardBody>
             )}
+          </Card>
+
+          <Card id="economics" className="scroll-mt-4">
+            <CardHeader
+              title="Economics"
+              description="Your own figures for creator campaign budgets. Every planner number is labelled: measured from your data, your setting here, or a starting value you haven’t reviewed."
+              icon={<Scale />}
+              action={econ.saved ? <Badge tone="info">Saved</Badge> : <Badge tone="warn">Starting values</Badge>}
+            />
+            <EconomicsForm
+              saved={econ.saved}
+              disabled={!canPolicy}
+              v={{
+                customerValue: econ.values.customerValueMicro != null ? microToDecimal(econ.values.customerValueMicro) : "",
+                grossMarginPct: econ.values.grossMarginPct != null ? String(econ.values.grossMarginPct) : "",
+                acquisitionSharePct: String(econ.values.acquisitionSharePct),
+                conversionRatePct: econ.values.conversionRateBps != null ? String(econ.values.conversionRateBps / 100) : "",
+                fixedPaySharePct: String(econ.values.fixedPaySharePct),
+                actionBonusSharePct: String(econ.values.actionBonusSharePct),
+                minActionsPerCreator: String(econ.values.minActionsPerCreator),
+                maxCreators: String(econ.values.maxCreators),
+                testPhaseSharePct: String(econ.values.testPhaseSharePct),
+                holdbackDays: String(econ.values.holdbackDays),
+              }}
+            />
           </Card>
 
           <Card id="autopilot" className="scroll-mt-4">

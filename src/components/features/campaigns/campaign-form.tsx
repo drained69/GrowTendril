@@ -7,6 +7,8 @@ import type { CampaignPlan } from "@/server/domain/growth/campaign-plan";
 import { fmtUsdc, toMicro } from "@/lib/money";
 import { Button, Callout, Card, CardBody, CardFooter, CardHeader, Checkbox, Field, Input, Select, Textarea, cn } from "@/components/ui";
 import { toast } from "@/components/ui/toast";
+import { EconomicsHint } from "@/components/features/campaigns/economics-hint";
+import { SourceBadge } from "@/components/features/campaigns/source-badge";
 
 type Option = { value: string; label: string };
 const USDC = /^\d{1,7}(\.\d{1,6})?$/;
@@ -49,7 +51,7 @@ export function CampaignForm({ roomMicro, missionName, events, platforms, defaul
           maxCpa: maxCpa.trim(),
           days: Math.min(60, Math.max(3, int(days, 14))),
           postsPerCreator: Math.min(5, Math.max(1, int(posts, 2))),
-          creators: creators.trim() ? Math.min(10, Math.max(1, int(creators, 1))) : undefined,
+          creators: creators.trim() ? Math.min(25, Math.max(1, int(creators, 1))) : undefined,
           actionLabel: targetLabel.toLowerCase(),
         });
         if (n !== seq.current) return;
@@ -108,6 +110,8 @@ export function CampaignForm({ roomMicro, missionName, events, platforms, defaul
           </CardBody>
         </Card>
 
+        <EconomicsHint targetEvent={target} targetLabel={targetLabel} onUse={setMaxCpa} />
+
         <Card>
           <CardHeader title="Campaign details" description="What creators see on the public join page." />
           <CardBody className="grid gap-4 sm:grid-cols-2">
@@ -155,7 +159,7 @@ export function CampaignForm({ roomMicro, missionName, events, platforms, defaul
                 <Input id="cc-posts" name="postsPerCreator" type="number" min={1} max={5} required value={posts} onChange={(e) => setPosts(e.target.value)} className="num" />
               </Field>
               <Field label="Creators" htmlFor="cc-creators" hint="Blank = planned">
-                <Input id="cc-creators" name="creators" type="number" min={1} max={10} value={creators} onChange={(e) => setCreators(e.target.value)} placeholder="auto" className="num" />
+                <Input id="cc-creators" name="creators" type="number" min={1} max={25} value={creators} onChange={(e) => setCreators(e.target.value)} placeholder="auto" className="num" />
               </Field>
             </div>
           </CardBody>
@@ -187,11 +191,13 @@ function PlanPanel({ plan, note, planning, cpaMicro, budgetMicro, targetLabel }:
   const action = targetLabel.toLowerCase();
   const rows: { k: string; v: string; sub?: string; bad?: boolean }[] = plan
     ? [
+        { k: "Released at launch (test phase)", v: fmtUsdc(plan.testPhaseMicro), sub: `${Math.round(plan.rules.testPhaseShare * 100)}% of the budget` },
+        { k: "Held for results", v: fmtUsdc(plan.heldForResultsMicro), sub: "released only to creators whose measured cost per action beats your ceiling" },
         { k: "Creators", v: String(plan.creators), sub: `${plan.days} days` },
-        { k: "Per-creator ceiling", v: fmtUsdc(plan.creatorCapMicro), sub: "max any one creator can earn" },
+        { k: "Test-phase ceiling per creator", v: fmtUsdc(plan.creatorCapMicro), sub: "raised later only by results" },
         { k: "Base pay per accepted post", v: fmtUsdc(plan.basePayMicro), sub: `up to ${plan.postsPerCreator} post${plan.postsPerCreator === 1 ? "" : "s"}` },
         { k: "Discussion bonus cap", v: fmtUsdc(plan.discussionBonusCapMicro), sub: "per post, reviewer-rated" },
-        { k: `Bonus per verified ${action}`, v: fmtUsdc(plan.actionBonusMicro) },
+        { k: `Bonus per verified ${action}`, v: fmtUsdc(plan.actionBonusMicro), sub: `payable after a ${plan.holdbackDays}-day holdback` },
         { k: "Action pool", v: fmtUsdc(plan.actionPoolMicro), sub: `≈ ${plan.actionsAtFullSpend} verified ${action}${plan.actionsAtFullSpend === 1 ? "" : "s"} at full spend` },
         { k: "Fixed pay at most", v: fmtUsdc(plan.fixedPoolMicro), sub: "every post accepted with max discussion" },
         {
@@ -204,19 +210,24 @@ function PlanPanel({ plan, note, planning, cpaMicro, budgetMicro, targetLabel }:
     : [];
   return (
     <Card className="lg:sticky lg:top-4">
-      <CardHeader title="Plan" icon={<Calculator />} description="Derived from your three numbers — each one comes with its reason." action={planning ? <Loader2 className="size-3.5 animate-spin text-ink-3" /> : undefined} />
+      <CardHeader
+        title="Plan"
+        icon={<Calculator />}
+        description="Derived from your three numbers and your project’s rules — each one comes with its reason."
+        action={planning ? <Loader2 className="size-3.5 animate-spin text-ink-3" /> : plan ? <span className="flex items-center gap-1.5 text-[11px] text-ink-3">Rules <SourceBadge source={plan.rulesSource} /></span> : undefined}
+      />
       {plan ? (
         <>
           <CardBody className="space-y-4">
-            {budgetMicro != null && plan.fixedPoolMicro + plan.actionPoolMicro > 0 && (
+            {budgetMicro != null && budgetMicro > 0 && (
               <div>
                 <div className="flex h-2 w-full gap-[2px] overflow-hidden rounded-[3px]">
-                  <div className="h-full rounded-l-[3px] bg-s3 last:rounded-r-[3px]" style={{ width: `${Math.min(100, (plan.fixedPoolMicro / Math.max(1, budgetMicro)) * 100)}%` }} title={`Fixed pay ceiling: ${fmtUsdc(plan.fixedPoolMicro)}`} />
-                  {plan.actionPoolMicro > 0 && <div className="h-full flex-1 rounded-r-[3px] bg-s1" title={`Action pool: ${fmtUsdc(plan.actionPoolMicro)}`} />}
+                  <div className="h-full rounded-l-[3px] bg-s1 last:rounded-r-[3px]" style={{ width: `${Math.min(100, (plan.testPhaseMicro / budgetMicro) * 100)}%` }} title={`Test phase: ${fmtUsdc(plan.testPhaseMicro)}`} />
+                  {plan.heldForResultsMicro > 0 && <div className="h-full flex-1 rounded-r-[3px] bg-surface-3 ring-1 ring-inset ring-line-strong" title={`Held for results: ${fmtUsdc(plan.heldForResultsMicro)}`} />}
                 </div>
                 <div className="mt-1.5 flex justify-between text-[11px] text-ink-3">
-                  <span>Fixed pay ceiling</span>
-                  <span>Reserved for verified {action}s</span>
+                  <span>Test phase — released at launch</span>
+                  <span>Held until results</span>
                 </div>
               </div>
             )}
@@ -252,7 +263,7 @@ function PlanPanel({ plan, note, planning, cpaMicro, budgetMicro, targetLabel }:
               </ol>
             </div>
           </CardBody>
-          <CardFooter>Ceilings are enforced in code when rewards accrue. Nothing unearned is ever paid.</CardFooter>
+          <CardFooter>Ceilings, holdbacks and releases are enforced in code. Nothing unearned is ever paid.</CardFooter>
         </>
       ) : (
         <CardBody className="text-[12.5px] text-ink-3">{note}</CardBody>

@@ -12,10 +12,13 @@ type RulesCampaign = {
   budgetMicro: number;
   maxCreators: number;
   disclosureText: string;
+  holdbackDays: number;
+  releasedMicro: number;
+  maxCostPerActionMicro: number;
 };
 
 /** The exact earning rules, as enforced by the reward code. Shown to creators before they join and on their page. */
-export function CampaignRules({ c, targetLabel, graceDays }: { c: RulesCampaign; targetLabel: string; graceDays: number }) {
+export function CampaignRules({ c, targetLabel, graceDays, ceilingMicro }: { c: RulesCampaign; targetLabel: string; graceDays: number; ceilingMicro?: number }) {
   const action = targetLabel.toLowerCase();
   return (
     <div className="space-y-4">
@@ -24,8 +27,12 @@ export function CampaignRules({ c, targetLabel, graceDays }: { c: RulesCampaign;
         <CardBody className="divide-y divide-line">
           <Rule label="Per accepted post" value={fmtUsdc(c.basePayMicro)} hint={`Up to ${c.maxPostsPerCreator} paid post${c.maxPostsPerCreator === 1 ? "" : "s"}. A reviewer scores relevance, depth and accuracy (0–5 each) and checks the disclosure.`} />
           <Rule label="Useful-discussion bonus" value={`up to ${fmtUsdc(c.discussionBonusCapMicro)}`} hint="Per accepted post. A reviewer rates the discussion it started 0–3; each point earns a third of the cap." />
-          <Rule label={`Per verified ${action}`} value={fmtUsdc(c.actionBonusMicro)} hint={`Once per unique person who arrives through your own tracking link and completes the ${action}, from launch until ${graceDays} days after the campaign window.`} />
-          <Rule label="Your earnings ceiling" value={fmtUsdc(c.creatorCapMicro)} hint={`The most any one creator can earn. Rewards also stop if the ${fmtUsdc(c.budgetMicro)} campaign budget (up to ${c.maxCreators} creators) is used up.`} />
+          <Rule label={`Per verified ${action}`} value={fmtUsdc(c.actionBonusMicro)} hint={`Once per unique person who arrives through your own tracking link and completes the ${action}, from launch until ${graceDays} days after the campaign window. Payable ${c.holdbackDays} day${c.holdbackDays === 1 ? "" : "s"} after the ${action}, so fake or reversed actions can be caught first.`} />
+          <Rule
+            label="Your earnings ceiling"
+            value={fmtUsdc(ceilingMicro ?? c.creatorCapMicro)}
+            hint={`Every creator starts with the same ceiling. ${c.budgetMicro > c.releasedMicro ? `${fmtUsdc(c.budgetMicro - c.releasedMicro)} of the budget is held back and can raise the ceilings of creators whose results cost at most ${fmtUsdc(c.maxCostPerActionMicro)} per ${action}.` : "The whole budget is released."} Up to ${c.maxCreators} creators.`}
+          />
         </CardBody>
       </Card>
       <Card>

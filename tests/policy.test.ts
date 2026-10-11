@@ -157,7 +157,7 @@ describe("payout recipients", () => {
   });
 });
 
-describe("experiment tranches (real Postgres via PGlite)", () => {
+describe("experiment tranches (real Postgres via PGlite)", { timeout: 60_000 }, () => {
   it("pays each tranche at most once, withholds tranche 2 on the stop condition, and leaves no orphan decisions", async () => {
     const { getDb, schema: s } = await import("../src/server/db/client");
     const { eq } = await import("drizzle-orm");
@@ -214,9 +214,17 @@ describe("experiment tranches (real Postgres via PGlite)", () => {
     const { getDb, schema: s } = await import("../src/server/db/client");
     const { eq } = await import("drizzle-orm");
     const { launchExperiment } = await import("../src/server/domain/growth/experiments");
+    const { seedDemo } = await import("../src/server/demo/seed");
+    const { runDemoStep } = await import("../src/server/demo/script");
     const db = await getDb();
-    const [exp] = await db.select().from(s.experiments).where(eq(s.experiments.status, "proposed"));
+    // Fresh demo workspace with a newly proposed creator experiment.
+    const pid = await seedDemo(db, { reset: true });
+    const [project] = await db.select().from(s.projects).where(eq(s.projects.id, pid));
+    await runDemoStep(db, pid, 3, project.ownerId);
+    const [exp] = await db.select().from(s.experiments).where(eq(s.experiments.projectId, pid)).then((rows) => rows.filter((x) => x.status === "proposed"));
     expect(exp).toBeTruthy();
+    const [camp] = await db.select().from(s.campaigns).where(eq(s.campaigns.experimentId, exp.id));
+    if (camp?.kolId) await db.update(s.kols).set({ payoutAddress: null }).where(eq(s.kols.id, camp.kolId));
     await db.update(s.projects).set({ dataMode: "LIVE" }).where(eq(s.projects.id, exp.projectId));
     const before = (await db.select().from(s.agentDecisions)).length;
     const r = await launchExperiment(db, { projectId: exp.projectId, experimentId: exp.id });

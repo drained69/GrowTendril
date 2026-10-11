@@ -25,6 +25,7 @@ const STATUS: Record<string, { tone: Tone; label: string; body: string }> = {
   removed: { tone: "bad", label: "Removed", body: "The business removed you from this campaign, so nothing further can be submitted or earned." },
 };
 const STATE: Record<LedgerLine["state"], { tone: Tone; label: string }> = {
+  holding: { tone: "neutral", label: "Verified — payable after the holdback period" },
   earned: { tone: "warn", label: "Earned — not yet paid" },
   in_payout: { tone: "info", label: "In payout" },
   paid: { tone: "good", label: "Paid" },
@@ -231,7 +232,7 @@ export default async function CreatorPage({ params }: { params: Promise<{ token:
               </CardBody>
             </Card>
 
-            <CampaignRules c={c} targetLabel={target} graceDays={ATTRIBUTION_GRACE_DAYS} />
+            <CampaignRules c={c} targetLabel={target} graceDays={ATTRIBUTION_GRACE_DAYS} ceilingMicro={p.ceilingMicro ?? undefined} />
 
             <Callout tone="info" title="About this page">
               This page is your login — there’s no account. Anyone with the link can see it and submit posts as you, so keep it private.

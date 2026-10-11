@@ -2,7 +2,7 @@ import { describe, it, expect, beforeAll } from "vitest";
 import { eq } from "drizzle-orm";
 import type { DB } from "@/server/db/client";
 import { toMicro } from "@/lib/money";
-import { capReward, detectDisclosure, planCampaign, qualityScore, validPostUrl } from "@/server/domain/growth/campaign-plan";
+import { capReward, detectDisclosure, planCampaign, qualityScore, releaseToWinners, validPostUrl } from "@/server/domain/growth/campaign-plan";
 
 process.env.PGLITE_DIR = "memory://";
 process.env.ENCRYPTION_KEY = "22".repeat(32);
@@ -10,8 +10,13 @@ process.env.ENCRYPTION_KEY = "22".repeat(32);
 describe("campaign planner", () => {
   it("derives creators, ceilings and pay from budget and max cost per action", () => {
     const p = planCampaign({ budgetMicro: toMicro(300), maxCostPerActionMicro: toMicro(10), days: 14, postsPerCreator: 2 });
-    expect(p.creators).toBe(10); // 300 / (3 × 10) = 10
+    // Starting rules: half the budget is the test phase; each creator needs room for 3 actions in it.
+    expect(p.testPhaseMicro).toBe(toMicro(150));
+    expect(p.heldForResultsMicro).toBe(toMicro(150));
+    expect(p.creators).toBe(5); // 150 / (3 × 10) = 5
     expect(p.creatorCapMicro).toBe(toMicro(30));
+    expect(p.holdbackDays).toBe(7);
+    expect(p.rulesSource).toBe("starting");
     expect(p.basePayMicro).toBeLessThanOrEqual(toMicro(10)); // never above one action's worth
     expect(p.creatorCapMicro * 0.25 + 1).toBeGreaterThan(p.postsPerCreator * (p.basePayMicro + p.discussionBonusCapMicro)); // fixed pay ≤ 25% of ceiling
     expect(p.actionBonusMicro).toBe(toMicro(8)); // 80% of the ceiling
@@ -19,10 +24,39 @@ describe("campaign planner", () => {
     expect(p.reasoning.length).toBeGreaterThan(5);
   });
 
+  it("uses the project's own rules when they are saved", () => {
+    const p = planCampaign({ budgetMicro: toMicro(300), maxCostPerActionMicro: toMicro(10), rules: { fixedPayShare: 0.1, actionBonusShare: 1, minActionsPerCreator: 2, maxCreators: 4, testPhaseShare: 1, holdbackDays: 14 }, rulesSource: "setting" });
+    expect(p.creators).toBe(4); // capped by the project's max creators
+    expect(p.testPhaseMicro).toBe(toMicro(300));
+    expect(p.actionBonusMicro).toBe(toMicro(10));
+    expect(p.holdbackDays).toBe(14);
+    expect(p.reasoning.join(" ")).toMatch(/your Economics setting/);
+  });
+
+  it("releases held budget only to creators whose measured cost per action beats the ceiling", () => {
+    const r = releaseToWinners({
+      heldMicro: toMicro(100),
+      maxCostPerActionMicro: toMicro(10),
+      minActions: 3,
+      creators: [
+        { id: "a", handle: "a", earnedMicro: toMicro(30), actions: 6 }, // 5 per action → winner
+        { id: "b", handle: "b", earnedMicro: toMicro(20), actions: 2 }, // too few actions
+        { id: "c", handle: "c", earnedMicro: toMicro(60), actions: 4 }, // 15 per action → above ceiling
+        { id: "d", handle: "d", earnedMicro: toMicro(20), actions: 2 * 2 }, // 5 per action → winner
+      ],
+    });
+    expect(r.grants.map((g) => [g.id, g.amountMicro])).toEqual([
+      ["a", toMicro(60)],
+      ["d", toMicro(40)],
+    ]);
+    expect(r.skipped.map((x) => x.id).sort()).toEqual(["b", "c"]);
+    expect(r.skipped.find((x) => x.id === "c")!.reason).toMatch(/above the/);
+  });
+
   it("warns when the budget can't fund a meaningful test", () => {
     const p = planCampaign({ budgetMicro: toMicro(20), maxCostPerActionMicro: toMicro(10) });
     expect(p.creators).toBe(1);
-    expect(p.warnings.join(" ")).toMatch(/fewer than 3 actions|5–10/);
+    expect(p.warnings.join(" ")).toMatch(/fewer than 3|5–10/);
   });
 
   it("caps rewards at the creator ceiling and the campaign budget", () => {
@@ -89,7 +123,9 @@ describe("creator campaign lifecycle (real Postgres via PGlite)", () => {
     ).rejects.toThrow(/unreserved/);
 
     const c = await cc.createCampaign(db, { projectId: "p1", userId: "u1", name: "Stablecoin invoicing", topic: "stablecoin invoicing", topicTerms: ["usdc invoice"], brief: "Show how you accept USDC invoices with the SDK.", destinationUrl: "https://ledgerline.dev", targetEvent: "sdk_key_created", maxCostPerActionMicro: toMicro(10), budgetMicro: toMicro(300), days: 14, postsPerCreator: 2, platforms: ["x", "blog"], disclosureText: "#ad" });
-    expect(c.maxCreators).toBe(10);
+    expect(c.maxCreators).toBe(5);
+    expect(c.releasedMicro).toBe(toMicro(150)); // test phase only
+    expect(c.holdbackDays).toBe(7);
     const [exp] = await db.select().from(s.experiments).where(eq(s.experiments.id, c.experimentId));
     expect(exp.status).toBe("running");
     expect(exp.budgetMicro).toBe(toMicro(300));
@@ -137,16 +173,35 @@ describe("creator campaign lifecycle (real Postgres via PGlite)", () => {
     expect(await cc.syncActionRewards(db, c)).toBe(0); // idempotent
 
     let ledger = await cc.campaignLedger(db, c);
-    const me = ledger.creators.find((x) => x.participant.id === participantId)!;
-    const expected = 2 * c.basePayMicro + c.discussionBonusCapMicro + 2 * c.actionBonusMicro;
-    expect(me.earnedMicro).toBe(expected);
+    let me = ledger.creators.find((x) => x.participant.id === participantId)!;
+    const postPay = 2 * c.basePayMicro + c.discussionBonusCapMicro;
+    const actionPay = 2 * c.actionBonusMicro;
+    const expected = postPay + actionPay;
+    // Verified actions sit in the holdback; accepted posts are payable now.
+    expect(me.holdingMicro).toBe(actionPay);
+    expect(me.earnedMicro).toBe(postPay);
     expect(me.actions).toBe(2);
     expect(me.acceptedPosts).toBe(3);
     expect(ledger.verifiedMicro).toBe(expected);
+    expect(ledger.holdingMicro).toBe(actionPay);
     expect(ledger.paidMicro).toBe(0);
+    expect(ledger.releasedMicro).toBe(toMicro(150));
+    expect(ledger.heldForResultsMicro).toBe(toMicro(150));
     expect(ledger.reservedMicro).toBe(c.creatorCapMicro - expected);
-    expect(ledger.availableMicro).toBe(c.budgetMicro - expected - ledger.reservedMicro);
+    expect(ledger.availableMicro).toBe(ledger.releasedMicro - expected - ledger.reservedMicro);
     expect(me.lines.every((l) => l.reason.length > 10)).toBe(true);
+
+    // Only 2 verified actions — below the 3 needed before results count — so nothing is released yet.
+    const early = await cc.releaseHeldBudget(db, { projectId: "p1", campaignId: c.id, userId: "u1" });
+    expect(early.released).toBe(0);
+    expect(early.skipped[0].reason).toMatch(/needs 3/);
+
+    // The holdback ends (simulated by shortening it); then everything earned is payable.
+    await db.update(s.creatorCampaigns).set({ holdbackDays: 0 }).where(eq(s.creatorCampaigns.id, c.id));
+    const c2 = (await cc.getCampaign(db, "p1", c.id))!;
+    me = (await cc.campaignLedger(db, c2)).creators[0];
+    expect(me.holdingMicro).toBe(0);
+    expect(me.earnedMicro).toBe(expected);
 
     // Payout goes through the policy engine; creator payments need approval by default.
     const out = await cc.proposePayout(db, { projectId: "p1", campaignId: c.id, participantId, userId: "u1" });
@@ -155,7 +210,7 @@ describe("creator campaign lifecycle (real Postgres via PGlite)", () => {
     const [tx] = await db.select().from(s.transactions).where(eq(s.transactions.decisionId, out.decisionId));
     expect(tx.recipient).toBe("0x1111111111111111111111111111111111111111");
     expect(tx.amountMicro).toBe(expected);
-    ledger = await cc.campaignLedger(db, c);
+    ledger = await cc.campaignLedger(db, c2);
     if (out.state === "AWAITING_APPROVAL") {
       expect(ledger.creators[0].inPayoutMicro).toBe(expected);
       await expect(cc.proposePayout(db, { projectId: "p1", campaignId: c.id, participantId, userId: "u1" })).rejects.toThrow(/Nothing earned/);

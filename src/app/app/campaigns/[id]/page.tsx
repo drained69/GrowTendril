@@ -1,12 +1,13 @@
 import { notFound } from "next/navigation";
-import { CircleDollarSign, ClipboardCheck, ExternalLink as ExternalIcon, FlaskConical, Inbox, Link2, ListChecks, Lock, ReceiptText, RefreshCw, Users } from "lucide-react";
+import { CircleDollarSign, ClipboardCheck, History, TrendingUp, ExternalLink as ExternalIcon, FlaskConical, Inbox, Link2, ListChecks, Lock, ReceiptText, RefreshCw, Users } from "lucide-react";
 import { requireProject } from "@/server/auth/current";
 import { can } from "@/server/auth/access";
 import { campaignLedger, getCampaign, observedMindshare, type CampaignLedger, type LedgerLine, type Participant } from "@/server/domain/growth/creator-campaigns";
 import { ATTRIBUTION_GRACE_DAYS } from "@/server/domain/growth/creator-campaigns";
 import { PLATFORM_LABEL, type CampaignPlan } from "@/server/domain/growth/campaign-plan";
 import { EVENT_LABEL, type ConversionEventType } from "@/server/domain/growth/attribution-links";
-import { closeCampaignAction, decideParticipantAction, proposePayoutAction, syncCampaignAction } from "@/server/actions/campaigns";
+import { closeCampaignAction, decideParticipantAction, proposePayoutAction, releaseHeldBudgetAction, syncCampaignAction } from "@/server/actions/campaigns";
+import { releaseHistory } from "@/server/domain/growth/creator-campaigns";
 import { appOrigin, campaignPostsFor, campaignStatus, fmtDate, fmtPct } from "@/server/queries/campaigns";
 import { ARC, addressExplorerUrl } from "@/server/integrations/circle/config";
 import { fmtUsdc } from "@/lib/money";
@@ -21,6 +22,7 @@ export const metadata = { title: "Creator campaign" };
 
 const PARTICIPANT_TONE: Record<string, Tone> = { applied: "warn", accepted: "good", declined: "muted", removed: "bad" };
 const STATE: Record<LedgerLine["state"], { tone: Tone; label: string }> = {
+  holding: { tone: "neutral", label: "In holdback" },
   earned: { tone: "warn", label: "Earned" },
   in_payout: { tone: "info", label: "In payout" },
   paid: { tone: "good", label: "Paid" },
@@ -35,7 +37,7 @@ export default async function CampaignDetail({ params }: { params: Promise<{ id:
   const c = await getCampaign(db, project.id, id);
   if (!c) notFound();
   const operate = can(role, "operate");
-  const [ledger, posts, origin] = await Promise.all([campaignLedger(db, c), campaignPostsFor(db, c.id), appOrigin()]);
+  const [ledger, posts, origin, releases] = await Promise.all([campaignLedger(db, c), campaignPostsFor(db, c.id), appOrigin(), releaseHistory(db, c)]);
   const participants = ledger.creators.map((x) => x.participant);
   const mindshare = await observedMindshare(db, c, participants);
   const byId = new Map<string, Participant>(participants.map((p) => [p.id, p]));
@@ -86,6 +88,14 @@ export default async function CampaignDetail({ params }: { params: Promise<{ id:
               Experiment
             </LinkButton>
             {operate && <ActionButton action={syncCampaignAction.bind(null, c.id)} label="Sync verified actions" icon={<RefreshCw />} />}
+            {operate && c.status === "open" && ledger.heldForResultsMicro > 0 && (
+              <ActionButton
+                action={releaseHeldBudgetAction.bind(null, c.id)}
+                label={`Release ${fmtUsdc(ledger.heldForResultsMicro)} to winners`}
+                icon={<TrendingUp />}
+                confirm={`Release held budget to creators whose measured cost per verified ${targetLower} is at or below ${fmtUsdc(c.maxCostPerActionMicro)}, in proportion to their verified actions? This raises their ceilings; nothing is paid until they earn it.`}
+              />
+            )}
             {operate && c.status === "open" && (
               <ActionButton
                 action={closeCampaignAction.bind(null, c.id)}
@@ -120,6 +130,34 @@ export default async function CampaignDetail({ params }: { params: Promise<{ id:
         </Card>
       </div>
 
+      {releases.length > 0 && (
+        <Card>
+          <CardHeader title="Results-based releases" icon={<History />} description="Held budget released only to creators whose measured cost per action beat the ceiling. Every decision is audit-logged." />
+          <ul className="divide-y divide-line">
+            {releases.map((r) => (
+              <li key={r.at.toISOString()} className="px-4 py-3 text-[12.5px]">
+                <div className="flex items-baseline justify-between gap-3">
+                  <span className="font-medium text-ink">Released {fmtUsdc(r.data.released)}</span>
+                  <span className="text-[11.5px] text-ink-4">{relTime(r.at)}</span>
+                </div>
+                <ul className="mt-1 space-y-0.5 text-[12px] text-ink-2">
+                  {r.data.grants.map((g) => (
+                    <li key={g.id}>
+                      <span className="num text-good">+{fmtUsdc(g.amountMicro)}</span> {g.reason}
+                    </li>
+                  ))}
+                  {r.data.skipped.map((s2) => (
+                    <li key={s2.id} className="text-ink-3">
+                      Not released: {s2.reason}
+                    </li>
+                  ))}
+                </ul>
+              </li>
+            ))}
+          </ul>
+        </Card>
+      )}
+
       <Card>
         <CardHeader title="Rules creators agreed to" icon={<ListChecks />} description="Shown on the join page before anyone posts. Ceilings are enforced in code when rewards accrue." />
         <div className="grid gap-x-8 gap-y-0 p-4 md:grid-cols-2">
@@ -134,7 +172,8 @@ export default async function CampaignDetail({ params }: { params: Promise<{ id:
           <KeyValue
             className="mt-2 md:mt-0"
             items={[
-              { k: "Per-creator ceiling", v: <span className="num">{fmtUsdc(c.creatorCapMicro)}</span> },
+              { k: "Test-phase ceiling per creator", v: <span className="num">{fmtUsdc(c.creatorCapMicro)}</span> },
+              { k: "Holdback on verified actions", v: <span className="num">{c.holdbackDays} day{c.holdbackDays === 1 ? "" : "s"}</span> },
               { k: "Creators funded", v: <span className="num">{c.maxCreators}</span> },
               { k: "Disclosure required", v: <span className="num">{c.disclosureText}</span> },
               { k: "Destination", v: <ExternalLink href={c.destinationUrl} className="block max-w-[260px] truncate">{c.destinationUrl.replace(/^https:\/\//, "")}</ExternalLink> },
@@ -217,7 +256,12 @@ export default async function CampaignDetail({ params }: { params: Promise<{ id:
                   </span>
                 ),
                 actions: <span className="num">{x.actions}</span>,
-                earned: <span className={x.earnedMicro ? "num text-warning" : "num text-ink-3"}>{fmtUsdc(x.earnedMicro, { unit: false })}</span>,
+                earned: (
+                  <span className="num block">
+                    <span className={x.earnedMicro ? "text-warning" : "text-ink-3"}>{fmtUsdc(x.earnedMicro, { unit: false })}</span>
+                    {x.holdingMicro > 0 && <span className="block text-[11px] text-ink-4">+{fmtUsdc(x.holdingMicro, { unit: false })} in holdback</span>}
+                  </span>
+                ),
                 payout: <span className="num text-ink-2">{fmtUsdc(x.inPayoutMicro, { unit: false })}</span>,
                 paid: (
                   <span className="num block">
@@ -225,7 +269,12 @@ export default async function CampaignDetail({ params }: { params: Promise<{ id:
                     {x.simulatedMicro > 0 && <span className="block text-[11px] text-ink-4">+{fmtUsdc(x.simulatedMicro, { unit: false })} simulated</span>}
                   </span>
                 ),
-                room: <span className="num text-ink-2">{p.status === "accepted" ? fmtUsdc(x.remainingCapMicro, { unit: false }) : "—"}</span>,
+                room: (
+                  <span className="num block text-ink-2">
+                    {p.status === "accepted" ? fmtUsdc(x.remainingCapMicro, { unit: false }) : "—"}
+                    {p.status === "accepted" && <span className="block text-[11px] text-ink-4">of {fmtUsdc(x.ceilingMicro, { unit: false })}{x.ceilingMicro > c.creatorCapMicro ? " (raised by results)" : ""}</span>}
+                  </span>
+                ),
                 mind: m ? (
                   <span className="num block whitespace-nowrap" title={`Observed: ${m.posts} of ${mindshare.observedPosts} on-topic posts collected during the window${sources ? ` (${sources})` : ""}. A sample, not every post.`}>
                     {fmtPct(m.share)} <span className="text-ink-4">posts</span>
@@ -416,7 +465,8 @@ const SEGMENTS: { key: keyof CampaignLedger; label: string; color: string; help:
   { key: "verifiedMicro", label: "Verified & unpaid", color: "var(--color-s4)", help: "Earned from accepted posts, rated discussion and attributed actions, not yet paid." },
   { key: "simulatedMicro", label: "Simulated", color: "var(--color-s7)", help: "Marked as paid by a simulated payout — no funds moved." },
   { key: "reservedMicro", label: "Reserved", color: "var(--color-s1)", help: "Held for accepted creators up to their ceilings, not yet earned (only while open)." },
-  { key: "availableMicro", label: "Available", color: "var(--color-surface-3)", help: "Not committed to anyone." },
+  { key: "availableMicro", label: "Available", color: "var(--color-surface-3)", help: "Released but not committed to anyone." },
+  { key: "heldForResultsMicro", label: "Held for results", color: "transparent", help: "Not released yet. Goes only to creators whose measured cost per action beats your ceiling." },
 ];
 
 function BudgetCard({ ledger, open }: { ledger: CampaignLedger; open: boolean }) {
@@ -424,25 +474,26 @@ function BudgetCard({ ledger, open }: { ledger: CampaignLedger; open: boolean })
   const segs = SEGMENTS.filter((x) => x.key !== "simulatedMicro" || ledger.simulatedMicro > 0).map((x) => ({ ...x, value: ledger[x.key] as number }));
   return (
     <Card>
-      <CardHeader title="Budget" icon={<CircleDollarSign />} description={`${fmtUsdc(ledger.budgetMicro)} test budget, reserved from the mission`} />
+      <CardHeader title="Budget" icon={<CircleDollarSign />} description={`${fmtUsdc(ledger.budgetMicro)} reserved from the mission · ${fmtUsdc(ledger.releasedMicro)} released to creators so far`} />
       <CardBody className="space-y-4">
         <div className="flex h-2.5 w-full gap-[2px] overflow-hidden rounded-[3px] bg-surface-3">
           {segs
             .filter((x) => x.value > 0)
             .map((x) => (
-              <div key={x.key} className="h-full first:rounded-l-[3px] last:rounded-r-[3px]" style={{ width: `${(x.value / total) * 100}%`, background: x.color }} title={`${x.label}: ${fmtUsdc(x.value)}`} />
+              <div key={x.key} className={`h-full first:rounded-l-[3px] last:rounded-r-[3px] ${x.key === "heldForResultsMicro" ? "bg-[repeating-linear-gradient(135deg,var(--color-line-strong)_0_3px,transparent_3px_7px)]" : ""}`} style={{ width: `${(x.value / total) * 100}%`, background: x.key === "heldForResultsMicro" ? undefined : x.color }} title={`${x.label}: ${fmtUsdc(x.value)}`} />
             ))}
         </div>
         <dl className="grid gap-x-6 gap-y-3 sm:grid-cols-2">
           {segs.map((x) => (
             <div key={x.key} className="min-w-0">
               <dt className="flex items-center gap-1.5 text-[11.5px] font-medium text-ink-3">
-                <span className="size-2 rounded-[2px] ring-1 ring-inset ring-line-strong" style={{ background: x.color }} />
+                <span className={`size-2 rounded-[2px] ring-1 ring-inset ring-line-strong ${x.key === "heldForResultsMicro" ? "bg-[repeating-linear-gradient(135deg,var(--color-line-strong)_0_2px,transparent_2px_4px)]" : ""}`} style={{ background: x.key === "heldForResultsMicro" ? undefined : x.color }} />
                 {x.label}
               </dt>
               <dd className="num mt-0.5 text-[17px] font-medium tracking-[-0.02em] text-ink">{fmtUsdc(x.value, { unit: false })}</dd>
               <dd className="text-[11.5px] leading-snug text-ink-3">
                 {x.help}
+                {x.key === "verifiedMicro" && ledger.holdingMicro > 0 && <> {fmtUsdc(ledger.holdingMicro)} is verified actions still in the holdback, not yet payable.</>}
                 {x.key === "verifiedMicro" && ledger.inPayoutMicro > 0 && <> {fmtUsdc(ledger.inPayoutMicro)} of it is in a payout awaiting approval or executing.</>}
                 {x.key === "reservedMicro" && !open && <> The campaign is closed, so nothing is held.</>}
               </dd>
