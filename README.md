@@ -375,6 +375,7 @@ Open http://localhost:3000 and click **SEE IT WORK**. No keys needed.
 | `npm run db:seed` | Reset and seed the demo project |
 | `npm run demo:run` | Run the 8-step demo headlessly |
 | `npm run wallet:setup` | Platform custody setup: `-- --entity-secret` registers a Circle entity secret, `-- --local` prints a testnet key |
+| `npm run doctor` | **Validate the money path against the real network, step by step.** Read-only by default; `-- --provision` creates a wallet, `-- --deposit 1` deposits, `-- --x402` buys from the bundled seller |
 | `npm run db:generate` | Generate a migration after schema changes |
 
 > PGlite is single-process. Stop the dev server before running `db:seed` / `demo:run` against the same `.data/pglite`, or point `PGLITE_DIR` elsewhere. Use `DATABASE_URL` (Postgres) for multi-process deployments.
@@ -440,6 +441,8 @@ Without a wallet, steps 2 and 6 are recorded as **SIMULATED**: the full decision
 6. Set `SIGNALS_SELLER_ADDRESS` to an Arc Testnet address you control (it receives the x402 payments), and optionally `DEMO_PAYOUT_ADDRESS`.
 7. `npm run dev`, enter the demo, **Reset demo**, then run the loop. Purchases show `TESTNET` with a Circle settlement ID. Use **Refresh settlements** on the Activity page to follow them to the Arc batch tx (a batch can take around 10 minutes on testnet).
 
+**Validate the money path before you rely on it.** `npm run doctor` runs each Circle/Arc call in order — Circle API key and entity secret, Arc RPC balance read, Gateway balance, (with flags) a Gateway deposit and a real x402 purchase — and prints PASS/FAIL per step using the same functions the app uses. It never fabricates a result: a blocked host or a bad key is reported as a failure, not glossed over. Start with `npm run doctor` (read-only), then `npm run doctor -- --provision`, then `-- --deposit 1` and `-- --x402` once the wallet is funded. This is the fastest way to surface the integration details that only appear on a live network (e.g. the account type Circle-signed EIP-712 needs, the exact Gateway chain identifiers, the batch-tx match).
+
 ## Mainnet
 
 One setting switches the whole deployment: `GROWTHOS_NETWORK=mainnet` (default `testnet`). Every network value comes from Circle's SDKs or viem's chain registry, never from hand-copied constants (`src/server/integrations/circle/config.ts`):
@@ -461,7 +464,7 @@ One setting switches the whole deployment: `GROWTHOS_NETWORK=mainnet` (default `
 - The policy engine denies any chain that isn't on the deployment's network, and payouts to missing or burn addresses.
 - Every money movement is labelled `LIVE` (real funds) instead of `TESTNET`.
 
-**Before switching a deployment to mainnet:** use a fresh database, set `GROWTHOS_NETWORK=mainnet`, `SESSION_SECRET`, `ENCRYPTION_KEY`, `APP_URL`, `CIRCLE_API_KEY` (a live key) and `CIRCLE_ENTITY_SECRET`. Then create the workspace wallet, fund it with USDC on Arc, review the spend policy, and resume spending as the owner. Run a small payment end to end before raising limits.
+**Before switching a deployment to mainnet:** use a fresh database, set `GROWTHOS_NETWORK=mainnet`, `SESSION_SECRET`, `ENCRYPTION_KEY`, `APP_URL`, `CIRCLE_API_KEY` (a live key) and `CIRCLE_ENTITY_SECRET`. Then create the workspace wallet, fund it with USDC on Arc, review the spend policy, and resume spending as the owner. Run `npm run doctor` (then `-- --provision`, `-- --deposit`, `-- --x402`) and a small payment end to end before raising limits.
 
 ## Verification status
 

@@ -16,7 +16,8 @@
     "wallet:setup": "tsx scripts/wallet-setup.ts",
     "demo:run": "tsx scripts/demo-run.ts",
     "test:events": "tsx scripts/test-events.ts",
-    "worker": "tsx scripts/worker.ts"
+    "worker": "tsx scripts/worker.ts",
+    "doctor": "tsx scripts/doctor.ts"
   },
   "dependencies": {
     "@anthropic-ai/sdk": "^0.131.0",
