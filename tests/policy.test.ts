@@ -2,6 +2,7 @@ import { describe, it, expect } from "vitest";
 import { evaluatePolicy, DEFAULT_POLICY, type PolicyState } from "../src/server/domain/agent/policy";
 import { parseFinancialAction } from "../src/server/domain/agent/actions";
 import { toMicro } from "../src/lib/money";
+import { ARC } from "../src/server/integrations/circle/config";
 
 process.env.PGLITE_DIR = "memory://";
 
@@ -15,6 +16,8 @@ const state = (o: Partial<PolicyState> = {}): PolicyState => ({
   categoryAllocatedMicro: toMicro(75),
   categoryCommittedMicro: 0,
   serviceKnown: true,
+  gatewayAvailableMicro: toMicro(1000),
+  walletUsdcMicro: toMicro(1000),
   ...o,
 });
 
@@ -30,7 +33,7 @@ const purchase = (amount: string) =>
     missionId: "m1",
     confidence: 0.67,
     subject: { type: "company", id: "c1" },
-    chain: "Arc_Testnet",
+    chain: ARC.appKitChain,
   });
 
 const send = (amount: string, purpose = "kol_payment", recipient = "0x933a2405f84c224be1ef373ba16e992e1f459682") =>
@@ -40,7 +43,7 @@ const send = (amount: string, purpose = "kol_payment", recipient = "0x933a2405f8
     recipient,
     amount,
     currency: "USDC",
-    chain: "Arc_Testnet",
+    chain: ARC.appKitChain,
     experimentId: "e1",
     reasonCode: "PAY_CREATOR",
     expectedValue: "high",

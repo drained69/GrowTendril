@@ -122,7 +122,9 @@ export async function depositToGateway(w: Wallet, amount: string): Promise<{ app
       const hash = t.data?.transaction?.txHash;
       if ((st === "COMPLETE" || st === "CONFIRMED") && hash) return hash;
       confirmed ||= st === "COMPLETE" || st === "CONFIRMED";
+      // Fast-fail on every terminal non-success state (STUCK included) instead of spinning the full timeout.
       if (st === "FAILED" || st === "CANCELLED" || st === "DENIED") throw new Error(`${sig}: ${st}`);
+      if (st === "STUCK") throw new Error(`${sig}: transaction STUCK on-chain (gas/nonce) — check the wallet on the explorer before retrying`);
       await new Promise((r) => setTimeout(r, 2000));
     }
     throw new Error(confirmed ? `${sig}: Circle reports it confirmed but returned no tx hash (Circle tx ${id})` : `${sig}: timed out waiting for confirmation (Circle tx ${id})`);

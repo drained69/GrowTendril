@@ -386,7 +386,7 @@ Open http://localhost:3000 and click **SEE IT WORK**. No keys needed.
 
 1. In Railway: **New project → Deploy from GitHub repo** → pick this repo and branch.
 2. **Add a PostgreSQL database** to the project, then on the web service set `DATABASE_URL=${{Postgres.DATABASE_URL}}`. Migrations run automatically on boot. (Without Postgres the app falls back to PGlite, which needs a volume mounted at `/app/.data` and a single replica.)
-3. Set the required variables: `SESSION_SECRET` (≥ 32 chars), `ENCRYPTION_KEY` (`openssl rand -hex 32`), `APP_URL` (the public URL, used in invite links). Optional: `CIRCLE_API_KEY` + `CIRCLE_ENTITY_SECRET` for workspace wallets, provider keys, `ANTHROPIC_API_KEY`, `CRON_SECRET`.
+3. Set the required variables: `SESSION_SECRET` (≥ 32 chars), `ENCRYPTION_KEY` (`openssl rand -hex 32`), `APP_URL` (the public URL, used in invite links), and `GROWTHOS_NETWORK=mainnet` for a real-money deployment (the code default is `testnet` so a fresh clone is safe; set it explicitly for production — and read [Mainnet](#mainnet) first). For wallets, set `CIRCLE_API_KEY` + `CIRCLE_ENTITY_SECRET` (a **live** Circle key on mainnet). Optional: provider keys, `ANTHROPIC_API_KEY`, `CRON_SECRET`.
 4. **Generate a domain** under Networking and deploy.
 5. Optional: deploy `services/signals-api` as a second service from the same repo (start command `npm run signals`, set `SIGNALS_SELLER_ADDRESS`), and point `SIGNALS_API_URL` on the web service at its private URL.
 
