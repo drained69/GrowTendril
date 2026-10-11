@@ -5,7 +5,7 @@
 **An autonomous growth operator for any business.**<br/>
 Give it a product, a goal and a budget. It finds who is ready to buy, decides what is worth doing, pays for it within rules you set, and proves what worked.
 
-[![CI](https://github.com/drained69/growthOS/actions/workflows/ci.yml/badge.svg)](https://github.com/drained69/growthOS/actions/workflows/ci.yml)
+[![CI](https://github.com/drained69/GrowTendril/actions/workflows/ci.yml/badge.svg)](https://github.com/drained69/GrowTendril/actions/workflows/ci.yml)
 ![Node](https://img.shields.io/badge/node-%E2%89%A5%2020-3c873a)
 ![Next.js](https://img.shields.io/badge/Next.js-15-black)
 ![TypeScript](https://img.shields.io/badge/TypeScript-strict-3178c6)
@@ -107,8 +107,8 @@ You do not need to know anything about crypto to use it. Payments are made in **
 Requires **Node 20 or newer**. No API keys are needed to explore.
 
 ```bash
-git clone https://github.com/drained69/growthOS.git
-cd growthOS
+git clone https://github.com/drained69/GrowTendril.git
+cd GrowTendril
 npm install
 cp .env.example .env.local
 npm run dev                               # web on :3000, sample data seller on :4021

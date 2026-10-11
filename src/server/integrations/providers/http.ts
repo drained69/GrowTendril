@@ -1,6 +1,6 @@
 import { ProviderError, type ProviderId } from "@/server/integrations/providers/types";
 
-export const USER_AGENT = "GrowTendril/0.1 (+https://github.com/drained69/growthOS; research bot; respects robots.txt)";
+export const USER_AGENT = "GrowTendril/0.1 (+https://github.com/drained69/GrowTendril; research bot; respects robots.txt)";
 
 /** fetch with timeout and a clear provider-scoped error. Rate limits surface as errors, never retried blindly. */
 export async function getJson<T>(provider: ProviderId, url: string, init: RequestInit = {}, timeoutMs = 12_000): Promise<T> {
