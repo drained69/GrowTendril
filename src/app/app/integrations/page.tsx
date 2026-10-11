@@ -1,6 +1,6 @@
 import type { ReactNode } from "react";
 import { headers } from "next/headers";
-import { BookOpen, Code2, Globe, Lock, MessagesSquare, Newspaper, PlaySquare, Plug, Webhook } from "lucide-react";
+import { Bell, BookOpen, Code2, Globe, Lock, MessagesSquare, Newspaper, PlaySquare, Plug, Webhook } from "lucide-react";
 import { requireProject } from "@/server/auth/current";
 import { can } from "@/server/auth/access";
 import { listConnections, type CredentialSource, type ProviderConnection } from "@/server/integrations/vault";
@@ -10,6 +10,8 @@ import { Badge, Callout, Card, CardBody, CardFooter, CardHeader, ExternalLink, K
 import { CopyButton, CopyField } from "@/components/ui/copy";
 import { ConnectionForm } from "@/components/features/integrations/connection-form";
 import { WebhookSecret } from "@/components/features/integrations/webhook-secret";
+import { AddEndpoint, DeliveryLog, EndpointRow } from "@/components/features/integrations/notifications";
+import { DISABLE_AFTER, listEndpoints, MAX_ATTEMPTS, MAX_ENDPOINTS, recentDeliveries, WEBHOOK_EVENTS } from "@/server/domain/notifications/webhooks";
 
 const CATEGORY: Record<string, { label: string; icon: ReactNode }> = {
   social: { label: "Social", icon: <Globe /> },
@@ -41,7 +43,11 @@ function dotTone(c: ProviderConnection): "good" | "warn" | "bad" | "idle" {
 
 export default async function Integrations() {
   const { project, role, db, user } = await requireProject();
-  const connections = await listConnections(db, project.id);
+  const [connections, endpointRows, deliveryRows] = await Promise.all([listConnections(db, project.id), listEndpoints(db, project.id), recentDeliveries(db, project.id)]);
+  // Only display fields reach the browser: the sealed URL and secret stay on the server.
+  const endpoints = endpointRows.map((e) => ({ id: e.id, urlHint: e.urlHint, format: e.format, description: e.description, events: e.events, enabled: e.enabled, disabledReason: e.disabledReason, lastStatus: e.lastStatus, lastDeliveryAt: e.lastDeliveryAt?.toISOString() ?? null, secretHint: e.secretHint }));
+  const deliveries = deliveryRows.map((d) => ({ ...d, createdAt: d.createdAt.toISOString() }));
+  const eventOptions = WEBHOOK_EVENTS.map((e) => ({ ...e }));
   // Guest accounts and DEMO workspaces can't store credentials or feed URLs (enforced in the actions too).
   const sandboxed = user.isGuest || project.dataMode === "DEMO";
   const canManage = can(role, "manage_integrations") && !sandboxed;
@@ -152,6 +158,37 @@ curl -X POST ${endpoint} \\
           );
         })}
       </div>
+
+      <Card id="notifications">
+        <CardHeader
+          title="Notifications"
+          description="Get told in Slack, Discord or your own system when something needs you — an approval, a payment, a budget threshold, a creator waiting for review."
+          icon={<Bell />}
+          action={<Badge tone="muted">{endpoints.length} / {MAX_ENDPOINTS}</Badge>}
+        />
+        {endpoints.length > 0 && (
+          <ul className="divide-y divide-line border-b border-line">
+            {endpoints.map((ep) => (
+              <EndpointRow key={ep.id} ep={ep} events={eventOptions} canManage={canManage} />
+            ))}
+          </ul>
+        )}
+        {canManage && endpoints.length < MAX_ENDPOINTS && (
+          <CardBody>
+            <AddEndpoint events={eventOptions} />
+          </CardBody>
+        )}
+        {!canManage && endpoints.length === 0 && <CardBody><p className="text-[12px] text-ink-3">{sandboxed ? "Notifications are available in your own workspace." : "No notification endpoints yet. Owners and admins can add one."}</p></CardBody>}
+        <div className="border-t border-line">
+          <div className="px-4 pt-3 pb-1 label">Recent deliveries</div>
+          <DeliveryLog deliveries={deliveries} endpoints={endpoints} canManage={canManage} />
+        </div>
+        <CardFooter>
+          <p className="text-[11.5px] leading-relaxed">
+            JSON endpoints receive <code className="num">{"{ id, type, created_at, network, workspace, summary, url, data }"}</code> with headers <code className="num">x-growtendril-event</code>, <code className="num">x-growtendril-event-id</code> (stable — use it to de-duplicate) and <code className="num">x-growtendril-signature</code> (same HMAC scheme as inbound events). Non-2xx responses are retried {MAX_ATTEMPTS - 1} times over about 3 hours; an endpoint that fails {DISABLE_AFTER} deliveries in a row, or answers 410, is switched off.
+          </p>
+        </CardFooter>
+      </Card>
 
       <Card id="events">
         <CardHeader

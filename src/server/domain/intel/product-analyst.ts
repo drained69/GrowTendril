@@ -112,7 +112,8 @@ function heuristicProfile(input: ProductInput, pages: PageText[]): ProductProfil
   const scored = CATEGORIES.map((c) => ({ c, n: c.terms.filter((t) => corpus.includes(t)).length })).sort((a, b) => b.n - a.n);
   const top = scored[0].n ? scored[0].c : GENERAL_CATEGORY;
   const second = scored[1]?.n ? scored[1].c : null;
-  const bigrams = frequentBigrams(pages.map((p) => [...p.headings, p.description ?? ""].join(" ")).concat(input.description), 1, 15);
+  const FILLER = /\b(across|through|around|within|without|via|per|toward|towards|among|between|during|delivered|offering|providing)\b/;
+  const bigrams = frequentBigrams(pages.map((p) => [...p.headings, p.description ?? ""].join(" ")).concat(input.description), 1, 15).filter((b) => !FILLER.test(b));
   const descTokens = tokenize(input.description).filter((t) => t.length > 3);
   const keywords = [...new Set([...top.terminology.slice(0, 4), ...(second?.terminology.slice(0, 2) ?? []), ...bigrams.slice(0, 4)])].slice(0, 10);
   const pricing = corpus.match(/(?:[$£€₦₹¥]|ngn|usd|gbp|eur|kes|ghs|zar|inr)\s?\d[\d,.]*\s*(?:\/|per)\s*(?:mo|month|year|yr|user|seat|request|call|hour|session|night)\b/i)?.[0] ?? null;

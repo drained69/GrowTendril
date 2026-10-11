@@ -6,6 +6,7 @@ import { startOfUtcDay } from "@/lib/time";
 import { walletBalances, walletIsLive } from "@/server/integrations/circle/wallets";
 import { ARC, IS_MAINNET } from "@/server/integrations/circle/config";
 import type { PolicyConfig, PolicyState } from "@/server/domain/agent/policy";
+import { notifyBudget, notifyTransaction } from "@/server/domain/notifications/webhooks";
 
 /**
  * Transaction state machine. Every transition is validated and recorded in
@@ -56,10 +57,24 @@ export async function transition(db: DB, txId: string, to: TxState, patch: Parti
     .update(s.transactions)
     .set({ ...patch, state: to, updatedAt: new Date() })
     .where(and(eq(s.transactions.id, txId), eq(s.transactions.state, from)))
-    .returning({ id: s.transactions.id });
+    .returning();
   if (!updated.length) return false;
   await db.insert(s.transactionEvents).values({ id: newId(), transactionId: txId, fromState: from, toState: to, note: note ?? null });
+  await afterTransition(db, updated[0], to);
   return true;
+}
+
+/** Notifications for a committed transition. They never block or fail the transition itself. */
+async function afterTransition(db: DB, tx: typeof s.transactions.$inferSelect, to: TxState) {
+  try {
+    if (to === "SETTLED" || to === "FAILED") await notifyTransaction(db, tx, to);
+    if (to === "AUTHORIZED" && tx.missionId && tx.budgetCategory !== "treasury") {
+      const [m] = await db.select({ name: s.missions.name, budgetMicro: s.missions.budgetMicro }).from(s.missions).where(eq(s.missions.id, tx.missionId));
+      if (m) await notifyBudget(db, { projectId: tx.projectId, missionId: tx.missionId, missionName: m.name, budgetMicro: m.budgetMicro, spentMicro: (await missionSpend(db, tx.missionId)).spent });
+    }
+  } catch (e) {
+    console.error("[growtendril webhooks]", (e as Error).message);
+  }
 }
 
 export async function createTransaction(db: DB, v: Omit<typeof s.transactions.$inferInsert, "id" | "state">): Promise<{ tx: typeof s.transactions.$inferSelect; duplicate: boolean }> {

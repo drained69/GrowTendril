@@ -10,6 +10,7 @@ import { getWallet, depositToGateway, walletIsLive } from "@/server/integrations
 import { txExplorerUrl } from "@/server/integrations/circle/config";
 import { microToDecimal } from "@/lib/money";
 import type { Job } from "@/server/jobs/queue";
+import { deliver, pruneDeliveries } from "@/server/domain/notifications/webhooks";
 
 /** One handler per job kind. Handlers must be idempotent: a retried job may run again. */
 export const HANDLERS: Record<string, (db: DB, job: Job) => Promise<Record<string, unknown>>> = {
@@ -75,6 +76,14 @@ export const HANDLERS: Record<string, (db: DB, job: Job) => Promise<Record<strin
     const cutoff = new Date(Date.now() - 7 * 86_400_000);
     const gone = await db.delete(s.users).where(and(eq(s.users.isGuest, true), lt(s.users.createdAt, cutoff))).returning({ id: s.users.id });
     await db.delete(s.jobs).where(and(sql`${s.jobs.status} in ('done','failed')`, lt(s.jobs.createdAt, new Date(Date.now() - 30 * 86_400_000))));
+    await pruneDeliveries(db, new Date(Date.now() - 30 * 86_400_000));
     return { guestsRemoved: gone.length };
+  },
+
+  /** One notification delivery. Throwing schedules a retry; the last attempt records the failure. */
+  async webhook(db, job) {
+    const id = String(job.payload?.deliveryId ?? "");
+    const r = await deliver(db, id, { final: job.attempts >= job.maxAttempts });
+    return { delivered: r.ok, status: r.status, ...(r.skipped ? { skipped: r.skipped } : {}), ...(r.error ? { error: r.error } : {}) };
   },
 };

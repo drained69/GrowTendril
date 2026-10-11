@@ -8,7 +8,7 @@ import type { CompetitorRecord } from "@/server/domain/intel/competitors";
 import { Badge, Button, ExternalLink, Field, Input, Select } from "@/components/ui";
 import { toast } from "@/components/ui/toast";
 
-const SCOPE_LABEL = { local: "Local — one city or area", national: "National — the whole country", international: "International" } as const;
+const SCOPE_LABEL = { local: "Local", national: "National", international: "International" } as const;
 
 function place(l: MarketLocation | null): string {
   if (!l) return "Not detected yet";
@@ -88,7 +88,7 @@ export function MarketCompetitors({ location, competitors, countries, disabled }
           <span className="text-[11px] text-ink-4">{competitors.length} shown · each one checked before it is listed</span>
         </div>
         {competitors.length === 0 ? (
-          <p className="px-4 pb-3.5 text-[12px] text-ink-3">None verified yet. Set your market and search, or add names in the Competitors field below.</p>
+          <p className="px-4 pb-3.5 text-[12px] text-ink-3">None verified yet. Set your market and search, or type names into the profile's Competitors field.</p>
         ) : (
           <ul className="divide-y divide-line">
             {competitors.map((c) => (

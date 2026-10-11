@@ -12,6 +12,7 @@ import { EVENT_LABEL, utmSlug, type ConversionEventType } from "@/server/domain/
 import { ARC } from "@/server/integrations/circle/config";
 import { capReward, detectDisclosure, normalizeHandle, PLATFORM_LABEL, planCampaign, qualityScore, releaseToWinners, validPostUrl } from "@/server/domain/growth/campaign-plan";
 import { getEconomics, planRules } from "@/server/domain/growth/economics";
+import { notify } from "@/server/domain/notifications/webhooks";
 
 /**
  * CREATOR CAMPAIGNS — opt-in, measurable creator programs.
@@ -157,6 +158,14 @@ export async function closeCampaign(db: DB, a: { projectId: string; campaignId: 
   await db.update(s.creatorCampaigns).set({ status: "closed", updatedAt: new Date() }).where(eq(s.creatorCampaigns.id, c.id));
   await db.update(s.experiments).set({ status: (actions[0]?.n ?? 0) >= (exp?.successTarget ?? 1) ? "succeeded" : "stopped", updatedAt: new Date() }).where(eq(s.experiments.id, c.experimentId));
   await audit(db, { projectId: a.projectId, actorType: "user", actorId: a.userId, action: "campaign.close", target: c.id });
+  const ledger = await campaignLedger(db, c);
+  await notify(db, a.projectId, {
+    event: "campaign.closed",
+    key: `campaign.closed:${c.id}`,
+    summary: `Campaign "${c.name}" closed with ${actions[0]?.n ?? 0} tracked action(s)`,
+    data: { campaign_id: c.id, name: c.name, actions: actions[0]?.n ?? 0, target: exp?.successTarget ?? null, ledger: ledger as unknown as Record<string, unknown> },
+    path: `/app/campaigns/${c.id}`,
+  });
 }
 
 // ───────────────────────────── creators ─────────────────────────────
@@ -214,6 +223,13 @@ export async function joinCampaign(db: DB, joinToken: string, j: JoinInput): Pro
     })
     .returning({ id: s.campaignParticipants.id });
   await audit(db, { projectId: c.projectId, actorType: "system", action: "campaign.apply", target: c.id, data: { provider: j.provider, handle } });
+  await notify(db, c.projectId, {
+    event: "creator.applied",
+    key: `creator.applied:${p.id}`,
+    summary: `@${handle} (${j.provider}) applied to "${c.name}"`,
+    data: { campaign_id: c.id, participant_id: p.id, provider: j.provider, handle },
+    path: `/app/campaigns/${c.id}`,
+  });
   return { accessToken, participantId: p.id };
 }
 
@@ -289,6 +305,13 @@ export async function submitPost(db: DB, accessToken: string, a: { url: string; 
     .onConflictDoNothing({ target: [s.campaignPosts.campaignId, s.campaignPosts.url] })
     .returning({ id: s.campaignPosts.id });
   if (!row) throw new Error("That post was already submitted");
+  await notify(db, c.projectId, {
+    event: "creator.post_submitted",
+    key: `creator.post_submitted:${row.id}`,
+    summary: `@${p.handle} submitted a post for "${c.name}" — review it`,
+    data: { campaign_id: c.id, post_id: row.id, participant_id: p.id, handle: p.handle, url },
+    path: `/app/campaigns/${c.id}`,
+  });
   return row.id;
 }
 

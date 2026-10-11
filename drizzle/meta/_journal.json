@@ -36,6 +36,13 @@
       "when": 1791759623005,
       "tag": "0004_profile_market",
       "breakpoints": true
+    },
+    {
+      "idx": 5,
+      "version": "7",
+      "when": 1791760009914,
+      "tag": "0005_webhooks",
+      "breakpoints": true
     }
   ]
 }

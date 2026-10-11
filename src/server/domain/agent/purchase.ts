@@ -16,6 +16,7 @@ import { parseFinancialAction } from "@/server/domain/agent/actions";
 import { evaluatePolicy } from "@/server/domain/agent/policy";
 import { createTransaction, loadPolicy, loadPolicyState, transition } from "@/server/domain/agent/ledger";
 import { recordDecision, updateDecision, writeReceipt } from "@/server/domain/agent/decisions";
+import { notifyApproval } from "@/server/domain/notifications/webhooks";
 
 /**
  * x402 AUTONOMOUS PURCHASING
@@ -167,8 +168,10 @@ export async function purchaseCompanyIntel(db: DB, p: { projectId: string; compa
   }
   if (verdict.verdict === "APPROVAL_REQUIRED") {
     await transition(db, tx.id, "AWAITING_APPROVAL");
-    await db.insert(s.approvals).values({ id: newId(), projectId: p.projectId, decisionId: decision.id, transactionId: tx.id, title: `Buy data on ${company.name}`, details: { service: pick.vendor.name, reasons, policy: verdict.checks.filter((c) => !c.passed) }, requestedMicro: priceMicro });
+    const approvalId = newId();
+    await db.insert(s.approvals).values({ id: approvalId, projectId: p.projectId, decisionId: decision.id, transactionId: tx.id, title: `Buy data on ${company.name}`, details: { service: pick.vendor.name, reasons, policy: verdict.checks.filter((c) => !c.passed) }, requestedMicro: priceMicro });
     await writeReceipt(db, decision.id);
+    await notifyApproval(db, { projectId: p.projectId, approvalId, title: `Buy data on ${company.name}`, requestedMicro: priceMicro });
     return { decisionId: decision.id, bought: false, state: "AWAITING_APPROVAL", confidenceBefore: before, confidenceAfter: null, priceMicro, settlementId: null, message: "Purchase needs founder approval" };
   }
 

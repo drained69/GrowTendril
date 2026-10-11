@@ -31,18 +31,19 @@ GrowTendril optimizes one number: **verified growth per dollar spent.** It does 
 6. [How the intelligence works](#how-the-intelligence-works)
 7. [Creator campaigns](#creator-campaigns)
 8. [Measuring results](#measuring-results)
-9. [The policy engine](#the-policy-engine)
-10. [Payments on Circle and Arc](#payments-on-circle-and-arc)
-11. [Architecture](#architecture)
-12. [Configuration](#configuration)
-13. [Deployment](#deployment)
-14. [Testnet and mainnet](#testnet-and-mainnet)
-15. [Security and privacy](#security-and-privacy)
-16. [Verification and testing](#verification-and-testing)
-17. [Troubleshooting](#troubleshooting)
-18. [Known limitations](#known-limitations)
-19. [Roadmap](#roadmap)
-20. [Contributing](#contributing)
+9. [Notifications](#notifications)
+10. [The policy engine](#the-policy-engine)
+11. [Payments on Circle and Arc](#payments-on-circle-and-arc)
+12. [Architecture](#architecture)
+13. [Configuration](#configuration)
+14. [Deployment](#deployment)
+15. [Testnet and mainnet](#testnet-and-mainnet)
+16. [Security and privacy](#security-and-privacy)
+17. [Verification and testing](#verification-and-testing)
+18. [Troubleshooting](#troubleshooting)
+19. [Known limitations](#known-limitations)
+20. [Roadmap](#roadmap)
+21. [Contributing](#contributing)
 
 ---
 
@@ -153,7 +154,7 @@ Open <http://localhost:3000> and choose **See it work**. This creates a private 
 
 **Hearth & Wick** sells hand-poured soy candles online. The owner has 400 USDC to test growth and wants 100 paying customers.
 
-1. **Onboarding.** She enters the shop URL. GrowTendril reads the public pages and classifies the product as *E-commerce and consumer products*, with target users such as gift buyers and brand-loyal customers. She edits the competitors it could not know.
+1. **Onboarding.** She enters the shop URL. GrowTendril reads the homepage and its About, Contact and Pricing pages, classifies the product as *E-commerce and consumer products*, and places the shop in the United Kingdom from its `.co.uk` domain, `+44` phone number and prices in pounds, showing that evidence. Competitors come from a web search scoped to the UK; a US candle brand that turned up is dropped because its own site places it in another country.
 2. **Mission.** *First 100 Customers*, goal event `purchase`, 30 days, 400 USDC.
 3. **Economics.** In *Settings → Economics* she enters what a customer is worth (40 USDC) and her margin (60%). Until her store has sent enough purchase events, the action-to-customer rate is shown as **No data** and the planner will not invent one.
 4. **Integrations.** She connects Reddit and YouTube. A scan finds public threads such as *"any recommendations for a non-toxic soy candle?"*, tagged as recommendation requests, with the thread linked as evidence.
@@ -204,7 +205,17 @@ Overview, Daily brief, Discover, Customers, Narratives, Creators, Growth graph, 
 
 ## How the intelligence works
 
-Everything below is deterministic code. Claude is optional and only used for reading your product pages and drafting creator briefs; it never scores, attributes or pays.
+Everything below is deterministic code. Claude is optional and only used for reading your product pages, searching the web for competitors and drafting creator briefs; it never scores, attributes or pays.
+
+### Product profile, market and competitors
+
+- **Reading the site.** The homepage plus up to three same-site About, Contact and Pricing pages it links to, honouring `robots.txt`. The reader understands meta tags in any attribute order, every HTML entity, non-UTF-8 pages, schema.org JSON-LD, page language and `hreflang`. A page that renders only with JavaScript is reported as such rather than guessed at.
+- **Grounding.** After Claude drafts the profile, integrations, named competitors and price figures that do not appear in the pages are removed, and the note says how many were dropped.
+- **Market.** Where the business sells is inferred from its own pages: schema.org addresses and `areaServed`, `geo.region` tags, country-code domains (vanity domains such as `.io` and `.ai` are ignored), phone prefixes, page locale and currency. Each signal is weighted, the evidence is shown, and the result carries a confidence. Local, national and international businesses are told apart. You can set or correct the market at onboarding or in *Settings → Market & competitors*, and a market you set survives re-reading the site.
+- **Competitors.** Two sources, each labelled:
+  - *Named on your site*: comparison pages (`/vs/…`, `/compare/…`, `…-alternative`) and phrases such as "alternative to X".
+  - *Web search*: Claude's web search, with your market as the search location. A candidate is kept only if it appears in the results the search actually returned, its website loads (sites that block automated readers are kept and marked), it is not your own site, and its own pages do not place it in a different country. Those whose site confirms the same market are marked **in your market**.
+  You can add or remove competitors by hand; yours are labelled *added by you*.
 
 ### Customer discovery
 
@@ -320,6 +331,26 @@ The budget shows total, spent (committed and settled), committed (reserved by li
 
 ---
 
+## Notifications
+
+*Integrations → Notifications* sends events to Slack, Discord or any HTTPS endpoint, so nobody has to watch the dashboard.
+
+| Event | When |
+|---|---|
+| `approval.requested` | A payment or reallocation is waiting for approval |
+| `payment.settled` | A payout, data purchase or deposit settled on-chain |
+| `payment.failed` | A payment could not be completed |
+| `budget.threshold` | A mission has used 80% or 100% of its budget (each sent once) |
+| `creator.applied` | A creator applied to a campaign (off by default) |
+| `creator.post_submitted` | A creator submitted a post for review (off by default) |
+| `campaign.closed` | A creator campaign was closed, with its results |
+
+- **Formats.** Slack and Discord get a one-line message with a link into the app (set `APP_URL`). User-supplied text is escaped for Slack and Discord mentions are disabled, so a creator handle cannot ping a channel. JSON endpoints get `{ id, type, created_at, network, workspace, summary, url, data }`.
+- **Signing.** Each request carries `x-growtendril-signature: t=<unix>,v1=<hex>`, the same HMAC scheme as inbound events, with a per-endpoint secret shown once. `x-growtendril-event-id` is stable across retries, so receivers can de-duplicate.
+- **Delivery.** Through the job queue, via the same SSRF guard as page reading, with redirects not followed. Non-2xx responses are retried 5 times over about 3 hours. An endpoint is switched off after 5 deliveries in a row fail every retry, or at once on `410 Gone`. *Send test* checks an endpoint immediately, and failed deliveries can be resent from the log.
+- **Never in the way.** A notification failure never blocks or fails the payment, approval or campaign action that triggered it.
+- **Credentials.** Slack and Discord webhook URLs work as passwords, so the URL and signing secret are encrypted at rest; the UI only ever shows `hooks.slack.com/…1234`.
+
 ## The policy engine
 
 `src/server/domain/agent/policy.ts` is a pure function of `(action, policy, state)`. Free-form text cannot reach it: every action is parsed by a strict schema first.
@@ -434,7 +465,7 @@ flowchart LR
 | Operator | Runs the loop and decides what happens next | No |
 | Brief writer | Optional creator drafts, marked as suggestions | Optional (Claude) |
 
-Without an Anthropic key, product analysis falls back to rules that recognise common business categories (SaaS, e-commerce, local services, education, health, finance, developer tooling, Web3 and more) and leave competitors and use cases for you to fill in.
+Without an Anthropic key, product analysis falls back to rules that recognise common business categories (SaaS, e-commerce, local services, education, health, finance, developer tooling, Web3 and more). Market detection and competitors your site names itself still work; web competitor search needs Claude, and the UI says so instead of guessing.
 
 ### Source layout
 
@@ -475,7 +506,7 @@ The web app, `npm run doctor`, `npm run wallet:setup`, `npm run worker` and `npm
 | --- | --- |
 | `SESSION_SECRET` | Signs sessions (32+ characters). Required in production |
 | `ENCRYPTION_KEY` | AES-256-GCM key for stored integration credentials (`openssl rand -hex 32`). Required in production |
-| `APP_URL` | Public base URL, used in invite links |
+| `APP_URL` | Public base URL, used in invite links and notification links |
 | `DATABASE_URL` | Postgres connection. Empty means embedded PGlite |
 | `GROWTENDRIL_NETWORK` | `testnet` (default) or `mainnet`. Selects every chain, contract and Circle endpoint. The Circle API key must match: `TEST_API_KEY:…` on testnet, `LIVE_API_KEY:…` on mainnet |
 | `CIRCLE_API_KEY`, `CIRCLE_ENTITY_SECRET` | Circle custody for per-workspace agent wallets (a live key on mainnet) |
@@ -484,7 +515,7 @@ The web app, `npm run doctor`, `npm run wallet:setup`, `npm run worker` and `npm
 | `SIGNALS_SELLER_ADDRESS`, `SIGNALS_API_URL` | The sample x402 seller and where the app reaches it |
 | `DEMO_PAYOUT_ADDRESS` | Where demo creator payouts go on testnet |
 | `ONRAMP_API_KEY` | Optional "Add budget" onramp |
-| `ANTHROPIC_API_KEY`, `GROWTENDRIL_CLAUDE_MODEL` | Optional Claude for product reading and creator drafts |
+| `ANTHROPIC_API_KEY`, `GROWTENDRIL_CLAUDE_MODEL` | Optional Claude for product reading, competitor web search and creator drafts |
 | `GITHUB_TOKEN`, `X_BEARER_TOKEN`, `REDDIT_CLIENT_ID`, `REDDIT_CLIENT_SECRET`, `REDDIT_USER_AGENT`, `YOUTUBE_API_KEY`, `RSS_FEEDS` | Platform-default source credentials. Each workspace can store its own under *Integrations*; workspace keys win |
 | `GROWTENDRIL_WORKER`, `WORKER_INTERVAL_MS` | Turn the in-process worker off, and set its poll interval |
 | `CRON_SECRET` | Authorizes the external scheduler endpoint |
@@ -581,13 +612,13 @@ Checklist: use a fresh database; set `GROWTENDRIL_NETWORK=mainnet`, `SESSION_SEC
 
 **Security**
 - **Secrets stay server-side.** The Circle API key, entity secret and any development key are read only in server code. The UI and the AI model never see them.
-- **Encryption at rest.** Per-workspace credentials are AES-256-GCM encrypted with the workspace and provider bound as additional authenticated data, and are never sent back to the browser. Invite tokens are stored as sha256 hashes.
+- **Encryption at rest.** Per-workspace credentials and notification endpoints (URL and signing secret) are AES-256-GCM encrypted with the workspace and provider bound as additional authenticated data, and are never sent back to the browser. Invite tokens are stored as sha256 hashes.
 - **Authorization.** Signed httpOnly session cookies (HMAC-SHA256), scrypt password hashing, and membership plus role checks on every action and page. Guest and demo workspaces cannot change integrations.
 - **Validation.** Strict schemas on every financial action, form and webhook body.
 - **Duplicate-payment protection.** Unique idempotency keys and a conditional execution lock.
-- **SSRF protection.** Every user-supplied URL (product pages, feeds) is fetched through a guard that allows only public http and https targets, resolves DNS inside the socket lookup, re-validates each redirect and caps response size.
+- **SSRF protection.** Every user-supplied URL (product pages, feeds, competitor sites, notification endpoints) is fetched through a guard that allows only public http and https targets, resolves DNS inside the socket lookup, re-validates each redirect and caps response size.
 - **Rate limits** on login (including a per-email limit), signup, demo entry, agent runs, redirects, event ingestion and public campaign forms.
-- **Webhook verification.** HMAC with a five-minute window for conversion events; signature verification against Circle's published key for Circle notifications.
+- **Webhook verification.** HMAC with a five-minute window for conversion events; signature verification against Circle's published key for Circle notifications. Outbound notifications are signed with a per-endpoint secret.
 - **Headers.** A content security policy, HSTS in production, frame, content-type, referrer and permissions policies.
 - **Audit logs** for logins, policy changes, approvals, freezes and every agent decision. **Receipts** are tamper-evident: the digest is recomputed on view, and finalized receipts are never rewritten.
 
@@ -600,7 +631,7 @@ Checklist: use a fresh database; set `GROWTENDRIL_NETWORK=mainnet`, `SESSION_SEC
 
 ## Verification and testing
 
-**Run in CI on every push** (`.github/workflows/ci.yml`): typecheck, the 67 unit and integration tests, a production build and an offline run of the full 8-step agent loop in simulation. Typecheck and tests run again under `GROWTENDRIL_NETWORK=mainnet`, so network-coupled code is exercised on both networks.
+**Run in CI on every push** (`.github/workflows/ci.yml`): typecheck, the 99 unit and integration tests, a production build and an offline run of the full 8-step agent loop in simulation. Typecheck and tests run again under `GROWTENDRIL_NETWORK=mainnet`, so network-coupled code is exercised on both networks.
 
 The tests cover policy verdicts (allow, approval, deny, deny-after-approval, balance and recipient rules), schema rejection of free-form actions, scoring, narrative lifecycle, learning and reallocation, experiment tranches, signing and rate limits, roles and invites, encrypted credentials, SSRF-safe fetching, the job queue on a real in-memory Postgres, creator-campaign planning, rewards, holdback and release, and an **offline x402 round-trip** in which Circle's payment scheme signs against a mock seller using the exact `PAYMENT-REQUIRED`, `Payment-Signature` and `PAYMENT-RESPONSE` wire format.
 

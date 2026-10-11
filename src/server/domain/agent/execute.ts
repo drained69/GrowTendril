@@ -17,6 +17,7 @@ import { createTransaction, loadPolicy, loadPolicyState, transition, type TxStat
 import { recordDecision, updateDecision, writeReceipt } from "@/server/domain/agent/decisions";
 import { executePurchase } from "@/server/domain/agent/purchase";
 import { applyReallocation } from "@/server/domain/growth/learning-run";
+import { notifyApproval } from "@/server/domain/notifications/webhooks";
 
 type Mode = (typeof s.dataMode.enumValues)[number];
 
@@ -149,6 +150,7 @@ export async function proposeFinancialAction(
       })
       .returning({ id: s.approvals.id });
     await writeReceipt(db, decision.id);
+    await notifyApproval(db, { projectId: p.projectId, approvalId: ap.id, title: p.title, requestedMicro: verdict.amountMicro });
     log("policy", `Approval required: ${verdict.checks.filter((c) => !c.passed).map((c) => c.rule).join(", ")}`);
     return { decisionId: decision.id, verdict: "APPROVAL_REQUIRED", state: "AWAITING_APPROVAL", approvalId: ap.id, message: "Sent to Approval Inbox" };
   }

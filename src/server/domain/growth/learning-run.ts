@@ -11,6 +11,7 @@ import { recordDecision, writeReceipt } from "@/server/domain/agent/decisions";
 import type { Logger } from "@/server/domain/intel/analyze";
 import { missionPerformance } from "@/server/domain/growth/attribution";
 import { evaluateExperiments, planReallocation, type Reallocation } from "@/server/domain/growth/learning";
+import { notifyApproval } from "@/server/domain/notifications/webhooks";
 
 /**
  * BUDGET AGENT — measured results in, reallocation out. Findings come from the ledger and
@@ -68,8 +69,12 @@ export async function runLearning(db: DB, p: { projectId: string; missionId: str
     dataMode: mode,
   });
   if (verdict.verdict === "ALLOW") await applyReallocation(db, p.projectId, p.missionId, decision.id, moves, findings);
-  else if (verdict.verdict === "APPROVAL_REQUIRED")
-    await db.insert(s.approvals).values({ id: newId(), projectId: p.projectId, decisionId: decision.id, title: `Reallocate ${fmtUsdc(total)} between experiments`, details: { moves, findings, policy: verdict.checks.filter((c) => !c.passed) }, requestedMicro: total });
+  else if (verdict.verdict === "APPROVAL_REQUIRED") {
+    const approvalId = newId();
+    const title = `Reallocate ${fmtUsdc(total)} between experiments`;
+    await db.insert(s.approvals).values({ id: approvalId, projectId: p.projectId, decisionId: decision.id, title, details: { moves, findings, policy: verdict.checks.filter((c) => !c.passed) }, requestedMicro: total });
+    await notifyApproval(db, { projectId: p.projectId, approvalId, title, requestedMicro: total });
+  }
   await writeReceipt(db, decision.id);
   log("budget", `Reallocation of ${fmtUsdc(total)} → ${verdict.verdict}`);
   return { findings, moves, decisionId: decision.id, verdict: verdict.verdict };
