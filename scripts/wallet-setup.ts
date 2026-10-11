@@ -29,11 +29,22 @@ if (args.includes("--local")) {
     process.exit(1);
   }
   const { registerEntitySecretCiphertext } = await import("@circle-fin/developer-controlled-wallets");
-  // An entity secret is 32 random bytes, hex-encoded (the SDK's generateEntitySecret only prints one).
   const entitySecret = randomBytes(32).toString("hex");
-  await registerEntitySecretCiphertext({ apiKey, entitySecret, recoveryFileDownloadPath: "." });
-  console.log(`CIRCLE_ENTITY_SECRET=${entitySecret}`);
-  console.log("Registered with Circle. A recovery file was saved here — back it up and keep it out of git.");
+  try {
+    await registerEntitySecretCiphertext({ apiKey, entitySecret, recoveryFileDownloadPath: "." });
+    console.log(`CIRCLE_ENTITY_SECRET=${entitySecret}`);
+    console.log("Registered with Circle. A recovery file was saved here — back it up and keep it out of git.");
+  } catch (err: unknown) {
+    const status = (err as { response?: { status?: number } })?.response?.status;
+    const code = (err as { response?: { data?: { code?: number } } })?.response?.data?.code;
+    if (status === 409 || code === 156015) {
+      console.log("Your entity secret is already registered with Circle — no action needed.");
+      console.log("Keep the CIRCLE_ENTITY_SECRET value you already have in .env.local.");
+      console.log("If you lost it, generate a new API key at https://console.circle.com and re-run this command.");
+    } else {
+      throw err;
+    }
+  }
 } else {
   console.log("Usage: npm run wallet:setup -- --entity-secret | --local");
 }
