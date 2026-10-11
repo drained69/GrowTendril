@@ -106,7 +106,7 @@ export async function analyzeProduct(input: ProductInput): Promise<AnalysisResul
   const ai = await claudeStructured({
     schema: ProductProfileSchema,
     system:
-      "You are the Product Analyst inside GrowthOS. Build a factual product profile strictly from the provided sources. " +
+      "You are the Product Analyst inside GrowTendril. Build a factual product profile strictly from the provided sources. " +
       "Never invent competitors, integrations, customers or pricing that the sources do not state or clearly imply; use empty arrays or null instead. " +
       "Keywords must be short search phrases people actually use in public conversations about this space.",
     user: material,
@@ -143,7 +143,7 @@ export async function proposeIcp(profile: ProductProfile, productName: string): 
   const ai = await claudeStructured({
     schema: IcpSchema,
     system:
-      "You are the Product Analyst inside GrowthOS. Propose one primary and up to three secondary Ideal Customer Profiles for the product. " +
+      "You are the Product Analyst inside GrowTendril. Propose one primary and up to three secondary Ideal Customer Profiles for the product. " +
       "Each ICP needs public, observable signals that would show a company is in-market now (launches, hiring, questions, migrations). Be specific; avoid generic personas.",
     user: `PRODUCT: ${productName}\nPROFILE:\n${JSON.stringify(profile, null, 2)}`,
     effort: "low",

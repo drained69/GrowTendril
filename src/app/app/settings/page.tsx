@@ -43,7 +43,7 @@ export default async function Settings() {
   const isOwner = role === "owner";
   // Mirrors deleteWorkspaceAction, which re-checks (including in-flight payments).
   const deleteBlocked =
-    wallet && (wallet.address || wallet.provider !== "unconfigured") ? "This workspace has an agent wallet; deleting it would lose GrowthOS's record of that wallet and any USDC in it. Freeze the wallet instead." : undefined;
+    wallet && (wallet.address || wallet.provider !== "unconfigured") ? "This workspace has an agent wallet; deleting it would lose GrowTendril's record of that wallet and any USDC in it. Freeze the wallet instead." : undefined;
   const hasSources = !!(project.website || project.docsUrl || project.githubUrl);
   const reprofileBlocked = demo ? "Demo workspaces are fictional and aren't re-read" : !hasSources ? "Add a website, docs or GitHub URL above first" : undefined;
 
@@ -93,7 +93,7 @@ export default async function Settings() {
           <Card id="profile" className="scroll-mt-4">
             <CardHeader
               title="Product intelligence profile"
-              description="What GrowthOS believes your product is. Edit anything that is wrong — search terms here drive discovery."
+              description="What GrowTendril believes your product is. Edit anything that is wrong — search terms here drive discovery."
               icon={<FileText />}
               action={
                 profile && (

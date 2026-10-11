@@ -110,7 +110,7 @@ export default async function Experiments() {
         <EmptyState
           icon={<FlaskConical />}
           title="No experiments yet"
-          description="GrowthOS creates them once an opportunity crosses the confidence threshold — or create one yourself from any opportunity."
+          description="GrowTendril creates them once an opportunity crosses the confidence threshold — or create one yourself from any opportunity."
           action={<LinkButton href="/app/opportunities" variant="primary">Browse opportunities</LinkButton>}
         />
       )}

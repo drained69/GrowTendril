@@ -3,7 +3,7 @@ import { escapeRe } from "@/server/domain/intel/signals";
 
 /**
  * Product-mention analysis. Sentiment alone is not useful; we extract *what kind* of
- * feedback it is, and cluster recurring issues so GrowthOS can say "fix this before
+ * feedback it is, and cluster recurring issues so GrowTendril can say "fix this before
  * buying more traffic".
  */
 

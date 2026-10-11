@@ -9,7 +9,7 @@ import { buildUtmUrl } from "@/server/domain/growth/attribution-links";
 /**
  * KOL BRIEF — a working document for a creator, not ad copy. Every claim cites a source.
  * Drafts (X post, thread, video points…) are clearly marked as *suggestions for the creator
- * to rewrite in their own voice* — GrowthOS never posts as, or impersonates, anyone.
+ * to rewrite in their own voice* — GrowTendril never posts as, or impersonates, anyone.
  */
 
 export interface KolBrief {
@@ -94,7 +94,7 @@ export async function generateKolBrief(db: DB, kolId: string, experimentId?: str
     compensation: exp ? `${fmtUsdc(exp.budgetMicro)} in two tranches (USDC on Arc); second tranche released only if results are on track` : "To be agreed",
     drafts: [],
     draftsGeneratedBy: "template",
-    disclosure: "Drafts below are suggestions for the creator to rewrite in their own voice. GrowthOS never posts on anyone's behalf.",
+    disclosure: "Drafts below are suggestions for the creator to rewrite in their own voice. GrowTendril never posts on anyone's behalf.",
   };
 
   const ai = await claudeStructured({

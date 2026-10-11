@@ -116,7 +116,7 @@ export default async function Landing() {
               growth operator.
             </h1>
             <p className="mt-5 max-w-lg text-[16px] leading-relaxed text-ink-2">
-              Give it a product, a goal and a USDC budget. GrowthOS finds where growth is hiding, spends within the rules you set, and measures what actually converts.
+              Give it a product, a goal and a USDC budget. GrowTendril finds where growth is hiding, spends within the rules you set, and measures what actually converts.
             </p>
             <div className="mt-8 flex flex-wrap gap-3">
               <Link href={signedIn ? "/app" : "/signup"} className={buttonClass("primary", "lg")}>

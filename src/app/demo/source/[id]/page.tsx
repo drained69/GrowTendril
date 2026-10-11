@@ -23,8 +23,8 @@ export default async function DemoSource({ params }: { params: Promise<{ id: str
       ) : (
         <div className="rounded-md border border-line bg-surface p-4 text-[13px]">Fictional enrichment record returned by the bundled x402 seller for a demo company ({id}).</div>
       )}
-      <p className="mt-4 text-[12px] text-ink-3">This post, its author and its numbers are invented for the GrowthOS demo. They are stored with dataMode = DEMO and are never presented as real. Live projects link to real sources on X, GitHub, Reddit, YouTube, Hacker News and news feeds.</p>
-      <Link href="/app" className="mt-4 inline-block text-[12px] text-s1 hover:underline">← back to GrowthOS</Link>
+      <p className="mt-4 text-[12px] text-ink-3">This post, its author and its numbers are invented for the GrowTendril demo. They are stored with dataMode = DEMO and are never presented as real. Live projects link to real sources on X, GitHub, Reddit, YouTube, Hacker News and news feeds.</p>
+      <Link href="/app" className="mt-4 inline-block text-[12px] text-s1 hover:underline">← back to GrowTendril</Link>
     </div>
   );
 }

@@ -3,7 +3,7 @@ import type { SignableWallet } from "@/server/integrations/circle/signer";
 import { toMicro } from "@/lib/money";
 
 /**
- * Arc App Kit — used where it solves a GrowthOS problem:
+ * Arc App Kit — used where it solves a GrowTendril problem:
  *  SEND            approved creator/bounty/partner payments
  *  BRIDGE          move budget to the chain a payment must land on (e.g. a Base bounty)
  *  UNIFIED BALANCE one chain-abstracted view of operating capital

@@ -82,7 +82,7 @@ export default async function Company({ params }: { params: Promise<{ id: string
             <CardBody>
               <p className="text-[13px] leading-relaxed text-ink">{c.recommendedAction}</p>
             </CardBody>
-            <CardFooter>GrowthOS prepares the approach; a human decides whether and how to contact them. No automated emails, DMs, mentions or comments — ever.</CardFooter>
+            <CardFooter>GrowTendril prepares the approach; a human decides whether and how to contact them. No automated emails, DMs, mentions or comments — ever.</CardFooter>
           </Card>
         </div>
 
@@ -119,7 +119,7 @@ export default async function Company({ params }: { params: Promise<{ id: string
                 ]}
               />
               {can(role, "operate") ? (
-                <ActionButton action={purchaseIntelAction.bind(null, c.id)} label="Should GrowthOS buy more data?" variant={belowThreshold ? "primary" : "secondary"} logTitle="Data purchase decision" className="w-full" />
+                <ActionButton action={purchaseIntelAction.bind(null, c.id)} label="Should GrowTendril buy more data?" variant={belowThreshold ? "primary" : "secondary"} logTitle="Data purchase decision" className="w-full" />
               ) : (
                 <p className="text-[12px] text-ink-3">Your role can view this company but not buy data. Ask an operator or admin.</p>
               )}

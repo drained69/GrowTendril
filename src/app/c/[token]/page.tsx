@@ -24,7 +24,7 @@ export default async function JoinCampaign({ params }: { params: Promise<{ token
     return (
       <CampaignShell title="This campaign link isn’t valid" description="Check that you copied the whole link, or ask the business that shared it for a new one.">
         <LinkButton href="/" variant="secondary">
-          Go to GrowthOS
+          Go to GrowTendril
         </LinkButton>
       </CampaignShell>
     );
@@ -115,8 +115,8 @@ export default async function JoinCampaign({ params }: { params: Promise<{ token
               <p>
                 Your platform and handle, the display name, contact and pitch you choose to give, your payout address, and the time you accepted these rules. {projectName} sees all of it so they can review your application and pay you; it isn’t shown on this public page.
               </p>
-              <p>Also stored: the post links you submit, the reviewer’s scores and notes, your reward lines, and visits and actions that arrive through your tracking link. To measure observed mindshare, GrowthOS counts public posts about this topic that it collects from connected sources.</p>
-              <p>Your private contribution link is stored only as a hash — nobody, including GrowthOS, can show it to you again if you lose it.</p>
+              <p>Also stored: the post links you submit, the reviewer’s scores and notes, your reward lines, and visits and actions that arrive through your tracking link. To measure observed mindshare, GrowTendril counts public posts about this topic that it collects from connected sources.</p>
+              <p>Your private contribution link is stored only as a hash — nobody, including GrowTendril, can show it to you again if you lose it.</p>
             </CardBody>
           </Card>
         </div>

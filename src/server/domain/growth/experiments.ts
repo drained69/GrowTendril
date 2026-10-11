@@ -51,7 +51,7 @@ export async function experimentPayee(db: DB, exp: Experiment) {
     ? null
     : kol
       ? `@${kol.handle} has no payout address — add one on the creator page before paying`
-      : `No payee for this ${exp.channel} experiment — GrowthOS only pays to a creator's saved payout address`;
+      : `No payee for this ${exp.channel} experiment — GrowTendril only pays to a creator's saved payout address`;
   return { kol, recipient, placeholder, reason };
 }
 

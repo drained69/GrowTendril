@@ -39,7 +39,7 @@ export default async function Activity() {
     <div className="space-y-4">
       <PageHeader
         title="Activity"
-        description="Every payment GrowthOS proposed — rail, state, Circle settlement ID, Arc transaction hash and explorer link — and every decision the agents made. SIMULATED rows moved nothing and carry no hashes."
+        description="Every payment GrowTendril proposed — rail, state, Circle settlement ID, Arc transaction hash and explorer link — and every decision the agents made. SIMULATED rows moved nothing and carry no hashes."
         meta={
           <>
             <ModeBadge mode={project.dataMode} />

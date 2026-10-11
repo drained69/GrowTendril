@@ -42,7 +42,7 @@ export const ARC = {
 export const GATEWAY_API = process.env.GATEWAY_API_URL ?? (IS_MAINNET ? "https://gateway-api.circle.com" : "https://gateway-api-testnet.circle.com");
 export const DISCOVERY_API = process.env.CIRCLE_DISCOVERY_URL ?? "https://api.circle.com/v2/x402/discovery/resources";
 
-/** App Kit chain identifiers GrowthOS may use, by network. */
+/** App Kit chain identifiers GrowTendril may use, by network. */
 export const TESTNET_CHAINS = ["Arc_Testnet", "Base_Sepolia", "Arbitrum_Sepolia", "Ethereum_Sepolia"] as const;
 export const MAINNET_CHAINS = ["Arc", "Base", "Arbitrum", "Ethereum"] as const;
 export type AppKitChain = (typeof TESTNET_CHAINS)[number] | (typeof MAINNET_CHAINS)[number];
@@ -73,7 +73,7 @@ export type WalletProvider = "circle_dcw" | "local_testnet" | "unconfigured";
 
 /**
  * What this deployment can provision for a workspace:
- *  - circle: Circle developer-controlled wallets. Keys live in Circle's custody; GrowthOS holds only
+ *  - circle: Circle developer-controlled wallets. Keys live in Circle's custody; GrowTendril holds only
  *    the API key + entity secret, server-side. Each workspace gets its own EOA on Arc.
  *  - local: a single server-side key from AGENT_PRIVATE_KEY. Development only and testnet only:
  *    refused on mainnet. Never sent to the browser or the LLM.

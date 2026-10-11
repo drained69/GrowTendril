@@ -4,7 +4,7 @@ import { revalidatePath } from "next/cache";
 import { saveIntegration, removeIntegration, testIntegration } from "@/server/integrations/vault";
 import { fail, guard, limited, type ActionResult } from "@/server/actions/_common";
 
-/** Guest accounts and DEMO workspaces are throwaway and public-facing: they can't store credentials or point GrowthOS at URLs. */
+/** Guest accounts and DEMO workspaces are throwaway and public-facing: they can't store credentials or point GrowTendril at URLs. */
 function sandboxed(g: { user: { isGuest: boolean }; project: { dataMode: string } }): string | null {
   if (g.user.isGuest) return "Guest accounts can't change integrations — create an account first.";
   if (g.project.dataMode === "DEMO") return "Demo workspaces can't change integrations. Set up your own workspace to connect sources.";

@@ -1,5 +1,5 @@
 /**
- * GrowthOS money-path doctor. Exercises each Circle/Arc integration in order against the real
+ * GrowTendril money-path doctor. Exercises each Circle/Arc integration in order against the real
  * network, using the SAME functions the app uses, and prints a clear PASS/FAIL per step so a first
  * live run shows exactly where (and why) it stops — instead of failing deep inside the UI.
  *
@@ -44,7 +44,7 @@ function skip(name: string, why: string) {
 async function main() {
   const { ARC, GATEWAY_API, DISCOVERY_API, platformCustody, networkInfo } = await import("../src/server/integrations/circle/config");
   const net = networkInfo();
-  console.log(`\nGrowthOS money-path doctor — ${net.name} (chain ${net.chainId})`);
+  console.log(`\nGrowTendril money-path doctor — ${net.name} (chain ${net.chainId})`);
   if (net.mainnet) console.log(`${Y}  MAINNET: real funds. --deposit and --x402 move real USDC.${X}`);
   console.log(`${D}  Gateway API ${GATEWAY_API}\n  Arc RPC     ${ARC.rpcUrl}\n  Discovery   ${DISCOVERY_API}${X}\n`);
 

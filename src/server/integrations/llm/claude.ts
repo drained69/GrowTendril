@@ -3,7 +3,7 @@ import { betaZodOutputFormat } from "@anthropic-ai/sdk/helpers/beta/zod";
 import type { z } from "zod";
 
 /**
- * Optional Claude layer. GrowthOS uses it for language tasks only (reading a product site,
+ * Optional Claude layer. GrowTendril uses it for language tasks only (reading a product site,
  * drafting a brief). It never sets scores and never triggers payments. When no key is set,
  * or a call fails, every caller falls back to deterministic logic and says so.
  */

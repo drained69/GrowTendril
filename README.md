@@ -1,8 +1,8 @@
-# GrowthOS
+# GrowTendril
 
 **Give your AI a growth goal and a budget.**
 
-GrowthOS is an autonomous growth operator for Web3 and developer products. A founder gives it a product, a target customer, a goal, a timeframe, a USDC budget and hard spending rules. GrowthOS then:
+GrowTendril is an autonomous growth operator for Web3 and developer products. A founder gives it a product, a target customer, a goal, a timeframe, a USDC budget and hard spending rules. GrowTendril then:
 
 - discovers who shows real intent,
 - maps the narratives and the voices shaping them,
@@ -20,7 +20,7 @@ It optimizes **verified growth per USDC spent**. It does not optimize followers,
 
 ## Contents
 
-[Problem](#problem) · [Solution](#solution) · [Why GrowthOS](#why-growthos) · [Architecture](#architecture) · [Running it as a product](#running-it-as-a-product) · [Agent loop](#agent-loop) · [Customer discovery](#customer-discovery) · [Narrative intelligence](#narrative-intelligence) · [KOL intelligence](#kol-intelligence) · [Creator campaigns](#creator-campaigns) · [Growth missions](#growth-missions) · [Attribution](#attribution) · [Autonomous budget](#autonomous-budget) · [Policy engine](#policy-engine) · [Circle Agent Stack](#circle-agent-stack) · [Arc App Kit](#arc-app-kit) · [Security](#security) · [Setup](#setup) · [Environment variables](#environment-variables) · [Demo](#demo) · [Testnet instructions](#testnet-instructions) · [Mainnet](#mainnet) · [Verification status](#verification-status) · [Known limitations](#known-limitations) · [Roadmap](#roadmap)
+[Problem](#problem) · [Solution](#solution) · [Why GrowTendril](#why-growtendril) · [Architecture](#architecture) · [Running it as a product](#running-it-as-a-product) · [Agent loop](#agent-loop) · [Customer discovery](#customer-discovery) · [Narrative intelligence](#narrative-intelligence) · [KOL intelligence](#kol-intelligence) · [Creator campaigns](#creator-campaigns) · [Growth missions](#growth-missions) · [Attribution](#attribution) · [Autonomous budget](#autonomous-budget) · [Policy engine](#policy-engine) · [Circle Agent Stack](#circle-agent-stack) · [Arc App Kit](#arc-app-kit) · [Security](#security) · [Setup](#setup) · [Environment variables](#environment-variables) · [Demo](#demo) · [Testnet instructions](#testnet-instructions) · [Mainnet](#mainnet) · [Verification status](#verification-status) · [Known limitations](#known-limitations) · [Roadmap](#roadmap)
 
 ---
 
@@ -36,7 +36,7 @@ Early-stage technical products don't lack tools for *doing* growth. They lack ju
 
 ## Solution
 
-GrowthOS behaves like a growth employee with a company card and strict limits:
+GrowTendril behaves like a growth employee with a company card and strict limits:
 
 | It answers… | …with |
 | --- | --- |
@@ -47,7 +47,7 @@ GrowthOS behaves like a growth employee with a company card and strict limits:
 | How much is it worth spending? | An expected-value-of-information model and the policy engine |
 | Did it work? | First-party attribution, cost per qualified conversion, and reallocation |
 
-## Why GrowthOS
+## Why GrowTendril
 
 - **It decides.** The Operator runs the loop on its own: it buys data when the information is worth more than its price, creates experiments when confidence crosses a threshold, stops losing experiments and reallocates their unspent budget.
 - **Money moves only through code, never through a prompt.** Every money movement is a Zod-validated structured action, checked by a deterministic policy engine, and run through an idempotent transaction state machine.
@@ -138,7 +138,7 @@ An LLM never sets a score, never computes attribution, and never triggers a paym
 
 ## Running it as a product
 
-GrowthOS is multi-tenant. Everything below is per **workspace** (a product being grown).
+GrowTendril is multi-tenant. Everything below is per **workspace** (a product being grown).
 
 | Capability | How it works |
 | --- | --- |
@@ -188,7 +188,7 @@ One operator cycle (**Run cycle**, autopilot, `POST /api/cron/cycle`; code in `s
 
 `src/server/domain/scoring/kol.ts` scores eight components: audience fit, topic authority, recent relevance, engagement quality (discussion ratio, not likes), narrative fit, historical product fit, authenticity signals (inflated reach, promo and speculation patterns) and campaign fit. **Follower count is not a component.** It enters only log-damped (at most +10) into topic authority. In the demo, a deeply technical engineer ranks above a 450K-follower account whose audience engagement looks inflated.
 
-The **creator brief** (`kol-brief.ts`) covers objective, why this creator, why now, audience, current narrative, core idea, product proof, a demo worth showing, angles, **claims with sources**, things to avoid, CTA, tracking link and creator freedom. Optional X / thread / video / Reels / YouTube drafts are marked as suggestions for the creator to rewrite in their own voice. GrowthOS never posts as anyone.
+The **creator brief** (`kol-brief.ts`) covers objective, why this creator, why now, audience, current narrative, core idea, product proof, a demo worth showing, angles, **claims with sources**, things to avoid, CTA, tracking link and creator freedom. Optional X / thread / video / Reels / YouTube drafts are marked as suggestions for the creator to rewrite in their own voice. GrowTendril never posts as anyone.
 
 ## Creator campaigns
 
@@ -215,7 +215,7 @@ The campaign budget is reserved from the active mission and shown as **Paid** (o
 - Every reward is capped by the creator ceiling and the campaign budget, and the reason says when a cap applied.
 - Payouts are standard `send_payment` actions: Zod → policy engine → (by default) the Approval Inbox → App Kit Send to the creator's own address. A denied or failed payout returns the rewards to "earned"; a post whose reward is being paid can't be re-reviewed.
 
-**Observed mindshare** is the share of on-topic posts (and engagement) authored by a creator, among posts GrowthOS collected from connected public sources during the window. Platforms don't expose every post (TikTok, for example, requires approved research access), so it is always labelled *observed* and shown with its sample size and sources.
+**Observed mindshare** is the share of on-topic posts (and engagement) authored by a creator, among posts GrowTendril collected from connected public sources during the window. Platforms don't expose every post (TikTok, for example, requires approved research access), so it is always labelled *observed* and shown with its sample size and sources.
 
 v1 is deliberately narrow: 5–10 creators, manual review of posts and payouts, one tracked action.
 
@@ -272,7 +272,7 @@ All APIs below were verified against the published SDK packages: their READMEs a
 
 `src/server/integrations/circle/wallets.ts` and `signer.ts` support two custody modes. **The AI never receives key material in either.**
 
-- **Circle developer-controlled wallets (recommended).** Each workspace gets its own wallet set and EOA on `ARC-TESTNET` (`createWalletSet` + `createWallets({ accountType: "EOA" })`), provisioned from the Wallet page. Keys are custodied by Circle. GrowthOS holds only the platform API key and entity secret, server-side, and signs x402 authorizations through `client.signTypedData({ walletId, data })`. Gateway deposits run as `createContractExecutionTransaction` calls (`approve`, then `deposit`).
+- **Circle developer-controlled wallets (recommended).** Each workspace gets its own wallet set and EOA on `ARC-TESTNET` (`createWalletSet` + `createWallets({ accountType: "EOA" })`), provisioned from the Wallet page. Keys are custodied by Circle. GrowTendril holds only the platform API key and entity secret, server-side, and signs x402 authorizations through `client.signTypedData({ walletId, data })`. Gateway deposits run as `createContractExecutionTransaction` calls (`approve`, then `deposit`).
 - **Server-side testnet key.** The organizer example's model (`AGENT_PRIVATE_KEY`), for local development. Refused unless `GROWTHOS_NETWORK=testnet`. It is only reachable through the policy engine.
 
 The founder kill switch (Wallet → *Freeze all spending*) makes every spend fail `WALLET_NOT_FROZEN`.
@@ -314,13 +314,13 @@ USDC in the wallet is not spendable by x402. It must be deposited into the `Gate
 
 - `/v1/company-intel` ($0.01): GitHub org activity and recent HN launches, hiring and funding, read live from public APIs.
 - `/v1/narrative-pulse` ($0.005): weekly HN story volume for a term.
-- `/v1/creator-audience` ($0.02): returns `available: false` for real creators, because no permitted public source exposes audience composition. GrowthOS reports that rather than inventing numbers.
+- `/v1/creator-audience` ($0.02): returns `available: false` for real creators, because no permitted public source exposes audience composition. GrowTendril reports that rather than inventing numbers.
 
 The fictional demo entities get fixtures tagged `dataMode: "DEMO"`.
 
 ## Arc App Kit
 
-Used where it solves a GrowthOS problem (`src/server/integrations/circle/appkit.ts`):
+Used where it solves a GrowTendril problem (`src/server/integrations/circle/appkit.ts`):
 
 | Capability | Used for |
 | --- | --- |
@@ -328,7 +328,7 @@ Used where it solves a GrowthOS problem (`src/server/integrations/circle/appkit.
 | **Bridge** | Moving budget to the chain a payment must land on (e.g. a Base Sepolia bounty): `kit.bridge(...)`, approval-gated as `treasury` |
 | **Unified Balance** | A chain-abstracted view of Gateway capital across Arc, Base Sepolia and Arbitrum Sepolia: `kit.unifiedBalance.getBalances({ sources: { address, chains }, networkType: "testnet" })` |
 | **Onramp** | Optional "Add budget": `@circle-fin/onramp-kit` session route (founder-authorized) and widget |
-| **Earn** | Recommendation only. GrowthOS computes idle capital beyond two weeks of run rate. Execution is not enabled: Earn Kit is marked "coming soon" in its README, and yield decisions are never autonomous. |
+| **Earn** | Recommendation only. GrowTendril computes idle capital beyond two weeks of run rate. Execution is not enabled: Earn Kit is marked "coming soon" in its README, and yield decisions are never autonomous. |
 | **Borrow** | Not built. The finance layer (ledger, policy, receipts, attribution history) is where a future "campaign credit" would plug in. |
 
 The adapter is `@circle-fin/adapter-circle-wallets` for Circle custody, or `@circle-fin/adapter-viem-v2` for a testnet key.
@@ -396,6 +396,8 @@ The job worker runs inside the web service. If you scale to several replicas, se
 
 See [`.env.example`](.env.example). In summary:
 
+> **Naming:** the product is GrowTendril, but existing configuration identifiers keep their original `GROWTHOS_` / `x-growthos-*` / `gos_*` names (environment variables, the signed-event headers, tracking cookies and the `gos_ref` link parameter) so deployed `.env` files and webhook senders keep working.
+
 | Variable | Purpose |
 | --- | --- |
 | `SESSION_SECRET` | Session signing (required in production) |
@@ -403,6 +405,8 @@ See [`.env.example`](.env.example). In summary:
 | `ENCRYPTION_KEY` | AES-256-GCM key for integration credentials (required in production) |
 | `GROWTHOS_NETWORK` | `testnet` (default) or `mainnet` — selects every chain, contract and Circle endpoint |
 | `ARC_RPC_URL` | Optional Arc RPC override for the selected network |
+| `GATEWAY_API_URL`, `CIRCLE_DISCOVERY_URL`, `ARC_RPC_URL` | Optional endpoint overrides (defaults come from the Circle SDK for the selected network) |
+| `GROWTHOS_CLAUDE_MODEL` | Optional Claude model override for product reading and drafts |
 | `GROWTHOS_WORKER`, `WORKER_INTERVAL_MS` | In-process job worker on/off and poll interval |
 | `DATABASE_URL` | Postgres; empty → embedded PGlite |
 | `CIRCLE_API_KEY`, `CIRCLE_ENTITY_SECRET` | Circle custody for per-workspace agent wallets |
@@ -435,7 +439,7 @@ Without a wallet, steps 2 and 6 are recorded as **SIMULATED**: the full decision
 
 1. Create a Circle developer account and a **test** API key at console.circle.com and set `CIRCLE_API_KEY`.
 2. `npm run wallet:setup -- --entity-secret` → set `CIRCLE_ENTITY_SECRET` (back up the recovery file).
-3. Sign up, create a workspace, and open **Wallet → Create agent wallet**. GrowthOS provisions a Circle wallet for that workspace. (For local development, `npm run wallet:setup -- --local` → `AGENT_PRIVATE_KEY` instead.)
+3. Sign up, create a workspace, and open **Wallet → Create agent wallet**. GrowTendril provisions a Circle wallet for that workspace. (For local development, `npm run wallet:setup -- --local` → `AGENT_PRIVATE_KEY` instead.)
 4. Fund the wallet address with Arc Testnet USDC at https://faucet.circle.com. On Arc, USDC is also the gas token.
 5. **Wallet → Deposit to Gateway** moves USDC into Gateway for x402. Arc credits deposits in about a second.
 6. Set `SIGNALS_SELLER_ADDRESS` to an Arc Testnet address you control (it receives the x402 payments), and optionally `DEMO_PAYOUT_ADDRESS`.
@@ -476,7 +480,7 @@ One setting switches the whole deployment: `GROWTHOS_NETWORK=mainnet` (default `
 - A browser pass over every page, the signup → onboarding → settings → campaign → public join flow, was done against a production build with no console or server errors.
 - Every `@circle-fin` call was compared with the installed SDK type declarations (method names, parameter shapes, response fields, decimals) and no mismatches were found. Two live-robustness gaps it surfaced (STUCK transactions, a missing Arc RPC URL) are fixed.
 
-**Not verified here:** the live calls themselves (Circle Wallets, Gateway, x402 settlement, Discovery API, Arc RPC). The build environment's network policy blocks those hosts, so nothing in this repo has moved real or test funds from here. `npm run doctor` exists to run each step against the real network on a machine that can reach them. The Agent Marketplace discovery response shape is the one call with no SDK to check against; if the live envelope differs, discovery returns no services and the bundled seller still works. GrowthOS records whatever actually happens and never fills the gap with fabricated data.
+**Not verified here:** the live calls themselves (Circle Wallets, Gateway, x402 settlement, Discovery API, Arc RPC). The build environment's network policy blocks those hosts, so nothing in this repo has moved real or test funds from here. `npm run doctor` exists to run each step against the real network on a machine that can reach them. The Agent Marketplace discovery response shape is the one call with no SDK to check against; if the live envelope differs, discovery returns no services and the bundled seller still works. GrowTendril records whatever actually happens and never fills the gap with fabricated data.
 
 ## Known limitations
 
@@ -484,7 +488,7 @@ One setting switches the whole deployment: `GROWTHOS_NETWORK=mainnet` (default `
 - **Provider coverage depends on credentials.** Without X, Reddit or YouTube keys, discovery uses GitHub and Hacker News (and RSS if configured). TikTok, Discord and Telegram are declared interfaces that report unavailable, because there's no permitted access path in this build.
 - **Entity resolution is conservative.** Companies come from explicit attribution (GitHub orgs, "Show HN"). Cross-platform creator identity is matched by handle and flagged *unverified*.
 - **Heuristic product analysis without Claude** leaves competitors and use cases for the founder to fill in, by design.
-- **Creator audience composition and mindshare.** There is no permitted public source for audience composition, so GrowthOS reports `available: false`. Campaign mindshare is *observed*: it counts only posts GrowthOS collected from connected sources, never every post.
+- **Creator audience composition and mindshare.** There is no permitted public source for audience composition, so GrowTendril reports `available: false`. Campaign mindshare is *observed*: it counts only posts GrowTendril collected from connected sources, never every post.
 - **No outbound email.** Invites produce a one-time link to share, email addresses are not verified, and there is no password reset.
 - **Sessions are stateless**, so logout clears the cookie but a copied token stays valid until it expires.
 - **PGlite is single-process.** Use Postgres (`DATABASE_URL`) for multi-instance deployments and a separate `npm run worker`. The in-memory rate limiter is per-instance.

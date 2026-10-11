@@ -70,7 +70,7 @@ export async function upsertService(db: DB, svc: { vendor: string; vendorSource:
   return row;
 }
 
-/** Map marketplace categories/text to the capabilities GrowthOS needs. */
+/** Map marketplace categories/text to the capabilities GrowTendril needs. */
 export function inferCapabilities(text: string): string[] {
   const t = text.toLowerCase();
   const caps: string[] = [];
@@ -122,7 +122,7 @@ export async function registerBundledSignalsService(db: DB) {
   ];
   for (const d of defs) {
     await upsertService(db, {
-      vendor: "GrowthOS Signals (bundled seller)",
+      vendor: "GrowTendril Signals (bundled seller)",
       vendorSource: "growthos",
       vendorCategory: "DATA",
       website: base,

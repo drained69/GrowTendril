@@ -20,7 +20,7 @@ async function disallowedPaths(origin: string): Promise<string[]> {
         const line = raw.split("#")[0].trim();
         const [k, ...rest] = line.split(":");
         const v = rest.join(":").trim();
-        if (/^user-agent$/i.test(k)) applies = v === "*" || /growthos/i.test(v);
+        if (/^user-agent$/i.test(k)) applies = v === "*" || /growtendril|growthos/i.test(v);
         else if (applies && /^disallow$/i.test(k) && v) rules.push(v);
       }
     }

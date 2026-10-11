@@ -281,7 +281,7 @@ export async function submitPost(db: DB, accessToken: string, a: { url: string; 
   const url = new URL(a.url.trim()).toString();
   const [{ n }] = await db.select({ n: sql<number>`count(*)::int` }).from(s.campaignPosts).where(eq(s.campaignPosts.participantId, p.id));
   if ((n ?? 0) >= c.maxPostsPerCreator * 3) throw new Error("You've reached the submission limit for this campaign");
-  // Match against what GrowthOS already observed from public sources (never fetched on demand).
+  // Match against what GrowTendril already observed from public sources (never fetched on demand).
   const [observed] = await db.select().from(s.socialPosts).where(and(eq(s.socialPosts.projectId, c.projectId), eq(s.socialPosts.url, url)));
   const [row] = await db
     .insert(s.campaignPosts)
@@ -604,7 +604,7 @@ export interface Mindshare {
 }
 
 /**
- * OBSERVED mindshare: among topic posts GrowthOS collected from connected public sources during the
+ * OBSERVED mindshare: among topic posts GrowTendril collected from connected public sources during the
  * campaign window, the share authored by each creator. It is a sample — platforms don't expose every
  * post — so it is always shown with its sample size and sources.
  */

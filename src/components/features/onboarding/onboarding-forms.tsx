@@ -51,7 +51,7 @@ export function ProductStep() {
           <Textarea id="ob-desc" name="description" required minLength={10} maxLength={2000} rows={3} placeholder="Usage-based billing API for developer tools…" />
         </Field>
       </div>
-      <StepFooter error={state && !state.ok ? state.error : null} note="GrowthOS reads only the public pages you list (respecting robots.txt). You can correct everything next.">
+      <StepFooter error={state && !state.ok ? state.error : null} note="GrowTendril reads only the public pages you list (respecting robots.txt). You can correct everything next.">
         <Button type="submit" variant="primary" size="md" loading={pending} icon={<Sparkles />}>
           {pending ? "Reading public pages…" : "Build product profile"}
         </Button>
@@ -246,7 +246,7 @@ export function AutonomyStep({ autopilot, demo, autonomous, approval }: { autopi
       )}
       <StepFooter note="Activating queues a first market scan right away — discovery only; it spends nothing.">
         <Button type="submit" variant="primary" size="md" loading={pending}>
-          {pending ? "Activating…" : "Activate GrowthOS"}
+          {pending ? "Activating…" : "Activate GrowTendril"}
           {!pending && <ArrowRight />}
         </Button>
       </StepFooter>

@@ -22,7 +22,7 @@ export function AuthShell({ children, title, description, footer }: { children: 
         </Link>
         <div className="relative max-w-md">
           <h2 className="text-[28px] font-semibold leading-[1.15] tracking-[-0.025em] text-ink">Give your AI a growth goal and a budget.</h2>
-          <p className="mt-3 text-[14px] leading-relaxed text-ink-2">GrowthOS finds where growth is hiding, spends USDC within your rules, and measures what actually converts.</p>
+          <p className="mt-3 text-[14px] leading-relaxed text-ink-2">GrowTendril finds where growth is hiding, spends USDC within your rules, and measures what actually converts.</p>
           <ul className="mt-8 space-y-5">
             {POINTS.map((p) => (
               <li key={p.title} className="flex gap-3">

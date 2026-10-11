@@ -87,7 +87,7 @@ export function InviteForm({ options, defaultRole = "member" }: { options: RoleO
       {link && (
         <Callout tone="success" title={`Invite link for ${link.email}`}>
           <CopyField value={link.url} className="mt-2" />
-          <p className="mt-2 text-[11.5px]">Anyone with this link can join as {link.email} — GrowthOS doesn&apos;t send or verify email, so share it privately. It&apos;s single-use, expires in 7 days, and is shown only once.</p>
+          <p className="mt-2 text-[11.5px]">Anyone with this link can join as {link.email} — GrowTendril doesn&apos;t send or verify email, so share it privately. It&apos;s single-use, expires in 7 days, and is shown only once.</p>
         </Callout>
       )}
     </div>

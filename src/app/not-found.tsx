@@ -8,7 +8,7 @@ export default function NotFound() {
         <h1 className="mt-2 text-[20px] font-semibold">This page doesn’t exist</h1>
         <p className="mt-1 text-[13px] text-ink-3">It may have moved, or you may not have access to it.</p>
         <Link href="/app" className="mt-5 inline-block text-[13px] text-s1 hover:underline">
-          Back to GrowthOS →
+          Back to GrowTendril →
         </Link>
       </div>
     </div>

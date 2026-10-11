@@ -181,7 +181,7 @@ export async function reprofileAction(): Promise<ActionResult> {
 
 /**
  * Permanently deletes the workspace (owners only; every child row cascades). Refused while it
- * holds an agent wallet or has payments in flight: deleting would drop GrowthOS's only record of
+ * holds an agent wallet or has payments in flight: deleting would drop GrowTendril's only record of
  * a wallet that may still hold USDC.
  */
 export async function deleteWorkspaceAction(confirmName: string): Promise<ActionResult> {
@@ -190,7 +190,7 @@ export async function deleteWorkspaceAction(confirmName: string): Promise<Action
     if (confirmName.trim() !== project.name) return { ok: false, error: "Type the workspace name exactly to confirm" };
     const [wallet] = await db.select({ provider: s.wallets.provider, address: s.wallets.address }).from(s.wallets).where(eq(s.wallets.projectId, project.id));
     if (wallet && (wallet.address || wallet.provider !== "unconfigured"))
-      return { ok: false, error: "This workspace has an agent wallet. Deleting it would lose GrowthOS's record of that wallet and any USDC in it — freeze the wallet instead, or contact the operator of this deployment." };
+      return { ok: false, error: "This workspace has an agent wallet. Deleting it would lose GrowTendril's record of that wallet and any USDC in it — freeze the wallet instead, or contact the operator of this deployment." };
     const [inflight] = await db
       .select({ n: sql<number>`count(*)::int` })
       .from(s.transactions)

@@ -47,7 +47,7 @@ export async function runCycle(db: DB, projectId: string, opts: { trigger?: "man
     if (settle.checked) log("operator", `Checked ${settle.checked} in-flight settlement(s), ${settle.updated} updated`);
 
     if (!mission) {
-      log("operator", "No active mission — nothing to spend against. Create one to let GrowthOS act.");
+      log("operator", "No active mission — nothing to spend against. Create one to let GrowTendril act.");
     } else {
       // Product friction gates paid acquisition.
       const blocking = await db.select().from(s.productIssues).where(and(eq(s.productIssues.projectId, projectId), eq(s.productIssues.blocksAcquisition, true)));

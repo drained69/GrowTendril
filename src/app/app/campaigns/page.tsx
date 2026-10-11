@@ -11,7 +11,7 @@ export const metadata = { title: "Creator campaigns" };
 
 const STEPS = [
   "You set the action you want, the most one is worth, and a test budget.",
-  "GrowthOS plans a two-week test and explains every number.",
+  "GrowTendril plans a two-week test and explains every number.",
   "Creators opt in through a public link and see the exact rules before posting.",
   "You review posts against a rubric; verified actions arrive through each creator’s own link.",
   "Payouts go through your spend policy and approval inbox, with the reason for every line.",

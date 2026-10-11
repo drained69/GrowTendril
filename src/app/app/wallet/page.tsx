@@ -305,7 +305,7 @@ function WalletSetup({ custody, manage, demo }: { custody: "circle" | "local" | 
         <CardBody className="space-y-4">
           {custody === "circle" ? (
             <Callout tone="info" title="Circle developer-controlled wallets">
-              Keys live in Circle’s custody. GrowthOS holds only the API key and entity secret, server-side, and creates a dedicated EOA on {ARC.circleBlockchain} for this workspace.
+              Keys live in Circle’s custody. GrowTendril holds only the API key and entity secret, server-side, and creates a dedicated EOA on {ARC.circleBlockchain} for this workspace.
             </Callout>
           ) : custody === "local" ? (
             <Callout tone="warn" title="Development key (testnet only)">
@@ -380,9 +380,9 @@ function EarnCard({ weekly, idle }: { weekly: number; idle: number | null }) {
           <Stat size="sm" label="Idle beyond 2 weeks" value={idle != null ? fmtUsdc(idle, { unit: false }) : "—"} sub={idle != null ? "wallet + Gateway balance" : "balances unavailable"} tone={idle != null && idle >= 1_000_000_000 ? "good" : undefined} />
         </div>
         <p className="text-[12px] leading-relaxed text-ink-2">
-          {idle == null ? "Needs live wallet and Gateway balances." : idle >= 1_000_000_000 ? "GrowthOS would recommend placing part of this in a supported App Kit Earn vault — only with explicit founder approval." : "Not enough idle capital to justify moving funds."}
+          {idle == null ? "Needs live wallet and Gateway balances." : idle >= 1_000_000_000 ? "GrowTendril would recommend placing part of this in a supported App Kit Earn vault — only with explicit founder approval." : "Not enough idle capital to justify moving funds."}
         </p>
-        <p className="text-[11.5px] leading-relaxed text-ink-3">GrowthOS never makes yield decisions autonomously; Circle’s Earn Kit is marked “coming soon”, so execution is not enabled in this build. Borrow is intentionally not built.</p>
+        <p className="text-[11.5px] leading-relaxed text-ink-3">GrowTendril never makes yield decisions autonomously; Circle’s Earn Kit is marked “coming soon”, so execution is not enabled in this build. Borrow is intentionally not built.</p>
       </CardBody>
     </Card>
   );

@@ -46,7 +46,7 @@ function circleSigner(walletId: string, address: string): AgentSigner {
           message,
         }),
       );
-      const res = await (await circleClient()).signTypedData({ walletId, data, memo: "GrowthOS x402 payment authorization" });
+      const res = await (await circleClient()).signTypedData({ walletId, data, memo: "GrowTendril x402 payment authorization" });
       const sig = res.data?.signature;
       if (!sig) throw new Error("Circle signTypedData returned no signature");
       return sig as Hex;

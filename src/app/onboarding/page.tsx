@@ -100,7 +100,7 @@ export default async function Onboarding({ searchParams }: { searchParams: Promi
 
         {step === 1 && (
           <Card>
-            <CardHeader title="Your product" description="Tell GrowthOS what you're building. It drafts a product intelligence profile from your public pages." icon={<Package />} />
+            <CardHeader title="Your product" description="Tell GrowTendril what you're building. It drafts a product intelligence profile from your public pages." icon={<Package />} />
             <ProductStep />
           </Card>
         )}
@@ -110,7 +110,7 @@ export default async function Onboarding({ searchParams }: { searchParams: Promi
             <Card>
               <CardHeader
                 title="Product intelligence profile"
-                description="Correct anything that's wrong — this drives what GrowthOS searches for."
+                description="Correct anything that's wrong — this drives what GrowTendril searches for."
                 icon={<FileText />}
                 action={<Badge>{profile.generatedBy}</Badge>}
               />
@@ -132,7 +132,7 @@ export default async function Onboarding({ searchParams }: { searchParams: Promi
               <div className="flex flex-wrap items-center justify-between gap-3 px-4 py-3.5">
                 <div>
                   <div className="text-[13px] font-medium text-ink">Next: your ideal customer</div>
-                  <p className="text-[12px] text-ink-3">Save any edits first, then let GrowthOS propose ICP tiers from the profile.</p>
+                  <p className="text-[12px] text-ink-3">Save any edits first, then let GrowTendril propose ICP tiers from the profile.</p>
                 </div>
                 <GenerateIcp />
               </div>

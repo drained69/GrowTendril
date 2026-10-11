@@ -21,11 +21,11 @@ export default async function Login({ searchParams }: { searchParams: Promise<{ 
 
   return (
     <AuthShell
-      title={inv ? `Join ${inv.projectName}` : "Sign in to GrowthOS"}
+      title={inv ? `Join ${inv.projectName}` : "Sign in to GrowTendril"}
       description={inv ? `Sign in as ${inv.invite.email} to accept your invite as ${ROLE_LABEL[inv.invite.role as Role] ?? inv.invite.role}.` : "Welcome back. Pick up where your operator left off."}
       footer={
         <>
-          New to GrowthOS?{" "}
+          New to GrowTendril?{" "}
           <Link href={`/signup${qs}`} className="font-medium text-ink hover:text-s1">
             Create an account
           </Link>

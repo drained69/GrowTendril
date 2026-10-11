@@ -26,7 +26,7 @@ export interface AnalysisStats {
 }
 
 const RECOMMEND: Partial<Record<SignalType, string>> = {
-  recommendation_request: "Answer in the public thread with an honest comparison and a runnable example. Founder posts it; GrowthOS never auto-replies.",
+  recommendation_request: "Answer in the public thread with an honest comparison and a runnable example. Founder posts it; GrowTendril never auto-replies.",
   initiative: "Build a personalized technical demo against their announced use case. Founder decides whether and how to reach out.",
   launch: "Ship an integration example for what they just launched and share it where they announced.",
   funding: "Prepare a short, specific build plan for their stated roadmap; founder-led outreach only.",

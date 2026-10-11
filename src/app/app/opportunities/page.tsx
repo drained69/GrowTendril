@@ -33,7 +33,7 @@ export default async function Opportunities({ searchParams }: { searchParams: Pr
     <div className="space-y-4">
       <PageHeader
         title="Opportunities"
-        description="Everything GrowthOS found, prioritized. Each one answers: why this, why now, what evidence, what to do, and what it is worth spending."
+        description="Everything GrowTendril found, prioritized. Each one answers: why this, why now, what evidence, what to do, and what it is worth spending."
         meta={
           <>
             <ModeBadge mode={project.dataMode} />

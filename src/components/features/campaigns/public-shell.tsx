@@ -9,7 +9,7 @@ export function CampaignShell({ children, eyebrow, title, description, aside, wi
     <div className="min-h-screen bg-bg">
       <header className="border-b border-line bg-surface/60">
         <div className={cn("mx-auto flex items-center justify-between gap-4 px-5 py-3.5", width === "wide" ? "max-w-[1120px]" : "max-w-[980px]")}>
-          <Link href="/" aria-label="GrowthOS">
+          <Link href="/" aria-label="GrowTendril">
             <Logo />
           </Link>
           {aside && <div className="flex items-center gap-2 text-[12px] text-ink-3">{aside}</div>}
@@ -25,7 +25,7 @@ export function CampaignShell({ children, eyebrow, title, description, aside, wi
       </main>
       <footer className="border-t border-line">
         <div className={cn("mx-auto px-5 py-4 text-[11.5px] text-ink-4", width === "wide" ? "max-w-[1120px]" : "max-w-[980px]")}>
-          Creator campaigns run on GrowthOS. Rules, reviews and payouts are recorded and shown to both sides.
+          Creator campaigns run on GrowTendril. Rules, reviews and payouts are recorded and shown to both sides.
         </div>
       </footer>
     </div>

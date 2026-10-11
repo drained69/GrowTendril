@@ -106,7 +106,7 @@ export type SendPaymentAction = z.infer<typeof SendPaymentAction>;
 export type BridgeFundsAction = z.infer<typeof BridgeFundsAction>;
 export type ReallocateBudgetAction = z.infer<typeof ReallocateBudgetAction>;
 
-/** Actions the policy can forbid outright even though GrowthOS never implements them. */
+/** Actions the policy can forbid outright even though GrowTendril never implements them. */
 export const FORBIDDEN_ACTION_KINDS = ["mass_unsolicited_messaging", "automated_dm", "automated_cold_email", "automated_mentions"] as const;
 
 export function categoryFor(action: FinancialAction): BudgetCategory {

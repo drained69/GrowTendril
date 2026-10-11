@@ -98,7 +98,7 @@ export default async function Opportunity({ params }: { params: Promise<{ id: st
             <CardBody className="space-y-3">
               {isIssue && (
                 <Callout tone="warn">
-                  Product feedback for you to act on — GrowthOS does not notify anyone or turn it into a paid experiment.
+                  Product feedback for you to act on — GrowTendril does not notify anyone or turn it into a paid experiment.
                   {issue?.blocksAcquisition ? " While it keeps growing, the operator holds new creator and narrative experiments." : ""}
                 </Callout>
               )}

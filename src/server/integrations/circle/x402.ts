@@ -82,7 +82,7 @@ export async function pay(q: X402Quote, signer: AgentSigner, opts: { maxAmountMi
   if (q.amountMicro > opts.maxAmountMicro) throw new Error(`Quoted ${q.amountMicro} exceeds authorized ${opts.maxAmountMicro}`);
   const scheme = new BatchEvmScheme({ address: signer.address, signTypedData: (p) => signer.signTypedData(p) });
   scheme.onBeforePaymentCreation(async (ctx) => {
-    if (BigInt(ctx.selectedRequirements.amount) > BigInt(opts.maxAmountMicro)) return { abort: true, reason: "Amount exceeds GrowthOS authorization" };
+    if (BigInt(ctx.selectedRequirements.amount) > BigInt(opts.maxAmountMicro)) return { abort: true, reason: "Amount exceeds GrowTendril authorization" };
   });
   const payload = await scheme.createPaymentPayload(q.x402Version, q.requirement);
   const header = Buffer.from(JSON.stringify({ ...payload, resource: q.resource, accepted: q.requirement })).toString("base64");

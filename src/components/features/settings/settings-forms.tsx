@@ -97,7 +97,7 @@ export function ProfileForm({ p, disabled }: { p: Profile; disabled?: boolean })
           {list("integrations", "Integrations", 3, `One per line. ${NOTE}`)}
           {list("terminology", "Important terminology")}
         </div>
-        {list("keywords", "Discovery search terms", 4, "One per line — these drive what GrowthOS searches for across every connected source")}
+        {list("keywords", "Discovery search terms", 4, "One per line — these drive what GrowTendril searches for across every connected source")}
       </fieldset>
       <FormFooter pending={pending} label="Save profile" disabled={disabled} state={state} />
     </form>

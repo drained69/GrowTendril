@@ -177,7 +177,7 @@ export default async function Approvals() {
           })}
         </div>
       ) : (
-        <EmptyState icon={<Inbox />} title="Nothing waiting for you" description="GrowthOS is operating within its autonomous limits. Spend above your auto-approve threshold (Settings → Spend policy) lands here for a decision." />
+        <EmptyState icon={<Inbox />} title="Nothing waiting for you" description="GrowTendril is operating within its autonomous limits. Spend above your auto-approve threshold (Settings → Spend policy) lands here for a decision." />
       )}
 
       <Card>

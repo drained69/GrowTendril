@@ -23,7 +23,7 @@ export default async function Signup({ searchParams }: { searchParams: Promise<{
       description={
         inv
           ? `You've been invited as ${ROLE_LABEL[inv.invite.role as Role] ?? inv.invite.role}. Create an account with ${inv.invite.email} to accept.`
-          : "Tell GrowthOS about your product, set a mission and a budget, and it starts scanning the market."
+          : "Tell GrowTendril about your product, set a mission and a budget, and it starts scanning the market."
       }
       footer={
         <>
@@ -40,7 +40,7 @@ export default async function Signup({ searchParams }: { searchParams: Promise<{
         </Callout>
       )}
       <SignupForm invite={inv ? sp.invite : undefined} email={inv?.invite.email} />
-      <p className="mt-3 text-[11.5px] leading-relaxed text-ink-4">GrowthOS never sends unsolicited messages on your behalf. Spend stays within the limits you set.</p>
+      <p className="mt-3 text-[11.5px] leading-relaxed text-ink-4">GrowTendril never sends unsolicited messages on your behalf. Spend stays within the limits you set.</p>
       {!inv && (
         <>
           <OrDivider label="or try it first" />

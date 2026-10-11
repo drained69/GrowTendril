@@ -42,7 +42,7 @@ export default async function CreatorPage({ params }: { params: Promise<{ token:
     return (
       <CampaignShell title="This contribution link isn’t valid" description="Check that you opened the full link you saved when you joined. Links can’t be recovered — if you’ve lost yours, contact the business that runs the campaign.">
         <LinkButton href="/" variant="secondary">
-          Go to GrowthOS
+          Go to GrowTendril
         </LinkButton>
       </CampaignShell>
     );
@@ -164,10 +164,10 @@ export default async function CreatorPage({ params }: { params: Promise<{ token:
                       ) : (
                         <p className="mt-1.5 text-[11.5px] text-ink-3">
                           {post.disclosureDetected === true
-                            ? "Automatic check: disclosure found in the copy of this post GrowthOS observed. The reviewer still confirms it."
+                            ? "Automatic check: disclosure found in the copy of this post GrowTendril observed. The reviewer still confirms it."
                             : post.disclosureDetected === false
-                              ? "Automatic check: GrowthOS observed this post and found no disclosure. Add one if it’s missing — a post without a clear disclosure can’t be accepted."
-                              : "Automatic check not available: GrowthOS hasn’t observed this post through a connected source, so the reviewer checks the disclosure by hand."}
+                              ? "Automatic check: GrowTendril observed this post and found no disclosure. Add one if it’s missing — a post without a clear disclosure can’t be accepted."
+                              : "Automatic check not available: GrowTendril hasn’t observed this post through a connected source, so the reviewer checks the disclosure by hand."}
                         </p>
                       )}
                     </li>
@@ -220,7 +220,7 @@ export default async function CreatorPage({ params }: { params: Promise<{ token:
 
           <div className="space-y-4">
             <Card>
-              <CardHeader title="Observed mindshare" icon={<BarChart3 />} description={`Your share of “${c.topic}” posts GrowthOS observed during the campaign window.`} />
+              <CardHeader title="Observed mindshare" icon={<BarChart3 />} description={`Your share of “${c.topic}” posts GrowTendril observed during the campaign window.`} />
               <CardBody className="space-y-3">
                 <div className="grid grid-cols-2 gap-4">
                   <Stat size="sm" label="Share of posts" value={fmtPct(ms?.share ?? 0)} sub={`${ms?.posts ?? 0} of ${mindshare.observedPosts}`} />

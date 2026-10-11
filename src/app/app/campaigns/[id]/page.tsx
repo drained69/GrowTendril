@@ -325,7 +325,7 @@ export default async function CampaignDetail({ params }: { params: Promise<{ id:
         />
         <CardFooter>
           <span>
-            Observed mindshare: share of the <span className="num text-ink-2">{mindshare.observedPosts}</span> on-topic posts GrowthOS collected during the window{sources ? ` from ${sources}` : ""}, and of their engagement. It is a sample — platforms don’t expose every post.
+            Observed mindshare: share of the <span className="num text-ink-2">{mindshare.observedPosts}</span> on-topic posts GrowTendril collected during the window{sources ? ` from ${sources}` : ""}, and of their engagement. It is a sample — platforms don’t expose every post.
           </span>
         </CardFooter>
       </Card>
@@ -508,10 +508,10 @@ function BudgetCard({ ledger, open }: { ledger: CampaignLedger; open: boolean })
 function Disclosure({ detected }: { detected: boolean | null }) {
   const d =
     detected === true
-      ? { tone: "good" as Tone, label: "Disclosure detected", why: "GrowthOS observed this post from a connected source and found disclosure text. Still confirm it yourself." }
+      ? { tone: "good" as Tone, label: "Disclosure detected", why: "GrowTendril observed this post from a connected source and found disclosure text. Still confirm it yourself." }
       : detected === false
-        ? { tone: "bad" as Tone, label: "No disclosure detected", why: "GrowthOS observed this post from a connected source and found no disclosure text. Check the post before accepting." }
-        : { tone: "muted" as Tone, label: "Disclosure unknown", why: "Only detectable when GrowthOS has observed the post through a connected source. Open the post and check it yourself." };
+        ? { tone: "bad" as Tone, label: "No disclosure detected", why: "GrowTendril observed this post from a connected source and found no disclosure text. Check the post before accepting." }
+        : { tone: "muted" as Tone, label: "Disclosure unknown", why: "Only detectable when GrowTendril has observed the post through a connected source. Open the post and check it yourself." };
   return (
     <div className="max-w-[300px] text-right">
       <Badge tone={d.tone}>{d.label}</Badge>

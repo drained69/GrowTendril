@@ -23,7 +23,7 @@ export default async function Invite({ params }: { params: Promise<{ token: stri
         description="The link is invalid, was already accepted, was revoked, or has expired (invites last 7 days)."
         footer={
           <Link href="/" className="hover:text-ink">
-            Back to GrowthOS
+            Back to GrowTendril
           </Link>
         }
       >
@@ -47,13 +47,13 @@ export default async function Invite({ params }: { params: Promise<{ token: stri
   const mismatch = signedIn && user.email.toLowerCase() !== inv.invite.email;
 
   return (
-    <AuthShell title={`Join ${inv.projectName}`} description="You've been invited to collaborate in a GrowthOS workspace.">
+    <AuthShell title={`Join ${inv.projectName}`} description="You've been invited to collaborate in a GrowTendril workspace.">
       <div className="rounded-[10px] border border-line bg-surface p-4">
         <div className="flex items-center gap-3">
           <Avatar name={inv.projectName} size={36} square />
           <div className="min-w-0">
             <div className="truncate text-[14px] font-semibold text-ink">{inv.projectName}</div>
-            <div className="text-[12px] text-ink-3">GrowthOS workspace</div>
+            <div className="text-[12px] text-ink-3">GrowTendril workspace</div>
           </div>
         </div>
         <KeyValue

@@ -22,7 +22,7 @@ export default async function NewCampaign() {
       <PageHeader
         crumbs={crumbs}
         title="New creator campaign"
-        description="Tell GrowthOS the action you want, what one is worth to you, and how much you’ll put behind the test. It plans the rest and shows its reasoning."
+        description="Tell GrowTendril the action you want, what one is worth to you, and how much you’ll put behind the test. It plans the rest and shows its reasoning."
         meta={
           <>
             <ModeBadge mode={project.dataMode} />

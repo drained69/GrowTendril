@@ -1,5 +1,5 @@
 /**
- * GrowthOS Signals — a small x402 seller, paywalled with Circle Gateway batching.
+ * GrowTendril Signals — a small x402 seller, paywalled with Circle Gateway batching.
  *
  * It plays the role of an independent data vendor so the agent's purchase path is
  * exercised end-to-end on Arc (testnet or mainnet, per GROWTHOS_NETWORK): 402 → EIP-712 signature → Circle facilitator
@@ -17,7 +17,7 @@ import { ARC, GATEWAY_API } from "../../src/server/integrations/circle/config";
 const PORT = Number(process.env.SIGNALS_API_PORT ?? 4021);
 const SELLER = process.env.SIGNALS_SELLER_ADDRESS;
 const FACILITATOR = GATEWAY_API;
-const UA = "GrowthOS-Signals/0.1";
+const UA = "GrowTendril-Signals/0.1";
 
 const app = express();
 
@@ -25,7 +25,7 @@ const PRICES = { company: "$0.01", creator: "$0.02", narrative: "$0.005" };
 
 app.get("/", (_req, res) =>
   res.json({
-    name: "GrowthOS Signals",
+    name: "GrowTendril Signals",
     paywall: SELLER ? `Circle Gateway x402 (${ARC.name})` : "DISABLED — set SIGNALS_SELLER_ADDRESS",
     seller: SELLER ?? null,
     network: ARC.caip2,
@@ -39,7 +39,7 @@ app.get("/", (_req, res) =>
 
 type Paid = express.Request & { payment?: { payer: string; amount: string; network: string; transaction?: string } };
 
-const gateway = SELLER ? createGatewayMiddleware({ sellerAddress: SELLER, facilitatorUrl: FACILITATOR, networks: [ARC.caip2], description: "GrowthOS Signals data" }) : null;
+const gateway = SELLER ? createGatewayMiddleware({ sellerAddress: SELLER, facilitatorUrl: FACILITATOR, networks: [ARC.caip2], description: "GrowTendril Signals data" }) : null;
 const paywall = (price: string): express.RequestHandler =>
   gateway
     ? (gateway.require(price) as unknown as express.RequestHandler)
@@ -105,6 +105,6 @@ app.get("/v1/narrative-pulse", paywall(PRICES.narrative), async (req: Paid, res)
 });
 
 app.listen(PORT, () => {
-  console.log(`GrowthOS Signals listening on http://localhost:${PORT}`);
+  console.log(`GrowTendril Signals listening on http://localhost:${PORT}`);
   console.log(SELLER ? `x402 paywall active — seller ${SELLER} on ${ARC.name}` : "x402 paywall DISABLED — set SIGNALS_SELLER_ADDRESS");
 });

@@ -1,4 +1,4 @@
-# GrowthOS — Architecture & Plan
+# GrowTendril — Architecture & Plan
 
 This is the design record. The README is the user-facing guide; this file explains how the system is built and why.
 
@@ -29,7 +29,7 @@ Networks (selected by `GROWTHOS_NETWORK`, all values from `CHAIN_CONFIGS` and vi
 | Gateway API | gateway-api-testnet.circle.com | gateway-api.circle.com |
 | Circle Wallets blockchain | `ARC-TESTNET` | `ARC` |
 
-Earn Kit is "coming soon" in its own README, so GrowthOS only *recommends* idle-fund placement and never executes it. Borrow is not built.
+Earn Kit is "coming soon" in its own README, so GrowTendril only *recommends* idle-fund placement and never executes it. Borrow is not built.
 
 ## Source layout
 

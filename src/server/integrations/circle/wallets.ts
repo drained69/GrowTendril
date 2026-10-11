@@ -13,7 +13,7 @@ import { gatewayBalance } from "@/server/integrations/circle/gateway";
 
 /**
  * Workspace agent wallets. Each workspace has at most one; it is the operating budget the
- * agent spends from. Keys are never held by GrowthOS in Circle mode, and never reach the
+ * agent spends from. Keys are never held by GrowTendril in Circle mode, and never reach the
  * browser or an LLM in any mode.
  */
 
@@ -47,7 +47,7 @@ export async function provisionWallet(db: DB, a: { projectId: string; userId: st
   const custody = platformCustody();
   if (custody === "circle") {
     const client = await circleClient();
-    const set = await client.createWalletSet({ name: `GrowthOS · ${a.projectName}`.slice(0, 60) });
+    const set = await client.createWalletSet({ name: `GrowTendril · ${a.projectName}`.slice(0, 60) });
     const walletSetId = set.data?.walletSet?.id;
     if (!walletSetId) throw new Error("Circle did not return a wallet set");
     // EOA so x402 EIP-712 authorizations verify with plain ecrecover in Gateway batching.
@@ -72,7 +72,7 @@ export async function attachCircleWallet(db: DB, a: { projectId: string; userId:
   const res = await client.getWallet({ id: a.circleWalletId });
   const w = res.data?.wallet;
   if (!w) throw new Error("Wallet not found under this Circle entity");
-  if (w.blockchain !== ARC.circleBlockchain) throw new Error(`Wallet is on ${w.blockchain}; GrowthOS operates on ${ARC.circleBlockchain}`);
+  if (w.blockchain !== ARC.circleBlockchain) throw new Error(`Wallet is on ${w.blockchain}; GrowTendril operates on ${ARC.circleBlockchain}`);
   const row = await upsertWallet(db, a.projectId, { provider: "circle_dcw", address: w.address, circleWalletId: w.id, circleWalletSetId: w.walletSetId, status: "ACTIVE", dataMode: ARC.dataMode });
   await audit(db, { projectId: a.projectId, actorType: "user", actorId: a.userId, action: "wallet.attach", target: w.address });
   return row;
