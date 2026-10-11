@@ -1,14 +1,19 @@
 "use server";
 
+import { cookies } from "next/headers";
+import { redirect } from "next/navigation";
 import { revalidatePath } from "next/cache";
-import { and, eq } from "drizzle-orm";
+import { and, eq, inArray, sql } from "drizzle-orm";
 import { z } from "zod";
 import { randomBytes } from "node:crypto";
 import { schema as s } from "@/server/db/client";
 import { audit } from "@/server/db/helpers";
-import { ProductProfileSchema } from "@/server/domain/intel/product-analyst";
+import { PROJECT_COOKIE } from "@/server/auth/session";
+import { analyzeProduct, ProductProfileSchema } from "@/server/domain/intel/product-analyst";
+import { BudgetCategory } from "@/server/domain/agent/actions";
+import { ACTIVE_CHAINS, chainLabel } from "@/server/integrations/circle/config";
 import { toMicro } from "@/lib/money";
-import { fail, guard, type ActionResult } from "@/server/actions/_common";
+import { fail, guard, limited, type ActionResult } from "@/server/actions/_common";
 
 const Amount = z.string().regex(/^\d+(\.\d{1,6})?$/, "Enter a USDC amount");
 const PolicyForm = z.object({
@@ -17,8 +22,8 @@ const PolicyForm = z.object({
   kolThreshold: Amount,
   bountyThreshold: Amount,
   hardCeiling: Amount,
-  autonomous: z.array(z.string()),
-  approval: z.array(z.string()),
+  autonomous: z.array(BudgetCategory),
+  approval: z.array(BudgetCategory),
   chains: z.array(z.string()).min(1, "Allow at least one chain"),
 });
 
@@ -35,6 +40,9 @@ export async function updatePolicyAction(_: unknown, form: FormData): Promise<Ac
       approval: form.getAll("approval").map(String),
       chains: form.getAll("chains").map(String),
     });
+    // Only this deployment's network: a chain from the other network could never pass the engine's ACTIVE_NETWORK check.
+    const offNetwork = f.chains.filter((c) => !(ACTIVE_CHAINS as readonly string[]).includes(c));
+    if (offNetwork.length) return { ok: false, error: `Not available on this network: ${offNetwork.map(chainLabel).join(", ")}` };
     const overlap = f.autonomous.filter((c) => f.approval.includes(c));
     if (overlap.length) return { ok: false, error: `A category can't be both autonomous and approval-gated: ${overlap.join(", ")}` };
     const vals = {
@@ -150,4 +158,49 @@ export async function rotateWebhookSecretAction(): Promise<ActionResult<{ secret
   } catch (e) {
     return fail(e);
   }
+}
+
+/** Re-reads the workspace's public pages and replaces the product profile with a fresh draft. */
+export async function reprofileAction(): Promise<ActionResult> {
+  try {
+    const { project, db, user } = await guard("manage_workspace");
+    if (user.isGuest || project.dataMode === "DEMO") return { ok: false, error: "Demo workspaces aren't re-read — their product is fictional." };
+    await limited(`reprofile:${project.id}`, 3, 0.01);
+    if (!project.website && !project.docsUrl && !project.githubUrl) return { ok: false, error: "Add a website, docs or GitHub URL first, and save the workspace." };
+    const analysis = await analyzeProduct({ name: project.name, website: project.website, docsUrl: project.docsUrl, xHandle: project.xHandle, githubUrl: project.githubUrl, description: project.description || project.name });
+    await db
+      .update(s.productProfiles)
+      .set({ ...analysis.profile, crawledSources: analysis.crawled, generatedBy: analysis.generatedBy, founderEdited: false, updatedAt: new Date() })
+      .where(eq(s.productProfiles.projectId, project.id));
+    await audit(db, { projectId: project.id, actorType: "user", actorId: user.id, action: "profile.reprofile", data: { generatedBy: analysis.generatedBy, sources: analysis.crawled.length } });
+    revalidatePath("/app", "layout");
+    return { ok: true, message: analysis.note };
+  } catch (e) {
+    return fail(e);
+  }
+}
+
+/**
+ * Permanently deletes the workspace (owners only; every child row cascades). Refused while it
+ * holds an agent wallet or has payments in flight: deleting would drop GrowthOS's only record of
+ * a wallet that may still hold USDC.
+ */
+export async function deleteWorkspaceAction(confirmName: string): Promise<ActionResult> {
+  try {
+    const { project, db, user } = await guard("manage_workspace");
+    if (confirmName.trim() !== project.name) return { ok: false, error: "Type the workspace name exactly to confirm" };
+    const [wallet] = await db.select({ provider: s.wallets.provider, address: s.wallets.address }).from(s.wallets).where(eq(s.wallets.projectId, project.id));
+    if (wallet && (wallet.address || wallet.provider !== "unconfigured"))
+      return { ok: false, error: "This workspace has an agent wallet. Deleting it would lose GrowthOS's record of that wallet and any USDC in it — freeze the wallet instead, or contact the operator of this deployment." };
+    const [inflight] = await db
+      .select({ n: sql<number>`count(*)::int` })
+      .from(s.transactions)
+      .where(and(eq(s.transactions.projectId, project.id), inArray(s.transactions.state, ["AUTHORIZED", "EXECUTING", "SUBMITTED"])));
+    if ((inflight?.n ?? 0) > 0) return { ok: false, error: "Payments are in flight — wait for them to settle before deleting" };
+    await db.delete(s.projects).where(eq(s.projects.id, project.id));
+    (await cookies()).delete(PROJECT_COOKIE);
+  } catch (e) {
+    return fail(e);
+  }
+  redirect("/app");
 }

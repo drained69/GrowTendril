@@ -18,6 +18,8 @@ export interface FetchedPost {
 export interface SearchOptions {
   since: Date;
   limit: number;
+  /** Non-fatal problems (e.g. one of several feeds failing). Providers push here instead of hiding them. */
+  warnings?: string[];
 }
 
 export type Credentials = Record<string, string>;
@@ -49,6 +51,8 @@ export interface MarketProvider {
   envFallback: Record<string, string>;
   /** Whether the provider can run with these credentials (keyless providers: always). */
   isReady(creds: Credentials): boolean;
+  /** Extra checks on workspace-supplied values before they are stored (e.g. URLs must be public). */
+  validate?(creds: Credentials): Promise<void>;
   search(query: string, opts: SearchOptions, creds: Credentials): Promise<FetchedPost[]>;
 }
 

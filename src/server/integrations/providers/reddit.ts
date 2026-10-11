@@ -1,12 +1,15 @@
 import { getJson } from "@/server/integrations/providers/http";
 import { ProviderError, type Credentials, type FetchedPost, type MarketProvider } from "@/server/integrations/providers/types";
+import { sha256 } from "@/server/lib/ids";
 
 /** Reddit Data API with app-only OAuth (client credentials), per Reddit's API terms. */
 const tokens = new Map<string, { value: string; exp: number }>();
+// Keyed by id+secret: a workspace that knows another app's client ID must not reuse its cached token.
+const cacheKey = (c: Credentials) => sha256(`${c.clientId}\u0000${c.clientSecret}`);
 const ua = (c: Credentials) => c.userAgent || "web:growthos:0.1 (by /u/growthos)";
 
 async function accessToken(c: Credentials): Promise<string> {
-  const cached = tokens.get(c.clientId);
+  const cached = tokens.get(cacheKey(c));
   if (cached && cached.exp > Date.now() + 60_000) return cached.value;
   const id = c.clientId;
   const secret = c.clientSecret;
@@ -22,7 +25,7 @@ async function accessToken(c: Credentials): Promise<string> {
   });
   if (!res.ok) throw new ProviderError("reddit", `OAuth failed: HTTP ${res.status}`, res.status);
   const j = (await res.json()) as { access_token: string; expires_in: number };
-  tokens.set(c.clientId, { value: j.access_token, exp: Date.now() + j.expires_in * 1000 });
+  tokens.set(cacheKey(c), { value: j.access_token, exp: Date.now() + j.expires_in * 1000 });
   return j.access_token;
 }
 

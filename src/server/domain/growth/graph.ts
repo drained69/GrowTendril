@@ -1,7 +1,8 @@
-import { and, eq, inArray, sql } from "drizzle-orm";
+import { and, asc, eq, inArray, ne, sql } from "drizzle-orm";
 import type { DB } from "@/server/db/client";
 import * as s from "@/server/db/schema";
 import { fmtUsdc } from "@/lib/money";
+import { experimentSpend } from "@/server/domain/agent/ledger";
 
 export type NodeType = "product" | "narrative" | "customer" | "kol" | "competitor" | "community" | "opportunity" | "experiment" | "spend" | "result" | "learning";
 
@@ -49,7 +50,7 @@ export async function buildGraph(db: DB, projectId: string): Promise<{ nodes: Gr
   const providers = await db.select({ p: s.socialPosts.provider, n: sql<number>`count(*)::int` }).from(s.socialPosts).where(eq(s.socialPosts.projectId, projectId)).groupBy(s.socialPosts.provider);
   for (const pr of providers) add({ id: `src:${pr.p}`, type: "community", label: pr.p, sub: `${pr.n} posts` }, "product");
 
-  const opps = (await db.select().from(s.opportunities).where(and(eq(s.opportunities.projectId, projectId)))).sort((a, b) => b.overallScore - a.overallScore).slice(0, 10);
+  const opps = (await db.select().from(s.opportunities).where(and(eq(s.opportunities.projectId, projectId), ne(s.opportunities.status, "dismissed")))).sort((a, b) => b.overallScore - a.overallScore).slice(0, 10);
   for (const o of opps) {
     const parent = o.companyId ? `c:${o.companyId}` : o.kolId ? `k:${o.kolId}` : o.narrativeId ? `n:${o.narrativeId}` : "product";
     if (!nodes.find((n) => n.id === parent)) continue;
@@ -59,12 +60,13 @@ export async function buildGraph(db: DB, projectId: string): Promise<{ nodes: Gr
   for (const x of exps) {
     const parent = x.opportunityId && nodes.find((n) => n.id === `o:${x.opportunityId}`) ? `o:${x.opportunityId}` : "product";
     add({ id: `x:${x.id}`, type: "experiment", label: `EXP #${x.number}`, sub: x.status, href: `/app/experiments/${x.id}`, mode: x.dataMode }, parent);
-    const [spend] = await db.select({ n: sql<string>`coalesce(sum(${s.transactions.amountMicro}),0)` }).from(s.transactions).where(and(eq(s.transactions.experimentId, x.id), inArray(s.transactions.state, ["SUBMITTED", "SETTLED", "SIMULATED", "EXECUTING"])));
-    if (Number(spend?.n ?? 0) > 0) add({ id: `sp:${x.id}`, type: "spend", label: fmtUsdc(Number(spend.n)), sub: "spent", href: "/app/activity" }, `x:${x.id}`);
+    // Same definition of "spent" as the ledger and budget screens (excludes treasury moves).
+    const spent = await experimentSpend(db, x.id);
+    if (spent > 0) add({ id: `sp:${x.id}`, type: "spend", label: fmtUsdc(spent), sub: x.dataMode === "DEMO" ? "spent (simulated)" : "spent", href: "/app/activity", mode: x.dataMode }, `x:${x.id}`);
     const [conv] = await db.select({ n: sql<number>`count(*)::int` }).from(s.attribution).where(eq(s.attribution.experimentId, x.id));
-    if ((conv?.n ?? 0) > 0) add({ id: `r:${x.id}`, type: "result", label: `${conv.n} conversions`, sub: (x.outcome as { verdict?: string } | null)?.verdict ?? "measuring", href: `/app/experiments/${x.id}` }, Number(spend?.n ?? 0) > 0 ? `sp:${x.id}` : `x:${x.id}`);
+    if ((conv?.n ?? 0) > 0) add({ id: `r:${x.id}`, type: "result", label: `${conv.n} conversions`, sub: (x.outcome as { verdict?: string } | null)?.verdict ?? "measuring", href: `/app/experiments/${x.id}` }, spent > 0 ? `sp:${x.id}` : `x:${x.id}`);
   }
-  const learnings = await db.select().from(s.learnings).where(eq(s.learnings.projectId, projectId));
+  const learnings = await db.select().from(s.learnings).where(eq(s.learnings.projectId, projectId)).orderBy(asc(s.learnings.createdAt));
   for (const l of learnings.slice(-3)) {
     const moves = l.reallocations as { toExperimentId?: string; fromExperimentId?: string }[];
     add({ id: `l:${l.id}`, type: "learning", label: moves.length ? `Reallocated ×${moves.length}` : "Learning", sub: l.createdAt.toISOString().slice(0, 10), href: "/app/missions" });

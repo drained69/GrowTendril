@@ -4,17 +4,16 @@ import { currentUser } from "@/server/auth/current";
 import { getDb } from "@/server/db/client";
 import { inviteByToken } from "@/server/domain/workspace/members";
 import { ROLE_LABEL, type Role } from "@/server/auth/access";
+import { safeNext } from "@/server/auth/safe-next";
 import { Callout } from "@/components/ui";
 import { AuthShell, OrDivider } from "@/components/features/auth/auth-shell";
 import { DemoButton, LoginForm } from "@/components/features/auth/auth-forms";
 
 export const dynamic = "force-dynamic";
 
-const safeNext = (n?: string) => (n && n.startsWith("/") && !n.startsWith("//") ? n : undefined);
-
 export default async function Login({ searchParams }: { searchParams: Promise<{ invite?: string; next?: string }> }) {
   const sp = await searchParams;
-  const next = safeNext(sp.next);
+  const next = sp.next ? safeNext(sp.next, "") || undefined : undefined;
   const user = await currentUser();
   if (user && !user.isGuest) redirect(sp.invite ? `/invite/${encodeURIComponent(sp.invite)}` : (next ?? "/app"));
   const inv = sp.invite ? await inviteByToken(await getDb(), sp.invite) : null;

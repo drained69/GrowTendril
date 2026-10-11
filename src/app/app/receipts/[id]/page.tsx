@@ -4,7 +4,7 @@ import { Braces, CheckCircle2, FileCheck2, Fingerprint, Lightbulb, Route, Shield
 import { requireProject } from "@/server/auth/current";
 import { schema as s } from "@/server/db/client";
 import { canonicalJson, sha256 } from "@/server/lib/ids";
-import { txExplorerUrl } from "@/server/integrations/circle/config";
+import { ARC, CHAINS, txExplorerUrl } from "@/server/integrations/circle/config";
 import { fmtUsdc } from "@/lib/money";
 import { Badge, Callout, Card, CardBody, CardHeader, ExternalLink, KeyValue, ModeBadge, PageHeader, StatusBadge, TxStateBadge, VerdictBadge, shortHash } from "@/components/ui";
 import { CopyField } from "@/components/ui/copy";
@@ -30,7 +30,7 @@ type Body = {
 
 const RAIL: Record<string, string> = { gateway_x402: "Circle Gateway · x402", app_kit_send: "Arc App Kit · Send", app_kit_bridge: "Arc App Kit · Bridge", gateway_deposit: "Circle Gateway · deposit" };
 const humanize = (k: string) => k.replace(/_/g, " ").toLowerCase().replace(/^\w/, (c) => c.toUpperCase());
-const NETWORK_KEY: Record<string, string> = { "Arc Testnet": "Arc_Testnet", "Base Sepolia": "Base_Sepolia", "Arbitrum Sepolia": "Arbitrum_Sepolia", "Ethereum Sepolia": "Ethereum_Sepolia" };
+const NETWORK_KEY: Record<string, string> = Object.fromEntries(Object.entries(CHAINS).map(([key, c]) => [c.label, key]));
 
 export default async function ReceiptPage({ params }: { params: Promise<{ id: string }> }) {
   const { id } = await params;
@@ -41,7 +41,7 @@ export default async function ReceiptPage({ params }: { params: Promise<{ id: st
   const intact = sha256(canonicalJson(r.body)) === r.digest;
   const status = b.payment?.state ?? b.status;
   const p = b.payment;
-  const chainKey = p ? (NETWORK_KEY[p.network] ?? p.network) : "Arc_Testnet";
+  const chainKey = p ? (NETWORK_KEY[p.network] ?? p.network) : ARC.appKitChain;
   const txUrl = p?.txHash ? (p.explorerUrl ?? txExplorerUrl(chainKey, p.txHash)) : null;
   const passed = b.policy?.checks.filter((c) => c.passed).length ?? 0;
 
@@ -155,7 +155,7 @@ export default async function ReceiptPage({ params }: { params: Promise<{ id: st
                     { k: "Settlement ID", v: p.settlementId ? <span className="num text-[11.5px]" title={p.settlementId}>{shortHash(p.settlementId, 6)}</span> : "—" },
                     { k: "Gateway status", v: p.settlementStatus ?? "—" },
                     { k: "Tx hash", v: p.txHash && txUrl ? <ExternalLink href={txUrl} className="num text-[11.5px]">{shortHash(p.txHash)}</ExternalLink> : "—" },
-                    { k: "Arc batch tx", v: p.batchTxHash ? <ExternalLink href={txExplorerUrl("Arc_Testnet", p.batchTxHash)} className="num text-[11.5px]">{shortHash(p.batchTxHash)}</ExternalLink> : "—" },
+                    { k: "Arc batch tx", v: p.batchTxHash ? <ExternalLink href={txExplorerUrl(ARC.appKitChain, p.batchTxHash)} className="num text-[11.5px]">{shortHash(p.batchTxHash)}</ExternalLink> : "—" },
                     ...(p.responseDigest ? [{ k: "Response sha256", v: <span className="num text-[11px]" title={p.responseDigest}>{shortHash(p.responseDigest, 8)}</span> }] : []),
                   ]}
                 />

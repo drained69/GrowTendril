@@ -3,11 +3,13 @@ export interface ShellProps {
   workspace: { id: string; name: string; dataMode: string };
   workspaces: { id: string; name: string; dataMode: string; role: string }[];
   role: string;
-  user: { name: string; email: string; isGuest: boolean };
+  /** guestExpires: server-computed label for when a guest account is removed (null for real users). */
+  user: { name: string; email: string; isGuest: boolean; guestExpires: string | null };
   pendingApprovals: number;
   wallet: { state: "live" | "simulation" | "none" | "frozen"; label: string };
   autopilot: string;
   claude: boolean;
+  network: { name: string; mainnet: boolean };
 }
 
 export interface Notice {

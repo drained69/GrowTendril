@@ -25,7 +25,22 @@ export async function runCycleAction(): Promise<ActionResult<{ jobId: string }>>
   }
 }
 
-export async function jobStatusAction(jobId: string): Promise<ActionResult<{ status: string; log: LogLine[]; error: string | null }>> {
+/** Queue a discovery-only scan: collects and analyzes evidence, never spends. */
+export async function runScanAction(): Promise<ActionResult<{ jobId: string }>> {
+  try {
+    const { project, db, user } = await guard("operate");
+    await limited(`scan:${user.id}`, 4, 1 / 60);
+    const existing = (await activeJob(db, project.id, "scan")) ?? (await activeJob(db, project.id, "cycle"));
+    if (existing) return { ok: true, data: { jobId: existing.id }, message: "A run is already queued or running" };
+    const job = await enqueue(db, { kind: "scan", projectId: project.id, trigger: "user", maxAttempts: 1 });
+    kickWorker();
+    return { ok: true, data: { jobId: job!.id }, message: "Scan queued — collects and analyzes evidence; nothing is bought or paid" };
+  } catch (e) {
+    return fail(e);
+  }
+}
+
+export async function jobStatusAction(jobId: string): Promise<ActionResult<{ status: string; log: LogLine[]; error: string | null; skipped: string | null }>> {
   try {
     const { project, db } = await guard("view");
     const [job] = await db.select().from(s.jobs).where(and(eq(s.jobs.id, jobId), eq(s.jobs.projectId, project.id)));
@@ -39,7 +54,7 @@ export async function jobStatusAction(jobId: string): Promise<ActionResult<{ sta
         : [];
     if (run) log = run.log.map((l) => ({ agent: l.agent, message: l.message }));
     if (job.status === "done" || job.status === "failed") revalidatePath("/app", "layout");
-    return { ok: true, data: { status: job.status, log, error: job.lastError } };
+    return { ok: true, data: { status: job.status, log, error: job.lastError, skipped: (job.result as { skipped?: string } | null)?.skipped ?? null } };
   } catch (e) {
     return fail(e);
   }

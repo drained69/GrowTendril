@@ -1,9 +1,11 @@
 import Link from "next/link";
+import { redirect } from "next/navigation";
 import { eq } from "drizzle-orm";
 import { Check, FileText, Flag, Package, ShieldCheck, Target } from "lucide-react";
 import { requireUser, currentProject } from "@/server/auth/current";
 import { getDb, schema as s } from "@/server/db/client";
 import { AUTOPILOT_LABEL } from "@/server/jobs/scheduler";
+import { DEFAULT_POLICY } from "@/server/domain/agent/policy";
 import { logoutAction } from "@/server/actions/auth";
 import { Badge, Callout, Card, CardHeader, CardFooter, LinkButton, cn } from "@/components/ui";
 import { Logo } from "@/components/layout/logo";
@@ -25,6 +27,9 @@ export default async function Onboarding({ searchParams }: { searchParams: Promi
   const db = await getDb();
   const cur = sp.new ? null : await currentProject(user.id);
   const project = cur?.project ?? null;
+  // A finished workspace only comes back here to start a new mission (step 3); the other steps
+  // would overwrite live settings.
+  if (project && project.onboardingStep >= 5 && sp.step !== "3") redirect("/app");
   // An existing finished workspace + an explicit request for a new mission jumps to step 3.
   const step = !project ? 1 : sp.step === "3" ? 3 : Math.min(project.onboardingStep, 4);
   const [profile] = project ? await db.select().from(s.productProfiles).where(eq(s.productProfiles.projectId, project.id)) : [];
@@ -139,7 +144,7 @@ export default async function Onboarding({ searchParams }: { searchParams: Promi
           <div className="space-y-4">
             {icps.length > 0 && (
               <Card>
-                <CardHeader title="Proposed ideal customer profile" description="Edit freely — the operator qualifies companies against these." icon={<Target />} />
+                <CardHeader title="Proposed ideal customer profile" description="Edit freely. Segments are matched against public posts to score ICP fit; the other fields are notes for your team." icon={<Target />} />
                 <IcpForm icps={icps} disabled={!canEdit} />
               </Card>
             )}
@@ -153,7 +158,7 @@ export default async function Onboarding({ searchParams }: { searchParams: Promi
         {step === 4 && (
           <Card>
             <CardHeader title="Autonomy: the hard rules" description="Enforced by a deterministic policy engine on every structured action — not by a prompt." icon={<ShieldCheck />} />
-            {canPolicy ? <AutonomyStep autopilot={AUTOPILOT_LABEL} demo={project?.dataMode === "DEMO"} /> : <CardFooter>Only owners and admins can activate the workspace.</CardFooter>}
+            {canPolicy ? <AutonomyStep autopilot={AUTOPILOT_LABEL} demo={project?.dataMode === "DEMO"} autonomous={DEFAULT_POLICY.autonomousCategories} approval={DEFAULT_POLICY.approvalCategories} /> : <CardFooter>Only owners and admins can activate the workspace.</CardFooter>}
           </Card>
         )}
       </div>

@@ -1,5 +1,6 @@
 import { toMicro, fmtUsdc } from "@/lib/money";
 import { categoryFor, type FinancialAction } from "@/server/domain/agent/actions";
+import { ACTIVE_CHAINS, ARC, BRIDGE_CHAIN, IS_MAINNET } from "@/server/integrations/circle/config";
 
 /**
  * Deterministic policy engine. Pure: the caller loads the state, this decides.
@@ -44,6 +45,14 @@ export interface PolicyState {
   experimentRemainingMicro?: Record<string, number>;
   /** DEMO project with no wallet: decisions run, execution is recorded as SIMULATED. */
   simulation?: boolean;
+  /**
+   * Live balances in micro-USDC, read by the caller. `null` = the read failed (RPC / Gateway API
+   * unreachable); omitted = not read. Wallet balance is the USDC on the action's source chain.
+   */
+  walletUsdcMicro?: number | null;
+  gatewayAvailableMicro?: number | null;
+  /** Unknown balances route to approval on mainnet and pass (recorded as unchecked) on testnet. Defaults to this deployment. */
+  mainnet?: boolean;
 }
 
 export interface PolicyCheck {
@@ -60,18 +69,26 @@ export interface PolicyResult {
   category: string;
 }
 
+/** Recipients that can never receive a real payment: unset, the zero address, the conventional burn address. */
+export const BLOCKED_RECIPIENTS = ["0x0000000000000000000000000000000000000000", "0x000000000000000000000000000000000000dead"];
+
+export function isBlockedRecipient(addr: string | null | undefined): boolean {
+  return !addr || BLOCKED_RECIPIENTS.includes(addr.toLowerCase());
+}
+
 export const DEFAULT_POLICY: PolicyConfig = {
   maxTransactionMicro: toMicro(10),
   dailySpendMicro: toMicro(50),
   kolApprovalThresholdMicro: toMicro(100),
   bountyApprovalThresholdMicro: toMicro(25),
   hardCeilingMicro: toMicro(500),
-  autonomousCategories: ["research", "services", "bounty", "content"],
-  approvalCategories: ["kol", "community", "treasury"],
+  // On mainnet only paid research/data runs autonomously; everything else waits for a human by default.
+  autonomousCategories: IS_MAINNET ? ["research", "services"] : ["research", "services", "bounty", "content"],
+  approvalCategories: IS_MAINNET ? ["bounty", "content", "kol", "community", "treasury"] : ["kol", "community", "treasury"],
   forbiddenActions: ["mass_unsolicited_messaging", "automated_dm", "automated_cold_email", "automated_mentions"],
   approvedServiceHosts: ["*"],
   allowedTokens: ["USDC"],
-  allowedChains: ["Arc_Testnet", "Base_Sepolia"],
+  allowedChains: [ARC.appKitChain, BRIDGE_CHAIN],
 };
 
 function amountOf(action: FinancialAction): number {
@@ -128,6 +145,8 @@ export function evaluatePolicy(
   add("ALLOWED_TOKENS", policy.allowedTokens.includes(action.currency), "deny", `${action.currency} ${policy.allowedTokens.includes(action.currency) ? "is" : "is not"} an allowed token`);
 
   const chains = action.action === "bridge_funds" ? [action.fromChain, action.toChain] : [action.chain];
+  const offNetwork = chains.find((c) => !(ACTIVE_CHAINS as readonly string[]).includes(c));
+  add("ACTIVE_NETWORK", !offNetwork, "deny", offNetwork ? `${offNetwork} is not on this deployment's network (${ARC.network})` : `${ARC.network} chains`);
   const badChain = chains.find((c) => !policy.allowedChains.includes(c));
   add("ALLOWED_CHAINS", !badChain, "deny", badChain ? `${badChain} is not an allowed chain` : `${chains.join(" → ")} allowed`);
 
@@ -144,6 +163,27 @@ export function evaluatePolicy(
     const after = state.missionCommittedMicro + amount;
     const over = after > state.missionBudgetMicro;
     add("MISSION_BUDGET", !over, "deny", `${fmtUsdc(after)} committed of ${fmtUsdc(state.missionBudgetMicro)} mission budget${over ? " — would exceed" : ""}`);
+  }
+
+  if (action.action === "send_payment") {
+    const blocked = isBlockedRecipient(action.recipient);
+    add(
+      "RECIPIENT_VALID",
+      !blocked || !!state.simulation,
+      "deny",
+      !blocked ? `Recipient ${action.recipient}` : state.simulation ? "SIMULATION — placeholder recipient; nothing will move" : `Recipient ${action.recipient || "(none)"} is a placeholder/burn address — set a real payout address`,
+    );
+  }
+
+  // Funds must actually be there: Gateway balance for x402, wallet USDC for sends and bridges.
+  {
+    const source = action.action === "purchase_service" ? "Gateway available" : "Wallet USDC";
+    const bal = action.action === "purchase_service" ? state.gatewayAvailableMicro : state.walletUsdcMicro;
+    const mainnet = state.mainnet ?? IS_MAINNET;
+    if (state.simulation) add("BALANCE_SUFFICIENT", true, "deny", "SIMULATION — no balance needed");
+    else if (bal == null)
+      add("BALANCE_SUFFICIENT", !mainnet, "approval", mainnet ? `${source} balance unknown (read failed) — founder review` : `${source} balance unknown (read failed) — not checked on testnet`);
+    else add("BALANCE_SUFFICIENT", bal >= amount, "deny", `${fmtUsdc(amount)} ${bal >= amount ? "≤" : ">"} ${source} ${fmtUsdc(bal)}`);
   }
 
   const known = policy.autonomousCategories.includes(category) || policy.approvalCategories.includes(category);

@@ -19,6 +19,14 @@ export function rateLimit(key: string, opts: { capacity: number; refillPerSec: n
   return { ok: true, retryAfter: 0 };
 }
 
+/**
+ * The client address as seen by our own proxy. Clients can prepend anything to X-Forwarded-For,
+ * so the left-most entry is attacker-controlled; each trusted proxy appends the address it saw,
+ * so we read TRUSTED_PROXY_HOPS entries from the right (default 1: a single load balancer).
+ */
 export function clientIp(headers: Headers): string {
-  return headers.get("x-forwarded-for")?.split(",")[0].trim() ?? headers.get("x-real-ip") ?? "local";
+  const hops = Math.max(1, Number(process.env.TRUSTED_PROXY_HOPS) || 1);
+  const xff = (headers.get("x-forwarded-for") ?? "").split(",").map((x) => x.trim()).filter(Boolean);
+  if (xff.length) return xff[Math.max(0, xff.length - hops)];
+  return headers.get("x-real-ip")?.trim() || "local";
 }

@@ -7,6 +7,7 @@ import { enterDemoAction } from "@/server/actions/auth";
 import { fmtUsdc } from "@/lib/money";
 import { Badge, ModeBadge, buttonClass } from "@/components/ui";
 import { Logo } from "@/components/layout/logo";
+import { isMainnetEnv } from "@/server/integrations/circle/network-env";
 
 export const dynamic = "force-dynamic";
 
@@ -50,6 +51,7 @@ function DemoCta({ className }: { className?: string }) {
 export default async function Landing() {
   const [m, user] = await Promise.all([getDb().then((db) => tractionMetrics(db)), currentUser()]);
   const signedIn = !!user && !user.isGuest;
+  const mainnet = isMainnetEnv();
   const traction: { k: string; v: string | number }[] = [
     { k: "Live workspaces", v: m.projects },
     { k: "Opportunities found", v: m.opportunities },
@@ -215,7 +217,7 @@ export default async function Landing() {
             <pre className="num overflow-x-auto p-5 text-[12.5px] leading-[1.9] text-ink-2">{`AI ─► structured action ─► schema validation
    ─► policy engine ─► ALLOW | APPROVAL | DENY
    ─► transaction state machine (idempotent)
-   ─► Circle  (x402 · Gateway · Agent Wallet)
+   ─► Circle  (x402 · Gateway · Wallets)
    ─► Arc     (USDC settlement)
    ─► decision receipt (sha256-sealed)`}</pre>
           </div>
@@ -228,7 +230,9 @@ export default async function Landing() {
             <div className="label text-s1">Traction</div>
             <h2 className="mt-2 text-[26px] font-semibold tracking-[-0.025em] text-ink">Live counts from this deployment</h2>
           </div>
-          <p className="max-w-sm text-[12.5px] leading-relaxed text-ink-3">Measured from the database on every page load. Demo workspaces are excluded; money counts only Circle-submitted testnet or live transactions.</p>
+          <p className="max-w-sm text-[12.5px] leading-relaxed text-ink-3">
+            Measured from the database on every page load. Demo workspaces are excluded; a live workspace has finished setup and run at least one cycle. Money counts only transactions submitted to Circle on Arc{mainnet ? "" : " Testnet (test USDC)"} — never simulated ones — and USDC spent excludes treasury moves.
+          </p>
         </div>
         {m.projects > 0 ? (
           <div className="mt-8 grid grid-cols-2 gap-px overflow-hidden rounded-[12px] border border-line bg-line sm:grid-cols-3 lg:grid-cols-6">
@@ -280,7 +284,7 @@ export default async function Landing() {
               ))}
             </div>
           </div>
-          <div className="text-[12px] text-ink-3">Testnet build. Demo data is fictional and always labelled.</div>
+          <div className="text-[12px] text-ink-3">{mainnet ? "Running on Arc mainnet." : "Running on Arc Testnet — payments use test USDC."} Demo data is fictional and always labelled.</div>
         </div>
       </footer>
     </div>

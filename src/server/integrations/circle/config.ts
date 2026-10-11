@@ -1,50 +1,90 @@
 import { CHAIN_CONFIGS } from "@circle-fin/x402-batching/client";
+import { arbitrum, arbitrumSepolia, base, baseSepolia, mainnet, sepolia, type Chain } from "viem/chains";
 
 /**
- * Network constants come from Circle's own SDK (CHAIN_CONFIGS), not hand-copied.
- * GrowthOS is testnet-only in this build.
+ * One switch for the whole deployment: GROWTHOS_NETWORK=testnet (default) | mainnet.
+ * Every chain id, token/contract address, Gateway endpoint and explorer comes from Circle's
+ * own SDK (CHAIN_CONFIGS in @circle-fin/x402-batching) or viem's chain registry - nothing is
+ * hand-copied. App Kit and Circle Wallets identifiers match the enums in their published types.
  */
-const arc = CHAIN_CONFIGS.arcTestnet;
+export type NetworkName = "testnet" | "mainnet";
+
+export function networkName(): NetworkName {
+  const v = (process.env.GROWTHOS_NETWORK ?? "testnet").trim().toLowerCase();
+  if (v !== "testnet" && v !== "mainnet") throw new Error(`GROWTHOS_NETWORK must be "testnet" or "mainnet" (got "${v}")`);
+  return v;
+}
+
+export const IS_MAINNET = networkName() === "mainnet";
+
+const arc = IS_MAINNET ? CHAIN_CONFIGS.arc : CHAIN_CONFIGS.arcTestnet;
+const explorerOf = (c: Chain) => c.blockExplorers?.default.url ?? "";
 
 export const ARC = {
-  name: "Arc Testnet",
-  chainId: arc.chain.id, // 5042002
+  name: IS_MAINNET ? "Arc" : "Arc Testnet",
+  network: networkName(),
+  /** Provenance label for money that moves on this network. */
+  dataMode: (IS_MAINNET ? "LIVE" : "TESTNET") as "LIVE" | "TESTNET",
+  chainId: arc.chain.id,
   caip2: `eip155:${arc.chain.id}`,
-  gatewayDomain: arc.domain, // 26
+  x402Chain: (IS_MAINNET ? "arc" : "arcTestnet") as "arc" | "arcTestnet",
+  gatewayDomain: arc.domain,
   usdc: arc.usdc,
   gatewayWallet: arc.gatewayWallet,
   gatewayMinter: arc.gatewayMinter,
-  rpcUrl: process.env.ARC_TESTNET_RPC ?? arc.rpcUrl ?? "https://rpc.testnet.arc.network",
-  explorer: arc.chain.blockExplorers?.default.url ?? "https://testnet.arcscan.app",
-  appKitChain: "Arc_Testnet" as const,
-  circleBlockchain: "ARC-TESTNET" as const,
+  rpcUrl: process.env.ARC_RPC_URL ?? (IS_MAINNET ? undefined : process.env.ARC_TESTNET_RPC) ?? arc.rpcUrl ?? arc.chain.rpcUrls.default.http[0],
+  explorer: explorerOf(arc.chain),
+  appKitChain: (IS_MAINNET ? "Arc" : "Arc_Testnet") as AppKitChain,
+  circleBlockchain: (IS_MAINNET ? "ARC" : "ARC-TESTNET") as "ARC" | "ARC-TESTNET",
+  faucet: IS_MAINNET ? null : "https://faucet.circle.com",
 };
 
-export const GATEWAY_API = process.env.GATEWAY_API_URL ?? "https://gateway-api-testnet.circle.com";
+export const GATEWAY_API = process.env.GATEWAY_API_URL ?? (IS_MAINNET ? "https://gateway-api.circle.com" : "https://gateway-api-testnet.circle.com");
 export const DISCOVERY_API = process.env.CIRCLE_DISCOVERY_URL ?? "https://api.circle.com/v2/x402/discovery/resources";
 
-/** App Kit chain id → Circle Wallets blockchain id → explorer, for chains GrowthOS may use. */
-export const CHAINS: Record<string, { label: string; circle: string; explorer: string; caip2: string; rpc: string }> = {
-  Arc_Testnet: { label: "Arc Testnet", circle: "ARC-TESTNET", explorer: "https://testnet.arcscan.app", caip2: "eip155:5042002", rpc: process.env.ARC_TESTNET_RPC ?? "https://rpc.testnet.arc.network" },
-  Base_Sepolia: { label: "Base Sepolia", circle: "BASE-SEPOLIA", explorer: "https://sepolia.basescan.org", caip2: "eip155:84532", rpc: "https://sepolia.base.org" },
-  Arbitrum_Sepolia: { label: "Arbitrum Sepolia", circle: "ARB-SEPOLIA", explorer: "https://sepolia.arbiscan.io", caip2: "eip155:421614", rpc: "https://sepolia-rollup.arbitrum.io/rpc" },
-  Ethereum_Sepolia: { label: "Ethereum Sepolia", circle: "ETH-SEPOLIA", explorer: "https://sepolia.etherscan.io", caip2: "eip155:11155111", rpc: "https://ethereum-sepolia-rpc.publicnode.com" },
+/** App Kit chain identifiers GrowthOS may use, by network. */
+export const TESTNET_CHAINS = ["Arc_Testnet", "Base_Sepolia", "Arbitrum_Sepolia", "Ethereum_Sepolia"] as const;
+export const MAINNET_CHAINS = ["Arc", "Base", "Arbitrum", "Ethereum"] as const;
+export type AppKitChain = (typeof TESTNET_CHAINS)[number] | (typeof MAINNET_CHAINS)[number];
+export const ACTIVE_CHAINS: readonly AppKitChain[] = IS_MAINNET ? MAINNET_CHAINS : TESTNET_CHAINS;
+/** The usual second chain for bridged budget (Base on either network). */
+export const BRIDGE_CHAIN: AppKitChain = IS_MAINNET ? "Base" : "Base_Sepolia";
+
+type ChainInfo = { label: string; circle: string; explorer: string; caip2: string; rpc: string; mainnet: boolean };
+const info = (label: string, circle: string, c: Chain, isMain: boolean, rpc?: string): ChainInfo => ({ label, circle, explorer: explorerOf(c), caip2: `eip155:${c.id}`, rpc: rpc ?? c.rpcUrls.default.http[0], mainnet: isMain });
+
+/** App Kit chain id → Circle Wallets blockchain id → explorer/RPC, for both networks. */
+export const CHAINS: Record<AppKitChain, ChainInfo> = {
+  Arc_Testnet: { ...info("Arc Testnet", "ARC-TESTNET", CHAIN_CONFIGS.arcTestnet.chain, false), rpc: IS_MAINNET ? CHAIN_CONFIGS.arcTestnet.rpcUrl ?? "" : ARC.rpcUrl },
+  Base_Sepolia: info("Base Sepolia", "BASE-SEPOLIA", baseSepolia, false),
+  Arbitrum_Sepolia: info("Arbitrum Sepolia", "ARB-SEPOLIA", arbitrumSepolia, false),
+  Ethereum_Sepolia: info("Ethereum Sepolia", "ETH-SEPOLIA", sepolia, false),
+  Arc: { ...info("Arc", "ARC", CHAIN_CONFIGS.arc.chain, true), rpc: IS_MAINNET ? ARC.rpcUrl : CHAIN_CONFIGS.arc.rpcUrl ?? "" },
+  Base: info("Base", "BASE", base, true),
+  Arbitrum: info("Arbitrum", "ARB", arbitrum, true),
+  Ethereum: info("Ethereum", "ETH", mainnet, true),
 };
 
-export const txExplorerUrl = (chain: string, hash: string) => `${CHAINS[chain]?.explorer ?? ARC.explorer}/tx/${hash}`;
-export const addressExplorerUrl = (chain: string, addr: string) => `${CHAINS[chain]?.explorer ?? ARC.explorer}/address/${addr}`;
+export const chainLabel = (chain: string) => CHAINS[chain as AppKitChain]?.label ?? chain;
+export const txExplorerUrl = (chain: string, hash: string) => `${CHAINS[chain as AppKitChain]?.explorer ?? ARC.explorer}/tx/${hash}`;
+export const addressExplorerUrl = (chain: string, addr: string) => `${CHAINS[chain as AppKitChain]?.explorer ?? ARC.explorer}/address/${addr}`;
 
 export type WalletProvider = "circle_dcw" | "local_testnet" | "unconfigured";
 
 /**
  * What this deployment can provision for a workspace:
  *  - circle: Circle developer-controlled wallets. Keys live in Circle's custody; GrowthOS holds only
- *    the API key + entity secret, server-side. Each workspace gets its own EOA on ARC-TESTNET.
- *  - local: a single server-side testnet key (the organizer example's model). Development only;
- *    refused unless GROWTHOS_NETWORK=testnet. Never sent to the browser or the LLM.
+ *    the API key + entity secret, server-side. Each workspace gets its own EOA on Arc.
+ *  - local: a single server-side key from AGENT_PRIVATE_KEY. Development only and testnet only:
+ *    refused on mainnet. Never sent to the browser or the LLM.
  */
 export function platformCustody(): "circle" | "local" | null {
   if (process.env.CIRCLE_API_KEY && process.env.CIRCLE_ENTITY_SECRET) return "circle";
-  if (process.env.AGENT_PRIVATE_KEY && (process.env.GROWTHOS_NETWORK ?? "testnet") === "testnet") return "local";
+  if (process.env.AGENT_PRIVATE_KEY && !IS_MAINNET) return "local";
   return null;
+}
+
+/** Public, non-secret network facts the UI may show. */
+export function networkInfo() {
+  return { name: ARC.name, network: ARC.network, mainnet: IS_MAINNET, explorer: ARC.explorer, faucet: ARC.faucet, chainId: ARC.chainId, dataMode: ARC.dataMode };
 }

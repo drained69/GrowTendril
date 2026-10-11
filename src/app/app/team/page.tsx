@@ -45,7 +45,7 @@ export default async function Team() {
         <div className="min-w-0 space-y-4">
           {canManage && (
             <Card>
-              <CardHeader title="Invite a teammate" description="Creates a single-use link bound to their email address." icon={<UserPlus />} />
+              <CardHeader title="Invite a teammate" description="Creates a single-use link for their email address. Email isn't verified — anyone holding the link can join as that address, so share it privately." icon={<UserPlus />} />
               <CardBody>
                 <InviteForm options={options} />
               </CardBody>

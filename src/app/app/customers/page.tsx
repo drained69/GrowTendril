@@ -1,15 +1,17 @@
 import { desc, eq } from "drizzle-orm";
-import { Building2, Radar } from "lucide-react";
+import { Building2 } from "lucide-react";
 import { requireProject } from "@/server/auth/current";
+import { can } from "@/server/auth/access";
 import { schema as s } from "@/server/db/client";
 import { relTime } from "@/lib/time";
-import { Card, Confidence, EmptyState, LinkButton, ModeBadge, PageHeader, Stat, StatStrip, StatusBadge } from "@/components/ui";
+import { Card, Confidence, EmptyState, ModeBadge, PageHeader, Stat, StatStrip, StatusBadge } from "@/components/ui";
+import { RunScanButton } from "@/components/features/intel/run-scan-button";
 import { DataTable } from "@/components/ui/data-table";
 
 const score = (v: number, strong = 70) => <span className={`num ${v >= strong ? "text-ink" : v >= 45 ? "text-ink-2" : "text-ink-4"}`}>{v}</span>;
 
 export default async function Customers() {
-  const { project, db } = await requireProject();
+  const { project, role, db } = await requireProject();
   const rows = await db.select().from(s.companies).where(eq(s.companies.projectId, project.id)).orderBy(desc(s.companies.overallScore));
   const qualified = rows.filter((c) => c.status === "qualified").length;
   const committable = rows.filter((c) => c.confidence >= 0.8).length;
@@ -77,9 +79,7 @@ export default async function Customers() {
           title="No companies with intent signals yet"
           description="Companies appear here when a scan finds public evidence of buying intent — recommendation requests, migrations, hiring or funding tied to your category."
           action={
-            <LinkButton href="/app/runs" variant="primary" icon={<Radar />}>
-              Run a scan
-            </LinkButton>
+            <RunScanButton canOperate={can(role, "operate")} />
           }
         />
       )}

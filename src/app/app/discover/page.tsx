@@ -1,5 +1,5 @@
 import Link from "next/link";
-import { and, desc, eq, gte } from "drizzle-orm";
+import { and, count, desc, eq, gte } from "drizzle-orm";
 import { ArrowRight, ArrowUpRight, Plug, Radar, Tags } from "lucide-react";
 import { requireProject } from "@/server/auth/current";
 import { can } from "@/server/auth/access";
@@ -7,11 +7,10 @@ import { schema as s } from "@/server/db/client";
 import { classifySignals, SIGNAL_LABEL, termHits } from "@/server/domain/intel/signals";
 import { analyzeMention } from "@/server/domain/intel/mentions";
 import { listConnections, type ProviderConnection } from "@/server/integrations/vault";
-import { runCycleAction } from "@/server/actions/agent";
 import { relTime, DAY_MS } from "@/lib/time";
 import { Badge, Callout, Card, CardBody, CardHeader, EmptyState, LinkButton, ModeBadge, PageHeader, StatusDot } from "@/components/ui";
 import { LinkTabs } from "@/components/ui/tabs";
-import { ActionButton } from "@/components/features/agent/action-button";
+import { RunScanButton } from "@/components/features/intel/run-scan-button";
 
 const FILTERS = [
   { key: "all", label: "All" },
@@ -38,9 +37,12 @@ export default async function Discover({ searchParams }: { searchParams: Promise
   const { project, role, db } = await requireProject();
   const pid = project.id;
 
-  const [[profile], posts, kolRows, narrRows, connections] = await Promise.all([
+  const since = new Date(Date.now() - 30 * DAY_MS);
+  const [[profile], posts, [total], kolRows, narrRows, connections] = await Promise.all([
     db.select().from(s.productProfiles).where(eq(s.productProfiles.projectId, pid)),
-    db.select().from(s.socialPosts).where(and(eq(s.socialPosts.projectId, pid), gte(s.socialPosts.publishedAt, new Date(Date.now() - 30 * DAY_MS)))).orderBy(desc(s.socialPosts.publishedAt)).limit(300),
+    db.select().from(s.socialPosts).where(and(eq(s.socialPosts.projectId, pid), gte(s.socialPosts.publishedAt, since))).orderBy(desc(s.socialPosts.publishedAt)).limit(300),
+    // The feed analyzes the newest 300; the header counts everything in the window.
+    db.select({ n: count() }).from(s.socialPosts).where(and(eq(s.socialPosts.projectId, pid), gte(s.socialPosts.publishedAt, since))),
     db.select({ h: s.kols.handle }).from(s.kols).where(eq(s.kols.projectId, pid)),
     db.select({ id: s.narrativePosts.postId }).from(s.narrativePosts).innerJoin(s.narratives, eq(s.narrativePosts.narrativeId, s.narratives.id)).where(eq(s.narratives.projectId, pid)),
     listConnections(db, pid),
@@ -90,7 +92,8 @@ export default async function Discover({ searchParams }: { searchParams: Promise
           <>
             <ModeBadge mode={project.dataMode} />
             <span>
-              <span className="num text-ink-2">{posts.length}</span> posts in the last 30 days
+              <span className="num text-ink-2">{total?.n ?? posts.length}</span> posts in the last 30 days
+              {(total?.n ?? 0) > posts.length && <span className="text-ink-4"> (newest {posts.length} analyzed)</span>}
             </span>
             <span className="text-ink-4">·</span>
             <span>
@@ -103,7 +106,7 @@ export default async function Discover({ searchParams }: { searchParams: Promise
             <LinkButton href="/app/integrations" icon={<Plug />}>
               Sources
             </LinkButton>
-            {can(role, "operate") && <ActionButton action={runCycleAction} label="Run scan" variant="primary" icon={<Radar />} />}
+            {can(role, "operate") && <RunScanButton canOperate />}
           </>
         }
       />
@@ -210,7 +213,7 @@ export default async function Discover({ searchParams }: { searchParams: Promise
                     ? "Run a scan to collect public posts from the ready sources."
                     : "Connect at least one market source, then run a scan."
               }
-              action={posts.length ? <LinkButton href="/app/discover">Show all</LinkButton> : <LinkButton href="/app/integrations" variant="primary">Connect sources</LinkButton>}
+              action={posts.length ? <LinkButton href="/app/discover">Show all</LinkButton> : usable.length ? <RunScanButton canOperate={can(role, "operate")} /> : <LinkButton href="/app/integrations" variant="primary">Connect sources</LinkButton>}
             />
           )}
         </div>

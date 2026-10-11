@@ -54,6 +54,8 @@ export async function onboardProductAction(_: unknown, form: FormData): Promise<
 export async function onboardIcpAction(): Promise<ActionResult> {
   try {
     const { project, db } = await guard("manage_workspace");
+    // Re-proposing would replace an active workspace's ICP wholesale; after setup it is edited in Settings.
+    if (project.onboardingStep >= 5) return { ok: false, error: "This workspace is already set up — edit the ICP in Settings" };
     const [profile] = await db.select().from(s.productProfiles).where(eq(s.productProfiles.projectId, project.id));
     const r = await proposeIcp(ProductProfileSchema.parse({ ...profile, pricing: profile.pricing }), project.name);
     await db.delete(s.icps).where(eq(s.icps.projectId, project.id));
@@ -115,6 +117,9 @@ const AutonomyForm = z.object({
 export async function onboardAutonomyAction(_: unknown, form: FormData): Promise<ActionResult> {
   try {
     const { project, db, user } = await guard("manage_policy");
+    // Activation writes a fresh policy from defaults; on a live workspace that would silently reset
+    // categories and chains without a version bump. Policy changes after setup go through Settings.
+    if (project.onboardingStep >= 5) return { ok: false, error: "This workspace is already active — change spend rules in Settings → Spend policy" };
     const f = AutonomyForm.parse(Object.fromEntries(["maxTransaction", "dailySpend", "kolThreshold", "bountyThreshold", "hardCeiling", "autopilot"].map((k) => [k, String(form.get(k) ?? "")])));
     const values = {
       ...DEFAULT_POLICY,
@@ -128,7 +133,8 @@ export async function onboardAutonomyAction(_: unknown, form: FormData): Promise
     await db.insert(s.policies).values({ id: newId(), projectId: project.id, ...values }).onConflictDoUpdate({ target: s.policies.projectId, set: values });
     await db.update(s.projects).set({ onboardingStep: 5, autopilot: f.autopilot }).where(eq(s.projects.id, project.id));
     await audit(db, { projectId: project.id, actorType: "user", actorId: user.id, action: "workspace.activate", data: { autopilot: f.autopilot } });
-    await enqueue(db, { kind: "cycle", projectId: project.id, trigger: "user", dedupeKey: `first-scan:${project.id}` });
+    // Discovery only: the first run never spends, whatever the policy allows.
+    await enqueue(db, { kind: "scan", projectId: project.id, trigger: "user", dedupeKey: `first-scan:${project.id}` });
     kickWorker();
   } catch (e) {
     return fail(e);

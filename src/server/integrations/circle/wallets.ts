@@ -6,7 +6,7 @@ import * as s from "@/server/db/schema";
 import { audit } from "@/server/db/helpers";
 import { newId } from "@/server/lib/ids";
 import { circleClient } from "@/server/integrations/circle/client";
-import { ARC, platformCustody } from "@/server/integrations/circle/config";
+import { ARC, IS_MAINNET, platformCustody } from "@/server/integrations/circle/config";
 import { localKeyAddress, signerFor } from "@/server/integrations/circle/signer";
 import { arcUsdcBalanceMicro } from "@/server/integrations/circle/wallet-balance";
 import { gatewayBalance } from "@/server/integrations/circle/gateway";
@@ -32,14 +32,15 @@ export function walletIsLive(w: Wallet | null | undefined): boolean {
 async function upsertWallet(db: DB, projectId: string, v: Partial<typeof s.wallets.$inferInsert> & { provider: string; status: string }) {
   const existing = await getWallet(db, projectId);
   if (existing) {
-    await db.update(s.wallets).set(v).where(eq(s.wallets.id, existing.id));
+    await db.update(s.wallets).set({ dataMode: ARC.dataMode, blockchain: ARC.circleBlockchain, frozen: IS_MAINNET || existing.frozen, ...v }).where(eq(s.wallets.id, existing.id));
     return (await getWallet(db, projectId))!;
   }
-  const [row] = await db.insert(s.wallets).values({ id: newId(), projectId, dataMode: "TESTNET", ...v }).returning();
+  // Mainnet wallets start frozen: an owner reviews the spend policy and resumes spending deliberately.
+  const [row] = await db.insert(s.wallets).values({ id: newId(), projectId, dataMode: ARC.dataMode, blockchain: ARC.circleBlockchain, frozen: IS_MAINNET, ...v }).returning();
   return row;
 }
 
-/** Create a dedicated Circle wallet (EOA on ARC-TESTNET) for this workspace. */
+/** Create a dedicated Circle wallet (EOA on Arc for the configured network) for this workspace. */
 export async function provisionWallet(db: DB, a: { projectId: string; userId: string; projectName: string }): Promise<Wallet> {
   const existing = await getWallet(db, a.projectId);
   if (existing && walletIsLive(existing)) return existing;
@@ -53,26 +54,26 @@ export async function provisionWallet(db: DB, a: { projectId: string; userId: st
     const res = await client.createWallets({ walletSetId, blockchains: [ARC.circleBlockchain], count: 1, accountType: "EOA", metadata: [{ name: a.projectName.slice(0, 50), refId: a.projectId }] });
     const w = res.data?.wallets?.[0];
     if (!w) throw new Error("Circle did not return a wallet");
-    const row = await upsertWallet(db, a.projectId, { provider: "circle_dcw", address: w.address, circleWalletId: w.id, circleWalletSetId: walletSetId, status: "ACTIVE", dataMode: "TESTNET" });
+    const row = await upsertWallet(db, a.projectId, { provider: "circle_dcw", address: w.address, circleWalletId: w.id, circleWalletSetId: walletSetId, status: "ACTIVE", dataMode: ARC.dataMode });
     await audit(db, { projectId: a.projectId, actorType: "user", actorId: a.userId, action: "wallet.provision", target: w.address, data: { custody: "circle" } });
     return row;
   }
   if (custody === "local") {
-    const row = await upsertWallet(db, a.projectId, { provider: "local_testnet", address: localKeyAddress(), status: "ACTIVE", dataMode: "TESTNET" });
+    const row = await upsertWallet(db, a.projectId, { provider: "local_testnet", address: localKeyAddress(), status: "ACTIVE", dataMode: ARC.dataMode });
     await audit(db, { projectId: a.projectId, actorType: "user", actorId: a.userId, action: "wallet.provision", target: row.address ?? "", data: { custody: "local_testnet" } });
     return row;
   }
   throw new Error("No custody configured on this deployment. Set CIRCLE_API_KEY and CIRCLE_ENTITY_SECRET.");
 }
 
-/** Attach an existing Circle developer-controlled wallet (must be an ARC-TESTNET wallet under this entity). */
+/** Attach an existing Circle developer-controlled wallet (must be an Arc wallet on the configured network, under this entity). */
 export async function attachCircleWallet(db: DB, a: { projectId: string; userId: string; circleWalletId: string }): Promise<Wallet> {
   const client = await circleClient();
   const res = await client.getWallet({ id: a.circleWalletId });
   const w = res.data?.wallet;
   if (!w) throw new Error("Wallet not found under this Circle entity");
   if (w.blockchain !== ARC.circleBlockchain) throw new Error(`Wallet is on ${w.blockchain}; GrowthOS operates on ${ARC.circleBlockchain}`);
-  const row = await upsertWallet(db, a.projectId, { provider: "circle_dcw", address: w.address, circleWalletId: w.id, circleWalletSetId: w.walletSetId, status: "ACTIVE", dataMode: "TESTNET" });
+  const row = await upsertWallet(db, a.projectId, { provider: "circle_dcw", address: w.address, circleWalletId: w.id, circleWalletSetId: w.walletSetId, status: "ACTIVE", dataMode: ARC.dataMode });
   await audit(db, { projectId: a.projectId, actorType: "user", actorId: a.userId, action: "wallet.attach", target: w.address });
   return row;
 }
@@ -95,13 +96,14 @@ export async function walletBalances(w: Wallet | null): Promise<WalletBalances> 
 
 /**
  * Move wallet USDC into Circle Gateway so x402 payments can be made by signature.
- * Circle custody: approve + deposit as contract executions. Testnet key: GatewayClient.deposit.
+ * Circle custody: approve + deposit as contract executions. Development key (testnet only): GatewayClient.deposit.
  * Returns the on-chain tx hashes. Long-running — called from the job worker.
  */
 export async function depositToGateway(w: Wallet, amount: string): Promise<{ approveTx: string | null; depositTx: string }> {
-  const arc = CHAIN_CONFIGS.arcTestnet;
+  const arc = CHAIN_CONFIGS[ARC.x402Chain];
   if (w.provider === "local_testnet") {
-    const client = new GatewayClient({ chain: "arcTestnet", privateKey: process.env.AGENT_PRIVATE_KEY as Hex });
+    if (IS_MAINNET) throw new Error("Development keys are disabled on mainnet");
+    const client = new GatewayClient({ chain: ARC.x402Chain, privateKey: process.env.AGENT_PRIVATE_KEY as Hex });
     const r = await client.deposit(amount);
     return { approveTx: r.approvalTxHash ?? null, depositTx: r.depositTxHash };
   }

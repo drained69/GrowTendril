@@ -113,7 +113,7 @@ export function clusterIssues(mentions: { issueKey: string | null; publishedAt: 
       recommendation: blocks
         ? `Investigate ${t.label.toLowerCase()} before increasing acquisition spend — new users will hit the same friction.`
         : v7
-          ? `Monitor ${t.label.toLowerCase()}; route examples to the product team.`
+          ? `Monitor ${t.label.toLowerCase()}; share the linked examples with whoever owns the product.`
           : "",
     };
   }).filter((c) => c.mentions7d + c.mentionsPrev7d > 0);

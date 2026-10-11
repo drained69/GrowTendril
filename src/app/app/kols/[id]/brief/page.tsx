@@ -93,9 +93,13 @@ export default async function Brief({ params, searchParams }: { params: Promise<
               {b.claimsWithEvidence.map((c) => (
                 <li key={c.claim + c.source}>
                   {c.claim}
-                  <a href={c.source} target={c.source.startsWith("http") ? "_blank" : undefined} rel="noreferrer" className="ml-1.5 inline-flex items-center gap-0.5 text-[11.5px] text-s1 hover:underline">
-                    source{c.source.startsWith("http") && <ArrowUpRight className="size-3" />}
-                  </a>
+                  {/^https?:\/\//i.test(c.source) ? (
+                    <a href={c.source} target="_blank" rel="noreferrer" className="ml-1.5 inline-flex items-center gap-0.5 text-[11.5px] text-s1 hover:underline">
+                      source <ArrowUpRight className="size-3" />
+                    </a>
+                  ) : (
+                    <span className="ml-1.5 text-[11.5px] text-ink-3">(source: {c.source})</span>
+                  )}
                 </li>
               ))}
             </ul>

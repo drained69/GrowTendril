@@ -27,7 +27,7 @@ async function attempt<T>(fn: () => Promise<T>): Promise<{ v: T | null; err: str
   }
 }
 
-const CUSTODY_LABEL: Record<string, string> = { circle_dcw: "Circle developer-controlled wallet", local_testnet: "Server-side testnet key", unconfigured: "Not configured" };
+const CUSTODY_LABEL: Record<string, string> = { circle_dcw: "Circle developer-controlled wallet", local_testnet: "Server-side development key (testnet)", unconfigured: "Not configured" };
 
 const Code = ({ children }: { children: React.ReactNode }) => <code className="num rounded-[4px] bg-surface-3 px-1 py-px text-[11.5px] text-ink">{children}</code>;
 
@@ -65,7 +65,7 @@ export default async function WalletPage() {
     <div className="space-y-4">
       <PageHeader
         title="Wallet"
-        description="The agent’s operating budget. Keys never reach the AI: Circle custodies them (developer-controlled wallet) or, in testnet-key mode, they stay in server env and only sign through the policy engine."
+        description="The agent’s operating budget. Keys never reach the AI: Circle custodies them (developer-controlled wallet) or, in development-key mode (testnet only), they stay in server env and only sign through the policy engine."
         meta={
           <>
             <ModeBadge mode={wallet?.dataMode ?? (demo ? "DEMO" : "SIMULATED")} />
@@ -102,13 +102,13 @@ export default async function WalletPage() {
         <div className="grid gap-4 lg:grid-cols-[1.35fr_1fr]">
           <div className="space-y-4">
             <Card>
-              <CardHeader title="Workspace wallet" description="Arc Testnet EOA the agent spends from" icon={<WalletIcon />} action={statusBadge} />
+              <CardHeader title="Workspace wallet" description={`${ARC.name} EOA the agent spends from`} icon={<WalletIcon />} action={statusBadge} />
               <CardBody className="space-y-4">
                 <div>
                   <div className="label mb-1.5">Address</div>
                   <div className="flex items-center gap-2">
                     <CopyField value={address} className="flex-1" />
-                    <a href={addressExplorerUrl("Arc_Testnet", address)} target="_blank" rel="noreferrer" className="inline-flex h-8 shrink-0 items-center gap-1 rounded-[6px] border border-line-strong px-2.5 text-[12px] text-ink-2 hover:bg-surface-2 hover:text-ink">
+                    <a href={addressExplorerUrl(ARC.appKitChain, address)} target="_blank" rel="noreferrer" className="inline-flex h-8 shrink-0 items-center gap-1 rounded-[6px] border border-line-strong px-2.5 text-[12px] text-ink-2 hover:bg-surface-2 hover:text-ink">
                       Explorer <ArrowUpRight className="size-3.5" />
                     </a>
                   </div>
@@ -118,8 +118,8 @@ export default async function WalletPage() {
                     { k: "Network", v: `${ARC.name} · chain ${ARC.chainId} · Gateway domain ${ARC.gatewayDomain}` },
                     { k: "Custody", v: CUSTODY_LABEL[wallet!.provider] ?? wallet!.provider },
                     ...(wallet!.circleWalletId ? [{ k: "Circle wallet ID", v: <span className="num text-[11.5px]">{wallet!.circleWalletId}</span> }] : []),
-                    { k: "USDC contract", v: <ExternalLink href={addressExplorerUrl("Arc_Testnet", ARC.usdc)} className="num text-[11.5px]">{shortHash(ARC.usdc)}</ExternalLink> },
-                    { k: "GatewayWallet", v: <ExternalLink href={addressExplorerUrl("Arc_Testnet", ARC.gatewayWallet)} className="num text-[11.5px]">{shortHash(ARC.gatewayWallet)}</ExternalLink> },
+                    { k: "USDC contract", v: <ExternalLink href={addressExplorerUrl(ARC.appKitChain, ARC.usdc)} className="num text-[11.5px]">{shortHash(ARC.usdc)}</ExternalLink> },
+                    { k: "GatewayWallet", v: <ExternalLink href={addressExplorerUrl(ARC.appKitChain, ARC.gatewayWallet)} className="num text-[11.5px]">{shortHash(ARC.gatewayWallet)}</ExternalLink> },
                     { k: "Created", v: relTime(wallet!.createdAt) },
                   ]}
                 />
@@ -144,7 +144,7 @@ export default async function WalletPage() {
               <CardHeader title="Fund Circle Gateway" description="x402 services are paid by signature from the Gateway balance, not the wallet directly" icon={<ArrowLeftRight />} />
               <CardBody>
                 {manage ? (
-                  <DepositForm disabled={!live || wallet!.frozen || demo} reason={demo ? "Demo workspaces run in simulation — create a real workspace to deposit." : !live ? "The wallet can’t sign on this deployment." : wallet!.frozen ? "The wallet is frozen." : undefined} />
+                  <DepositForm networkName={ARC.name} disabled={!live || wallet!.frozen || demo} reason={demo ? "Demo workspaces run in simulation — create a real workspace to deposit." : !live ? "The wallet can’t sign on this deployment." : wallet!.frozen ? "The wallet is frozen." : undefined} />
                 ) : (
                   <p className="text-[12.5px] text-ink-3">Only owners and admins can move treasury funds.</p>
                 )}
@@ -175,7 +175,7 @@ export default async function WalletPage() {
                           <td className="whitespace-nowrap text-ink-3">{relTime(j.createdAt)}</td>
                           <td className="max-w-[220px] truncate text-[11.5px]">
                             {r.depositTx ? (
-                              <ExternalLink href={txExplorerUrl("Arc_Testnet", r.depositTx)} className="num">
+                              <ExternalLink href={txExplorerUrl(ARC.appKitChain, r.depositTx)} className="num">
                                 {shortHash(r.depositTx, 4)}
                               </ExternalLink>
                             ) : j.lastError ? (
@@ -227,8 +227,14 @@ export default async function WalletPage() {
                     <OnrampButton address={address} userId={user.id} disabled={!manage} />
                   ) : (
                     <p className="text-[11.5px] text-ink-3">
-                      Arc Onramp is optional — set <Code>ONRAMP_API_KEY</Code> to buy USDC straight into this wallet. Otherwise fund it from{" "}
-                      <ExternalLink href="https://faucet.circle.com">faucet.circle.com</ExternalLink>.
+                      Arc Onramp is optional — set <Code>ONRAMP_API_KEY</Code> to buy USDC straight into this wallet.{" "}
+                      {ARC.faucet ? (
+                        <>
+                          Otherwise fund it from <ExternalLink href={ARC.faucet}>faucet.circle.com</ExternalLink>.
+                        </>
+                      ) : (
+                        <>Otherwise send USDC on {ARC.name} to the address above.</>
+                      )}
                     </p>
                   )}
                 </div>
@@ -274,21 +280,21 @@ function WalletSetup({ custody, manage, demo }: { custody: "circle" | "local" | 
       <EmptyState
         icon={<WalletIcon />}
         title="Demo workspaces run in simulation"
-        description="Every payment in the demo is labelled SIMULATED or DEMO — no funds move. Create a real workspace to provision an Arc Testnet wallet."
+        description={`Every payment in the demo is labelled SIMULATED or DEMO — no funds move. Create a real workspace to provision an ${ARC.name} wallet.`}
       />
     );
   return (
     <div className="grid gap-4 lg:grid-cols-[1.35fr_1fr]">
       <Card>
-        <CardHeader title="Create the workspace wallet" description="Each workspace gets its own Arc Testnet wallet — the agent’s operating budget" icon={<WalletIcon />} action={<Badge tone="warn">Not set up</Badge>} />
+        <CardHeader title="Create the workspace wallet" description={`Each workspace gets its own ${ARC.name} wallet — the agent’s operating budget`} icon={<WalletIcon />} action={<Badge tone="warn">Not set up</Badge>} />
         <CardBody className="space-y-4">
           {custody === "circle" ? (
             <Callout tone="info" title="Circle developer-controlled wallets">
-              Keys live in Circle’s custody. GrowthOS holds only the API key and entity secret, server-side, and creates a dedicated EOA on ARC-TESTNET for this workspace.
+              Keys live in Circle’s custody. GrowthOS holds only the API key and entity secret, server-side, and creates a dedicated EOA on {ARC.circleBlockchain} for this workspace.
             </Callout>
           ) : custody === "local" ? (
-            <Callout tone="warn" title="Testnet key (development only)">
-              This deployment signs with a single server-side testnet key (<Code>AGENT_PRIVATE_KEY</Code>). It is never sent to the browser or the LLM, and is refused outside testnet. Use Circle custody for anything shared.
+            <Callout tone="warn" title="Development key (testnet only)">
+              This deployment signs with a single server-side development key (<Code>AGENT_PRIVATE_KEY</Code>). It is never sent to the browser or the LLM, and is refused outside testnet. Use Circle custody for anything shared.
             </Callout>
           ) : (
             <Callout tone="danger" title="No custody configured on this deployment">
@@ -297,8 +303,8 @@ function WalletSetup({ custody, manage, demo }: { custody: "circle" | "local" | 
           )}
           {manage ? (
             <div className="flex flex-wrap items-center gap-3">
-              <ActionButton action={provisionWalletAction} label="Create wallet on Arc Testnet" icon={<CircleDollarSign />} variant="primary" disabled={!custody} />
-              <span className="text-[11.5px] text-ink-3">{custody ? "Takes a few seconds. Fund it afterwards from faucet.circle.com." : "Enabled once custody is configured."}</span>
+              <ActionButton action={provisionWalletAction} label={`Create wallet on ${ARC.name}`} icon={<CircleDollarSign />} variant="primary" disabled={!custody} />
+              <span className="text-[11.5px] text-ink-3">{custody ? (ARC.faucet ? "Takes a few seconds. Fund it afterwards from faucet.circle.com." : "Takes a few seconds. It starts frozen: fund it with USDC on Arc, review the spend policy, then an owner resumes spending.") : "Enabled once custody is configured."}</span>
             </div>
           ) : (
             <p className="text-[12.5px] text-ink-3">Ask a workspace owner or admin to create the wallet.</p>
@@ -306,11 +312,11 @@ function WalletSetup({ custody, manage, demo }: { custody: "circle" | "local" | 
         </CardBody>
       </Card>
       <Card>
-        <CardHeader title="Attach an existing Circle wallet" description="Already have an ARC-TESTNET developer-controlled wallet?" icon={<ArrowLeftRight />} />
+        <CardHeader title="Attach an existing Circle wallet" description={`Already have an ${ARC.circleBlockchain} developer-controlled wallet?`} icon={<ArrowLeftRight />} />
         <CardBody>
           {manage ? (
             custody === "circle" ? (
-              <AttachWalletForm />
+              <AttachWalletForm blockchain={ARC.circleBlockchain} />
             ) : (
               <p className="text-[12.5px] text-ink-3">
                 Attaching needs Circle credentials on the server (<Code>CIRCLE_API_KEY</Code>, <Code>CIRCLE_ENTITY_SECRET</Code>).

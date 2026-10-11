@@ -30,7 +30,7 @@ function useRun() {
 }
 
 /** Attach an existing Circle developer-controlled wallet by its UUID. */
-export function AttachWalletForm({ disabled }: { disabled?: boolean }) {
+export function AttachWalletForm({ disabled, blockchain }: { disabled?: boolean; blockchain: string }) {
   const [id, setId] = useState("");
   const { pending, error, run } = useRun();
   return (
@@ -41,7 +41,7 @@ export function AttachWalletForm({ disabled }: { disabled?: boolean }) {
         run(() => attachWalletAction(id), () => setId(""));
       }}
     >
-      <Field label="Circle wallet ID" htmlFor="circle-wallet-id" error={error} hint="An ARC-TESTNET wallet under the Circle entity configured on this deployment.">
+      <Field label="Circle wallet ID" htmlFor="circle-wallet-id" error={error} hint={`An ${blockchain} wallet under the Circle entity configured on this deployment.`}>
         <Input id="circle-wallet-id" value={id} onChange={(e) => setId(e.target.value)} placeholder="xxxxxxxx-xxxx-xxxx-xxxx-xxxxxxxxxxxx" className="num text-[12px]" disabled={disabled || pending} autoComplete="off" spellCheck={false} />
       </Field>
       <Button type="submit" icon={<Link2 />} loading={pending} disabled={disabled || !id.trim()}>
@@ -52,7 +52,7 @@ export function AttachWalletForm({ disabled }: { disabled?: boolean }) {
 }
 
 /** Move wallet USDC into Circle Gateway so x402 services can be paid by signature. */
-export function DepositForm({ disabled, reason }: { disabled?: boolean; reason?: string }) {
+export function DepositForm({ disabled, reason, networkName }: { disabled?: boolean; reason?: string; networkName: string }) {
   const [amount, setAmount] = useState("");
   const { pending, error, run } = useRun();
   return (
@@ -60,7 +60,7 @@ export function DepositForm({ disabled, reason }: { disabled?: boolean; reason?:
       className="space-y-2.5"
       onSubmit={(e) => {
         e.preventDefault();
-        if (!window.confirm(`Deposit ${amount} USDC from the agent wallet into Circle Gateway on Arc Testnet?`)) return;
+        if (!window.confirm(`Deposit ${amount} USDC from the agent wallet into Circle Gateway on ${networkName}?`)) return;
         run(() => depositToGatewayAction(amount), () => setAmount(""));
       }}
     >

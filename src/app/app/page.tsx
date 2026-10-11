@@ -1,15 +1,16 @@
 import Link from "next/link";
 import { and, count, desc, eq, gte, ne } from "drizzle-orm";
-import { ArrowRight, Building2, CircleDollarSign, Flag, Plug, Radar, Sparkles, TrendingUp, Users } from "lucide-react";
+import { ArrowRight, Building2, CircleDollarSign, Flag, Play, Plug, Radar, Sparkles, TrendingUp, Users } from "lucide-react";
 import { requireProject } from "@/server/auth/current";
 import { can } from "@/server/auth/access";
 import { schema as s } from "@/server/db/client";
 import { activeMission, missionSummary, CATEGORY_LABEL } from "@/server/queries/missions";
 import { recentDecisions, recentTransactions, spentTodayMicro } from "@/server/queries/activity";
 import { getWallet, walletIsLive } from "@/server/integrations/circle/wallets";
+import { ARC } from "@/server/integrations/circle/config";
 import { listConnections } from "@/server/integrations/vault";
 import { activeJob } from "@/server/jobs/queue";
-import { runCycleAction } from "@/server/actions/agent";
+import { runCycleAction, runScanAction } from "@/server/actions/agent";
 import { fmtUsdc } from "@/lib/money";
 import { relTime, DAY_MS } from "@/lib/time";
 import { Badge, Callout, Card, CardBody, CardFooter, CardHeader, Confidence, EmptyState, LinkButton, ModeBadge, PageHeader, Stat, StatusDot, TxStateBadge, Velocity, VerdictBadge, shortHash } from "@/components/ui";
@@ -28,25 +29,34 @@ export default async function Overview({ searchParams }: { searchParams: Promise
   const pid = project.id;
   const demo = project.dataMode === "DEMO";
 
-  const [mission, wallet, connections, scanning, decisions, txs, spentToday] = await Promise.all([
+  const [mission, wallet, connections, scanJob, cycleJob, decisions, txs, spentToday] = await Promise.all([
     activeMission(db, pid),
     getWallet(db, pid),
     listConnections(db, pid),
+    activeJob(db, pid, "scan"),
     activeJob(db, pid, "cycle"),
     recentDecisions(db, pid, 7),
     recentTransactions(db, pid, 6),
     spentTodayMicro(db, pid),
   ]);
+  const scanning = scanJob ?? cycleJob;
   const sum = mission ? await missionSummary(db, mission) : null;
-  const [[policy], qualified, [topNarr], [topKol], issues, posts, [counts]] = await Promise.all([
+  const [[policy], qualified, [topNarr], [topKol], issues, [counts]] = await Promise.all([
     db.select().from(s.policies).where(eq(s.policies.projectId, pid)),
-    db.select().from(s.companies).where(eq(s.companies.projectId, pid)).orderBy(desc(s.companies.overallScore)).limit(6),
-    db.select().from(s.narratives).where(eq(s.narratives.projectId, pid)).orderBy(desc(s.narratives.relevance), desc(s.narratives.velocityPct)).limit(1),
+    db.select().from(s.companies).where(and(eq(s.companies.projectId, pid), eq(s.companies.status, "qualified"))).orderBy(desc(s.companies.overallScore)).limit(6),
+    db.select().from(s.narratives).where(and(eq(s.narratives.projectId, pid), gte(s.narratives.volume7d, 1))).orderBy(desc(s.narratives.relevance), desc(s.narratives.velocityPct)).limit(1),
     db.select().from(s.opportunities).where(and(eq(s.opportunities.projectId, pid), eq(s.opportunities.type, "KOL"), ne(s.opportunities.status, "dismissed"))).orderBy(desc(s.opportunities.overallScore)).limit(1),
     db.select().from(s.productIssues).where(and(eq(s.productIssues.projectId, pid), gte(s.productIssues.mentions7d, 3))),
-    db.select({ at: s.socialPosts.publishedAt }).from(s.socialPosts).where(and(eq(s.socialPosts.projectId, pid), gte(s.socialPosts.publishedAt, new Date(Date.now() - 14 * DAY_MS)))),
     db.select({ n: count() }).from(s.evidence).where(eq(s.evidence.projectId, pid)),
   ]);
+  // Sparkline is the top narrative's own clustered posts, not all project posts.
+  const posts = topNarr
+    ? await db
+        .select({ at: s.socialPosts.publishedAt })
+        .from(s.narrativePosts)
+        .innerJoin(s.socialPosts, eq(s.narrativePosts.postId, s.socialPosts.id))
+        .where(and(eq(s.narrativePosts.narrativeId, topNarr.id), gte(s.socialPosts.publishedAt, new Date(Date.now() - 14 * DAY_MS))))
+    : [];
   const daily = Array.from({ length: 14 }, (_, i) => posts.filter((p) => Math.floor((Date.now() - p.at.getTime()) / DAY_MS) === 13 - i).length);
   const live = walletIsLive(wallet);
   const connected = connections.filter((c) => c.source === "workspace" || c.source === "platform" || c.source === "keyless").length;
@@ -54,7 +64,7 @@ export default async function Overview({ searchParams }: { searchParams: Promise
   const setup = [
     { done: !!mission, label: "Set a mission", detail: "A goal and a USDC budget to work against", href: "/app/missions", icon: <Flag /> },
     { done: connected > 0, label: "Connect market sources", detail: `${connected} of ${connections.length} sources ready`, href: "/app/integrations", icon: <Plug /> },
-    { done: live, label: "Create the agent wallet", detail: "Arc Testnet wallet the agent spends from", href: "/app/wallet", icon: <CircleDollarSign /> },
+    { done: live, label: "Create the agent wallet", detail: `${ARC.name} wallet the agent spends from`, href: "/app/wallet", icon: <CircleDollarSign /> },
     { done: (counts?.n ?? 0) > 0, label: "Run the first scan", detail: scanning ? "Scan in progress…" : "Collect evidence from connected sources", href: "/app/runs", icon: <Radar /> },
   ];
   const setupLeft = setup.filter((x) => !x.done).length;
@@ -77,7 +87,18 @@ export default async function Overview({ searchParams }: { searchParams: Promise
                 Guided demo
               </LinkButton>
             )}
-            {can(role, "operate") && <ActionButton action={runCycleAction} label="Run cycle" variant="primary" icon={<Radar />} />}
+            {can(role, "operate") && (
+              <>
+                <ActionButton action={runScanAction} label="Run scan" icon={<Radar />} />
+                <ActionButton
+                  action={runCycleAction}
+                  label="Run cycle"
+                  variant="primary"
+                  icon={<Play />}
+                  confirm="Run the full operator loop? It scans, then may buy data and propose or make payments within your spend policy. Use Run scan to only collect evidence."
+                />
+              </>
+            )}
           </>
         }
       />
@@ -121,7 +142,7 @@ export default async function Overview({ searchParams }: { searchParams: Promise
                 <div className="grid grid-cols-3 gap-6">
                   <Stat size="sm" label="Attributed" value={sum.attributed} sub="to experiments" />
                   <Stat size="sm" label="Cost / qualified" value={sum.costPerQualified ? fmtUsdc(sum.costPerQualified, { unit: false }) : "—"} sub="USDC, measured" />
-                  <Stat size="sm" label="Efficiency" value={sum.efficiency} sub="growth per USDC" />
+                  <Stat size="sm" label="Growth efficiency" value={`${sum.efficiency}/100`} sub="composite score" />
                 </div>
               </div>
               <div className="mt-4">
@@ -140,7 +161,7 @@ export default async function Overview({ searchParams }: { searchParams: Promise
               <div className="grid grid-cols-4 gap-3">
                 <Stat size="sm" label="Total" value={fmtUsdc(mission.budgetMicro, { unit: false })} />
                 <Stat size="sm" label="Spent" value={fmtUsdc(sum.spent, { unit: false })} />
-                <Stat size="sm" label="Committed" value={fmtUsdc(sum.committed, { unit: false })} />
+                <Stat size="sm" label="Committed" value={fmtUsdc(sum.committed, { unit: false })} sub="reserved + awaiting approval" />
                 <Stat size="sm" label="Available" value={fmtUsdc(sum.available, { unit: false })} tone="good" />
               </div>
               <div className="mt-4">
@@ -153,7 +174,7 @@ export default async function Overview({ searchParams }: { searchParams: Promise
               </span>
               <span className="flex items-center gap-1.5">
                 <StatusDot tone={wallet?.frozen ? "bad" : live ? "good" : "warn"} />
-                {wallet?.frozen ? "Frozen" : live ? "Wallet live · Arc Testnet" : "Simulation only"}
+                {wallet?.frozen ? "Frozen" : live ? `Wallet live · ${ARC.name}` : "Simulation only"}
               </span>
             </CardFooter>
           </Card>
@@ -192,7 +213,7 @@ export default async function Overview({ searchParams }: { searchParams: Promise
               ))}
             </ul>
           ) : (
-            <CardBody className="text-[12.5px] text-ink-3">No companies with buying intent yet. They appear as evidence is collected.</CardBody>
+            <CardBody className="text-[12.5px] text-ink-3">No qualified companies yet. Companies qualify as scans collect enough buying-intent evidence.</CardBody>
           )}
         </Card>
 
@@ -212,8 +233,8 @@ export default async function Overview({ searchParams }: { searchParams: Promise
                   </span>
                 </div>
                 <div className="mt-4">
-                  <div className="label mb-1.5">Market volume · 14 days</div>
-                  <Sparkline values={daily} width={300} height={40} label="relevant posts" />
+                  <div className="label mb-1.5">Narrative posts · 14 days</div>
+                  <Sparkline values={daily} width={300} height={40} label="posts in this narrative" />
                 </div>
               </Link>
             ) : (
@@ -261,7 +282,7 @@ export default async function Overview({ searchParams }: { searchParams: Promise
               <p className="text-[12.5px] text-ink-3">No measured experiments yet.</p>
             )}
           </CardBody>
-          <CardFooter>From settled spend and referral-code attribution only.</CardFooter>
+          <CardFooter>Committed spend (authorized, in flight or settled; simulated in demos) ÷ conversions attributed by referral code.</CardFooter>
         </Card>
 
         <Card>

@@ -20,7 +20,7 @@ It optimizes **verified growth per USDC spent**. It does not optimize followers,
 
 ## Contents
 
-[Problem](#problem) · [Solution](#solution) · [Why GrowthOS](#why-growthos) · [Architecture](#architecture) · [Running it as a product](#running-it-as-a-product) · [Agent loop](#agent-loop) · [Customer discovery](#customer-discovery) · [Narrative intelligence](#narrative-intelligence) · [KOL intelligence](#kol-intelligence) · [Growth missions](#growth-missions) · [Attribution](#attribution) · [Autonomous budget](#autonomous-budget) · [Policy engine](#policy-engine) · [Circle Agent Stack](#circle-agent-stack) · [Arc App Kit](#arc-app-kit) · [Security](#security) · [Setup](#setup) · [Environment variables](#environment-variables) · [Demo](#demo) · [Testnet instructions](#testnet-instructions) · [Verification status](#verification-status) · [Known limitations](#known-limitations) · [Roadmap](#roadmap)
+[Problem](#problem) · [Solution](#solution) · [Why GrowthOS](#why-growthos) · [Architecture](#architecture) · [Running it as a product](#running-it-as-a-product) · [Agent loop](#agent-loop) · [Customer discovery](#customer-discovery) · [Narrative intelligence](#narrative-intelligence) · [KOL intelligence](#kol-intelligence) · [Creator campaigns](#creator-campaigns) · [Growth missions](#growth-missions) · [Attribution](#attribution) · [Autonomous budget](#autonomous-budget) · [Policy engine](#policy-engine) · [Circle Agent Stack](#circle-agent-stack) · [Arc App Kit](#arc-app-kit) · [Security](#security) · [Setup](#setup) · [Environment variables](#environment-variables) · [Demo](#demo) · [Testnet instructions](#testnet-instructions) · [Mainnet](#mainnet) · [Verification status](#verification-status) · [Known limitations](#known-limitations) · [Roadmap](#roadmap)
 
 ---
 
@@ -189,6 +189,35 @@ One operator cycle (**Run cycle**, autopilot, `POST /api/cron/cycle`; code in `s
 `src/server/domain/scoring/kol.ts` scores eight components: audience fit, topic authority, recent relevance, engagement quality (discussion ratio, not likes), narrative fit, historical product fit, authenticity signals (inflated reach, promo and speculation patterns) and campaign fit. **Follower count is not a component.** It enters only log-damped (at most +10) into topic authority. In the demo, a deeply technical engineer ranks above a 450K-follower account whose audience engagement looks inflated.
 
 The **creator brief** (`kol-brief.ts`) covers objective, why this creator, why now, audience, current narrative, core idea, product proof, a demo worth showing, angles, **claims with sources**, things to avoid, CTA, tracking link and creator freedom. Optional X / thread / video / Reels / YouTube drafts are marked as suggestions for the creator to rewrite in their own voice. GrowthOS never posts as anyone.
+
+## Creator campaigns
+
+Opt-in creator programs where a business can see exactly what it paid for, and a creator can see exactly why they earned (`src/server/domain/growth/creator-campaigns.ts`, `campaign-plan.ts`).
+
+**The business enters three things:** the action it wants (e.g. `sdk_key_created`), the most it can afford per action, and a test budget. The planner proposes a two-week campaign and explains every number instead of applying a fixed percentage split:
+
+| Number | Derived from |
+| --- | --- |
+| Creators (1–10) | Each creator needs room for at least 3 paid actions at the ceiling: `budget ÷ (3 × max cost per action)` |
+| Per-creator ceiling | Budget split evenly, so no one creator can consume the test |
+| Base pay per accepted post | ≤ one action's worth, and fixed pay ≤ 25% of a creator's ceiling |
+| Discussion bonus (capped) | Half of base pay, only for discussion a reviewer rates as useful |
+| Bonus per verified action | 80% of the max cost per action, so results stay under what an action is worth |
+
+The campaign budget is reserved from the active mission and shown as **Paid** (on-chain), **Verified & unpaid** (earned from accepted posts, rated discussion and attributed actions), **Reserved** (held for accepted creators up to their ceilings) and **Available**.
+
+**Creators opt in** through a public link (`/c/<token>`) that shows the rules before they post, including the disclosure requirement: paid posts must clearly disclose the relationship (FTC guidance). Honest opinions remain eligible: creators are paid for accepted posts, not for positive sentiment. Each creator gets a private contribution page (`/creator/<token>`, no account needed) with their tracking link, eligible posts, quality assessment, every reward line with its reason and evidence, and their **observed** mindshare.
+
+**Rules enforced in code:**
+- Posts must be https links on the creator's platform. An undisclosed post can't be accepted.
+- Only the first *N* accepted posts earn base pay.
+- Verified actions are the target conversion, carried by the creator's own tracking link inside the window (plus 7 days), counted once per visitor. Demo events never pay on live campaigns.
+- Every reward is capped by the creator ceiling and the campaign budget, and the reason says when a cap applied.
+- Payouts are standard `send_payment` actions: Zod → policy engine → (by default) the Approval Inbox → App Kit Send to the creator's own address. A denied or failed payout returns the rewards to "earned"; a post whose reward is being paid can't be re-reviewed.
+
+**Observed mindshare** is the share of on-topic posts (and engagement) authored by a creator, among posts GrowthOS collected from connected public sources during the window. Platforms don't expose every post (TikTok, for example, requires approved research access), so it is always labelled *observed* and shown with its sample size and sources.
+
+v1 is deliberately narrow: 5–10 creators, manual review of posts and payouts, one tracked action.
 
 ## Growth missions
 
@@ -364,6 +393,8 @@ See [`.env.example`](.env.example). In summary:
 | `SESSION_SECRET` | Session signing (required in production) |
 | `APP_URL` | Public base URL (invite links); falls back to the request host |
 | `ENCRYPTION_KEY` | AES-256-GCM key for integration credentials (required in production) |
+| `GROWTHOS_NETWORK` | `testnet` (default) or `mainnet` — selects every chain, contract and Circle endpoint |
+| `ARC_RPC_URL` | Optional Arc RPC override for the selected network |
 | `GROWTHOS_WORKER`, `WORKER_INTERVAL_MS` | In-process job worker on/off and poll interval |
 | `DATABASE_URL` | Postgres; empty → embedded PGlite |
 | `CIRCLE_API_KEY`, `CIRCLE_ENTITY_SECRET` | Circle custody for per-workspace agent wallets |
@@ -401,6 +432,29 @@ Without a wallet, steps 2 and 6 are recorded as **SIMULATED**: the full decision
 5. **Wallet → Deposit to Gateway** moves USDC into Gateway for x402. Arc credits deposits in about a second.
 6. Set `SIGNALS_SELLER_ADDRESS` to an Arc Testnet address you control (it receives the x402 payments), and optionally `DEMO_PAYOUT_ADDRESS`.
 7. `npm run dev`, enter the demo, **Reset demo**, then run the loop. Purchases show `TESTNET` with a Circle settlement ID. Use **Refresh settlements** on the Activity page to follow them to the Arc batch tx (a batch can take around 10 minutes on testnet).
+
+## Mainnet
+
+One setting switches the whole deployment: `GROWTHOS_NETWORK=mainnet` (default `testnet`). Every network value comes from Circle's SDKs or viem's chain registry, never from hand-copied constants (`src/server/integrations/circle/config.ts`):
+
+| | Testnet | Mainnet |
+| --- | --- | --- |
+| Arc chain id | 5042002 | 5042 |
+| x402 network | `eip155:5042002` | `eip155:5042` |
+| Circle Wallets blockchain | `ARC-TESTNET` | `ARC` |
+| App Kit chain | `Arc_Testnet` | `Arc` |
+| Gateway API | gateway-api-testnet.circle.com | gateway-api.circle.com |
+| GatewayWallet | from `CHAIN_CONFIGS.arcTestnet` | from `CHAIN_CONFIGS.arc` |
+| Bridge chains | Base/Arbitrum/Ethereum Sepolia | Base/Arbitrum/Ethereum |
+
+**Safety rails on mainnet:**
+- Development keys (`AGENT_PRIVATE_KEY`) are refused; only Circle developer-controlled wallets can hold funds.
+- New workspace wallets start **frozen**. Anyone who manages the wallet can freeze it; only an owner can resume spending.
+- The default policy runs only paid research autonomously; bounties, content, creators, community and treasury moves need approval.
+- The policy engine denies any chain that isn't on the deployment's network, and payouts to missing or burn addresses.
+- Every money movement is labelled `LIVE` (real funds) instead of `TESTNET`.
+
+**Before switching a deployment to mainnet:** use a fresh database, set `GROWTHOS_NETWORK=mainnet`, `SESSION_SECRET`, `ENCRYPTION_KEY`, `APP_URL`, `CIRCLE_API_KEY` (a live key) and `CIRCLE_ENTITY_SECRET`. Then create the workspace wallet, fund it with USDC on Arc, review the spend policy, and resume spending as the owner. Run a small payment end to end before raising limits.
 
 ## Verification status
 

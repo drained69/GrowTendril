@@ -1,4 +1,5 @@
 import { z } from "zod";
+import { MAINNET_CHAINS, TESTNET_CHAINS } from "@/server/integrations/circle/config";
 
 /**
  * Structured financial actions. Nothing that moves money accepts free-form text:
@@ -31,7 +32,7 @@ export type ReasonCode = z.infer<typeof ReasonCode>;
 export const BudgetCategory = z.enum(["research", "services", "kol", "bounty", "content", "community", "treasury"]);
 export type BudgetCategory = z.infer<typeof BudgetCategory>;
 
-export const SupportedChain = z.enum(["Arc_Testnet", "Base_Sepolia", "Arbitrum_Sepolia", "Ethereum_Sepolia"]);
+export const SupportedChain = z.enum([...TESTNET_CHAINS, ...MAINNET_CHAINS]);
 export type SupportedChain = z.infer<typeof SupportedChain>;
 
 const common = {
@@ -60,6 +61,8 @@ export const SendPaymentAction = z.object({
   chain: SupportedChain,
   experimentId: z.string().min(1),
   reasonCode: ReasonCode,
+  /** Distinguishes intentional repeat payments (e.g. a second tranche, a creator payout batch) from duplicates. */
+  payoutRef: z.string().regex(/^[a-z0-9:_-]{1,64}$/).optional(),
   ...common,
 });
 

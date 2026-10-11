@@ -1,6 +1,7 @@
 import type { Address, Hex } from "viem";
 import { privateKeyToAccount } from "viem/accounts";
 import { circleClient } from "@/server/integrations/circle/client";
+import { IS_MAINNET } from "@/server/integrations/circle/config";
 
 /** Shape required by Circle's BatchEvmScheme (x402-batching). */
 export interface AgentSigner {
@@ -67,6 +68,6 @@ function localSigner(): AgentSigner {
 export function signerFor(w: SignableWallet | null | undefined): AgentSigner | null {
   if (!w) return null;
   if (w.provider === "circle_dcw" && w.circleWalletId && w.address) return circleSigner(w.circleWalletId, w.address);
-  if (w.provider === "local_testnet" && process.env.AGENT_PRIVATE_KEY && (process.env.GROWTHOS_NETWORK ?? "testnet") === "testnet") return localSigner();
+  if (w.provider === "local_testnet" && process.env.AGENT_PRIVATE_KEY && !IS_MAINNET) return localSigner();
   return null;
 }

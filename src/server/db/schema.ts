@@ -778,3 +778,121 @@ export const auditLogs = pgTable(
   },
   (t) => [index("audit_project_idx").on(t.projectId, t.at)],
 );
+
+// ───────────────────────────── creator campaigns ─────────────────────────────
+/**
+ * Opt-in creator campaigns: a business funds a small, measurable experiment; creators join under
+ * rules they can read before posting, and earn per accepted post plus capped bonuses for useful
+ * discussion and verified customer actions. Every reward line carries its reason and evidence.
+ * Backed by an experiment (budget, attribution) and one tracking link per accepted creator.
+ */
+export const creatorCampaigns = pgTable(
+  "creator_campaigns",
+  {
+    id: id(),
+    projectId: text("project_id").notNull().references(() => projects.id, { onDelete: "cascade" }),
+    experimentId: text("experiment_id").notNull().references(() => experiments.id, { onDelete: "cascade" }),
+    number: integer("number").notNull(),
+    name: text("name").notNull(),
+    topic: text("topic").notNull(),
+    topicTerms: jsonb("topic_terms").$type<string[]>().notNull().default([]),
+    brief: text("brief").notNull(),
+    destinationUrl: text("destination_url").notNull(),
+    targetEvent: text("target_event").notNull(),
+    maxCostPerActionMicro: micro("max_cost_per_action_micro").notNull(),
+    budgetMicro: micro("budget_micro").notNull(),
+    basePayMicro: micro("base_pay_micro").notNull(),
+    maxPostsPerCreator: integer("max_posts_per_creator").notNull(),
+    discussionBonusCapMicro: micro("discussion_bonus_cap_micro").notNull(),
+    actionBonusMicro: micro("action_bonus_micro").notNull(),
+    creatorCapMicro: micro("creator_cap_micro").notNull(),
+    maxCreators: integer("max_creators").notNull(),
+    disclosureText: text("disclosure_text").notNull(),
+    platforms: jsonb("platforms").$type<string[]>().notNull().default([]),
+    plan: jsonb("plan").$type<Record<string, unknown>>().notNull().default({}),
+    joinToken: text("join_token").notNull().unique(),
+    status: text("status").notNull().default("open"), // open | closed
+    startsAt: timestamp("starts_at", { withTimezone: true }).notNull(),
+    endsAt: timestamp("ends_at", { withTimezone: true }).notNull(),
+    createdBy: text("created_by").references(() => users.id, { onDelete: "set null" }),
+    dataMode: dataMode("data_mode").notNull(),
+    createdAt: createdAt(),
+    updatedAt: updatedAt(),
+  },
+  (t) => [uniqueIndex("creator_campaigns_project_number_uq").on(t.projectId, t.number)],
+);
+
+export const campaignParticipants = pgTable(
+  "campaign_participants",
+  {
+    id: id(),
+    campaignId: text("campaign_id").notNull().references(() => creatorCampaigns.id, { onDelete: "cascade" }),
+    projectId: text("project_id").notNull().references(() => projects.id, { onDelete: "cascade" }),
+    provider: text("provider").notNull(),
+    handle: text("handle").notNull(),
+    displayName: text("display_name"),
+    contact: text("contact"),
+    payoutAddress: text("payout_address").notNull(),
+    pitch: text("pitch"),
+    accessTokenHash: text("access_token_hash").notNull().unique(),
+    trackingCampaignId: text("tracking_campaign_id").references(() => campaigns.id, { onDelete: "set null" }),
+    kolId: text("kol_id").references(() => kols.id, { onDelete: "set null" }),
+    status: text("status").notNull().default("applied"), // applied | accepted | declined | removed
+    termsAcceptedAt: timestamp("terms_accepted_at", { withTimezone: true }).notNull(),
+    decidedAt: timestamp("decided_at", { withTimezone: true }),
+    createdAt: createdAt(),
+  },
+  (t) => [uniqueIndex("participants_campaign_handle_uq").on(t.campaignId, t.provider, t.handle)],
+);
+
+export const campaignPosts = pgTable(
+  "campaign_posts",
+  {
+    id: id(),
+    campaignId: text("campaign_id").notNull().references(() => creatorCampaigns.id, { onDelete: "cascade" }),
+    participantId: text("participant_id").notNull().references(() => campaignParticipants.id, { onDelete: "cascade" }),
+    url: text("url").notNull(),
+    note: text("note"),
+    observedPostId: text("observed_post_id").references(() => socialPosts.id, { onDelete: "set null" }),
+    disclosureDetected: boolean("disclosure_detected"),
+    status: text("status").notNull().default("submitted"), // submitted | accepted | rejected
+    review: jsonb("review").$type<{ relevance: number; depth: number; accuracy: number; disclosure: boolean; discussion: number; note: string } | null>(),
+    qualityScore: integer("quality_score"),
+    reviewedBy: text("reviewed_by").references(() => users.id, { onDelete: "set null" }),
+    reviewedAt: timestamp("reviewed_at", { withTimezone: true }),
+    submittedAt: timestamp("submitted_at", { withTimezone: true }).notNull().defaultNow(),
+  },
+  (t) => [uniqueIndex("campaign_posts_url_uq").on(t.campaignId, t.url)],
+);
+
+export const campaignPayouts = pgTable("campaign_payouts", {
+  id: id(),
+  campaignId: text("campaign_id").notNull().references(() => creatorCampaigns.id, { onDelete: "cascade" }),
+  participantId: text("participant_id").notNull().references(() => campaignParticipants.id, { onDelete: "cascade" }),
+  amountMicro: micro("amount_micro").notNull(),
+  decisionId: text("decision_id"),
+  transactionId: text("transaction_id").references(() => transactions.id, { onDelete: "set null" }),
+  requestedBy: text("requested_by").references(() => users.id, { onDelete: "set null" }),
+  createdAt: createdAt(),
+});
+
+export const campaignRewards = pgTable(
+  "campaign_rewards",
+  {
+    id: id(),
+    campaignId: text("campaign_id").notNull().references(() => creatorCampaigns.id, { onDelete: "cascade" }),
+    participantId: text("participant_id").notNull().references(() => campaignParticipants.id, { onDelete: "cascade" }),
+    postId: text("post_id").references(() => campaignPosts.id, { onDelete: "set null" }),
+    kind: text("kind").notNull(), // post | discussion | action
+    /** Dedupe key: one reward per post per kind, one per conversion event. */
+    sourceKey: text("source_key").notNull(),
+    amountMicro: micro("amount_micro").notNull(),
+    reason: text("reason").notNull(),
+    evidence: jsonb("evidence").$type<{ url?: string; eventId?: string; eventType?: string; occurredAt?: string; review?: Record<string, unknown> }>().notNull().default({}),
+    payoutId: text("payout_id").references(() => campaignPayouts.id, { onDelete: "set null" }),
+    voidedAt: timestamp("voided_at", { withTimezone: true }),
+    voidReason: text("void_reason"),
+    createdAt: createdAt(),
+  },
+  (t) => [uniqueIndex("campaign_rewards_source_uq").on(t.campaignId, t.sourceKey), index("campaign_rewards_participant_idx").on(t.participantId)],
+);

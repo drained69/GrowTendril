@@ -11,6 +11,10 @@ import { generatePrivateKey, privateKeyToAccount } from "viem/accounts";
 const args = process.argv.slice(2);
 
 if (args.includes("--local")) {
+  if ((process.env.GROWTHOS_NETWORK ?? "testnet") === "mainnet") {
+    console.error("Development keys are testnet-only. On mainnet use Circle developer-controlled wallets (--entity-secret).");
+    process.exit(1);
+  }
   const pk = generatePrivateKey();
   console.log("Arc Testnet development key (TESTNET ONLY — never fund it with real assets):\n");
   console.log(`AGENT_PRIVATE_KEY=${pk}`);

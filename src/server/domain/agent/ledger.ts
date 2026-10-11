@@ -3,7 +3,8 @@ import type { DB } from "@/server/db/client";
 import * as s from "@/server/db/schema";
 import { newId } from "@/server/lib/ids";
 import { startOfUtcDay } from "@/lib/time";
-import { walletIsLive } from "@/server/integrations/circle/wallets";
+import { walletBalances, walletIsLive } from "@/server/integrations/circle/wallets";
+import { ARC, IS_MAINNET } from "@/server/integrations/circle/config";
 import type { PolicyConfig, PolicyState } from "@/server/domain/agent/policy";
 
 /**
@@ -112,8 +113,13 @@ export async function loadPolicy(db: DB, projectId: string): Promise<PolicyConfi
 /**
  * Snapshot of everything the policy engine needs. Simulation: a DEMO project without a
  * wallet may run the full decision path, but execution ends in SIMULATED — nothing moves.
+ * Balances are read live (wallet USDC on Arc, Gateway available) unless `balances: false`;
+ * a failed read is passed on as null so the policy can treat it as unknown.
  */
-export async function loadPolicyState(db: DB, opts: { projectId: string; missionId: string; category: string; excludeTxId?: string; serviceKnown?: boolean; experimentRemainingMicro?: Record<string, number> }): Promise<PolicyState & { simulation: boolean }> {
+export async function loadPolicyState(
+  db: DB,
+  opts: { projectId: string; missionId: string; category: string; excludeTxId?: string; serviceKnown?: boolean; experimentRemainingMicro?: Record<string, number>; balances?: boolean; chain?: string },
+): Promise<PolicyState & { simulation: boolean }> {
   const [wallet] = await db.select().from(s.wallets).where(eq(s.wallets.projectId, opts.projectId));
   const [mission] = await db.select().from(s.missions).where(eq(s.missions.id, opts.missionId));
   const [project] = await db.select().from(s.projects).where(eq(s.projects.id, opts.projectId));
@@ -132,6 +138,14 @@ export async function loadPolicyState(db: DB, opts: { projectId: string; mission
       if (SPENT_STATES.includes(st) && t.createdAt >= startOfUtcDay()) selfSpentToday = t.amountMicro;
     }
   }
+  let walletUsdcMicro: number | null | undefined;
+  let gatewayAvailableMicro: number | null | undefined;
+  if (configured && opts.balances !== false) {
+    const b = await walletBalances(wallet ?? null);
+    // Only the Arc balance is read; a send or bridge from another chain has an unknown source balance.
+    walletUsdcMicro = !opts.chain || opts.chain === ARC.appKitChain ? b.walletMicro : null;
+    gatewayAvailableMicro = b.gatewayMicro;
+  }
   return {
     walletConfigured: configured || simulation,
     walletFrozen: wallet?.frozen ?? false,
@@ -144,5 +158,8 @@ export async function loadPolicyState(db: DB, opts: { projectId: string; mission
     serviceKnown: opts.serviceKnown,
     experimentRemainingMicro: opts.experimentRemainingMicro,
     simulation,
+    walletUsdcMicro,
+    gatewayAvailableMicro,
+    mainnet: IS_MAINNET,
   };
 }

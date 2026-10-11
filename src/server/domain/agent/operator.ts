@@ -104,3 +104,30 @@ export async function runCycle(db: DB, projectId: string, opts: { trigger?: "man
   }
   return { runId: run.id, log: lines, stats };
 }
+
+/**
+ * SCAN — discovery and analysis only. Collects posts from connected sources and re-scores
+ * customers, narratives, creators and issues. Never buys data, creates experiments or pays.
+ */
+export async function runScan(db: DB, projectId: string, opts: { trigger?: "manual" | "schedule" } = {}) {
+  const [run] = await db.insert(s.agentRuns).values({ id: newId(), projectId, trigger: opts.trigger ?? "manual", status: "running", stats: { kind: "scan" } }).returning();
+  const lines: { at: string; agent: string; message: string }[] = [];
+  const log = (agent: string, message: string) => lines.push({ at: new Date().toISOString(), agent, message });
+  const stats: Record<string, unknown> = { kind: "scan" };
+  try {
+    const [project] = await db.select().from(s.projects).where(eq(s.projects.id, projectId));
+    log("discovery", "Scan only — no purchases, experiments or payments in this run");
+    if (project.dataMode === "DEMO") stats.analysis = await analyzeProject(db, projectId, log);
+    else {
+      const d = await runDiscovery(db, projectId, log);
+      stats.analysis = d.stats;
+      stats.fetched = d.fetched;
+    }
+    await db.update(s.agentRuns).set({ status: "completed", stats, log: lines, finishedAt: new Date() }).where(eq(s.agentRuns.id, run.id));
+  } catch (e) {
+    log("discovery", `Scan failed: ${(e as Error).message}`);
+    await db.update(s.agentRuns).set({ status: "failed", stats, log: lines, finishedAt: new Date() }).where(eq(s.agentRuns.id, run.id));
+    throw e;
+  }
+  return { runId: run.id, log: lines, stats };
+}

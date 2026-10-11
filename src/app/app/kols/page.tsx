@@ -1,9 +1,11 @@
 import { desc, eq } from "drizzle-orm";
-import { Radar, Users } from "lucide-react";
+import { Users } from "lucide-react";
 import { requireProject } from "@/server/auth/current";
+import { can } from "@/server/auth/access";
 import { schema as s } from "@/server/db/client";
 import type { ScoreComponent } from "@/server/domain/scoring/intent";
-import { Avatar, Card, EmptyState, LinkButton, ModeBadge, PageHeader, Stat, StatStrip, StatusBadge } from "@/components/ui";
+import { Avatar, Card, EmptyState, ModeBadge, PageHeader, Stat, StatStrip, StatusBadge } from "@/components/ui";
+import { RunScanButton } from "@/components/features/intel/run-scan-button";
 import { DataTable } from "@/components/ui/data-table";
 
 const COLS: [string, string][] = [
@@ -24,7 +26,7 @@ function cell(v?: number) {
 }
 
 export default async function Creators() {
-  const { project, db } = await requireProject();
+  const { project, role, db } = await requireProject();
   const rows = await db.select().from(s.kols).where(eq(s.kols.projectId, project.id)).orderBy(desc(s.kols.overallScore));
   const strong = rows.filter((k) => k.overallScore >= 70).length;
   const engaged = rows.filter((k) => k.status !== "candidate" && k.status !== "dismissed").length;
@@ -97,9 +99,7 @@ export default async function Creators() {
           title="No relevant creators yet"
           description="Creators are ranked from the authors of relevant public posts. Run a scan and the voices that keep coming up in your narratives appear here."
           action={
-            <LinkButton href="/app/runs" variant="primary" icon={<Radar />}>
-              Run a scan
-            </LinkButton>
+            <RunScanButton canOperate={can(role, "operate")} />
           }
         />
       )}

@@ -23,10 +23,11 @@ export default async function Opportunity({ params }: { params: Promise<{ id: st
   const { project, role, db } = await requireProject();
   const [o] = await db.select().from(s.opportunities).where(and(eq(s.opportunities.id, id), eq(s.opportunities.projectId, project.id)));
   if (!o) notFound();
-  const conds = [o.companyId ? eq(s.evidence.companyId, o.companyId) : undefined, o.kolId ? eq(s.evidence.kolId, o.kolId) : undefined, o.narrativeId ? eq(s.evidence.narrativeId, o.narrativeId) : undefined].filter((c) => c !== undefined);
-  const [ev, exps] = await Promise.all([
-    conds.length ? db.select().from(s.evidence).where(and(eq(s.evidence.projectId, project.id), or(...conds))).orderBy(desc(s.evidence.observedAt)).limit(12) : Promise.resolve([]),
+  const conds = [eq(s.evidence.opportunityId, o.id), o.companyId ? eq(s.evidence.companyId, o.companyId) : undefined, o.kolId ? eq(s.evidence.kolId, o.kolId) : undefined, o.narrativeId ? eq(s.evidence.narrativeId, o.narrativeId) : undefined].filter((c) => c !== undefined);
+  const [ev, exps, [issue]] = await Promise.all([
+    db.select().from(s.evidence).where(and(eq(s.evidence.projectId, project.id), or(...conds))).orderBy(desc(s.evidence.observedAt)).limit(12),
     db.select().from(s.experiments).where(and(eq(s.experiments.opportunityId, o.id), eq(s.experiments.projectId, project.id))),
+    o.issueId ? db.select().from(s.productIssues).where(and(eq(s.productIssues.id, o.issueId), eq(s.productIssues.projectId, project.id))) : Promise.resolve([]),
   ]);
   const subject = o.companyId ? { href: `/app/customers/${o.companyId}`, label: "Company" } : o.kolId ? { href: `/app/kols/${o.kolId}`, label: "Creator" } : o.narrativeId ? { href: `/app/narratives/${o.narrativeId}`, label: "Narrative" } : null;
   const scores = o.scores as Record<string, { score: number; reasons?: string[] } | undefined>;
@@ -95,7 +96,12 @@ export default async function Opportunity({ params }: { params: Promise<{ id: st
           <Card>
             <CardHeader title="Act" icon={<Zap />} />
             <CardBody className="space-y-3">
-              {isIssue && <Callout tone="warn">Routed to the product team. GrowthOS will not buy traffic into a growing friction point.</Callout>}
+              {isIssue && (
+                <Callout tone="warn">
+                  Product feedback for you to act on — GrowthOS does not notify anyone or turn it into a paid experiment.
+                  {issue?.blocksAcquisition ? " While it keeps growing, the operator holds new creator and narrative experiments." : ""}
+                </Callout>
+              )}
               {needsVerify && (
                 <div className="space-y-2">
                   <p className="flex items-center gap-1.5 text-[12px] text-ink-3">

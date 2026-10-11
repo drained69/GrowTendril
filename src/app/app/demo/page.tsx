@@ -2,7 +2,7 @@ import { ArrowRight, FlaskConical, ListChecks, Tag, Wallet } from "lucide-react"
 import { requireProject } from "@/server/auth/current";
 import { can } from "@/server/auth/access";
 import { DEMO_STEPS } from "@/server/demo/script";
-import { platformCustody } from "@/server/integrations/circle/config";
+import { ARC, platformCustody } from "@/server/integrations/circle/config";
 import { getWallet, walletIsLive } from "@/server/integrations/circle/wallets";
 import { SIGNALS_API_URL } from "@/server/integrations/circle/marketplace";
 import { claudeEnabled } from "@/server/integrations/llm/claude";
@@ -43,7 +43,7 @@ export default async function Demo() {
 
   const real = [
     { tone: "good" as const, label: "Engine", value: "Real code paths" },
-    { tone: live ? ("good" as const) : ("warn" as const), label: "Wallet", value: live ? "Workspace wallet · Arc Testnet" : custody ? `${custody === "circle" ? "Circle" : "Testnet key"} available · demo stays simulated` : "None → SIMULATED" },
+    { tone: live ? ("good" as const) : ("warn" as const), label: "Wallet", value: live ? `Workspace wallet · ${ARC.name}` : custody ? `${custody === "circle" ? "Circle" : "Development key"} available · demo stays simulated` : "None → SIMULATED" },
     { tone: seller.ok ? ("good" as const) : ("warn" as const), label: "x402 seller", value: seller.note },
     { tone: claude ? ("good" as const) : ("idle" as const), label: "Claude", value: claude ? "Drafts & extraction" : "Off → templates" },
     { tone: "info" as const, label: "Market data", value: "DEMO corpus" },
@@ -89,22 +89,22 @@ export default async function Demo() {
                 <ModeBadge mode="SIMULATED" className="mt-px" /> A payment that would have happened; no funds moved, no IDs or hashes.
               </li>
               <li className="flex items-start gap-2">
-                <ModeBadge mode="TESTNET" className="mt-px" /> Real Circle Gateway / Arc Testnet activity with verifiable IDs.
+                <ModeBadge mode="TESTNET" className="mt-px" /> Real Circle Gateway / Arc Testnet activity with verifiable IDs and hashes.
               </li>
               <li className="flex items-start gap-2">
-                <ModeBadge mode="LIVE" className="mt-px" /> Real public data from providers.
+                <ModeBadge mode="LIVE" className="mt-px" /> Real public data from providers, and real funds on Arc mainnet.
               </li>
             </ul>
           </Card>
           <Card>
-            <CardHeader title="Make the payments real" icon={<Wallet />} action={<Badge tone="info">Testnet</Badge>} />
+            <CardHeader title="Make the payments real" icon={<Wallet />} action={<Badge tone={ARC.network === "mainnet" ? "good" : "info"}>{ARC.name}</Badge>} />
             <CardBody>
               <ol className="list-decimal space-y-1.5 pl-4 text-[12px] leading-snug text-ink-2 marker:text-ink-4">
                 <li>
-                  Set <Code>CIRCLE_API_KEY</Code> and <Code>CIRCLE_ENTITY_SECRET</Code> on the server (or a testnet key for development).
+                  Set <Code>CIRCLE_API_KEY</Code> and <Code>CIRCLE_ENTITY_SECRET</Code> on the server (or, on testnet, a development key).
                 </li>
                 <li>Create a real workspace and its wallet from the Wallet page.</li>
-                <li>Fund it at faucet.circle.com (Arc Testnet), then deposit into Gateway from the Wallet page.</li>
+                <li>{ARC.faucet ? "Fund it at faucet.circle.com (Arc Testnet)" : `Fund it with USDC on ${ARC.name}`}, then deposit into Gateway from the Wallet page.</li>
                 <li>
                   Set <Code>SIGNALS_SELLER_ADDRESS</Code> so the bundled x402 seller accepts payments.
                 </li>

@@ -156,15 +156,27 @@ export function MissionStep() {
 
 // ───────────────────────────── step 4 ─────────────────────────────
 
+// Hints mirror evaluatePolicy (src/server/domain/agent/policy.ts) — keep them in sync.
 const LIMITS = [
-  { name: "maxTransaction", label: "Max autonomous purchase", d: "10", hint: "Above this, every spend needs your approval" },
-  { name: "dailySpend", label: "Max daily spend", d: "50", hint: "Autonomous spend per UTC day" },
-  { name: "kolThreshold", label: "Creator payment approval above", d: "100", hint: "Creator payments above this always need approval" },
-  { name: "bountyThreshold", label: "Bounty approval above", d: "25", hint: "Small bounties are autonomous below this" },
-  { name: "hardCeiling", label: "Hard ceiling", d: "500", hint: "Always denied above — not even an approval can exceed it" },
+  { name: "maxTransaction", label: "Max autonomous transaction", d: "10", hint: "Any single spend above this waits for your approval" },
+  { name: "dailySpend", label: "Max daily spend", d: "50", hint: "A spend that would take today's total (UTC) above this waits for approval. Bridges don't count." },
+  { name: "kolThreshold", label: "Creator payment approval above", d: "100", hint: "Only matters while creator payments are autonomous; the max transaction limit still applies" },
+  { name: "bountyThreshold", label: "Bounty approval above", d: "25", hint: "Only matters while bounties are autonomous; the max transaction limit still applies" },
+  { name: "hardCeiling", label: "Hard ceiling", d: "500", hint: "Any single action above this is denied — not even an approval can exceed it" },
 ];
 
-export function AutonomyStep({ autopilot, demo }: { autopilot: Record<string, string>; demo?: boolean }) {
+export const CATEGORY_LABEL: Record<string, string> = {
+  research: "Research & data",
+  services: "API services",
+  bounty: "Developer bounties",
+  content: "Content",
+  kol: "Creator payments",
+  community: "Partner incentives",
+  treasury: "Bridges & budget moves",
+};
+const catList = (cats: string[]) => (cats.length ? cats.map((c) => CATEGORY_LABEL[c] ?? c).join(" · ") : "None");
+
+export function AutonomyStep({ autopilot, demo, autonomous, approval }: { autopilot: Record<string, string>; demo?: boolean; autonomous: string[]; approval: string[] }) {
   const [state, action, pending] = useActionState(onboardAutonomyAction, null);
   const [cadence, setCadence] = useState(demo ? "off" : "every_6h");
   return (
@@ -211,24 +223,28 @@ export function AutonomyStep({ autopilot, demo }: { autopilot: Record<string, st
       <div className="grid gap-2 border-t border-line p-4 text-[12px] sm:grid-cols-3">
         <div className="rounded-[8px] border border-good/30 bg-good/[0.04] p-2.5">
           <div className="label text-good">Autonomous</div>
-          <div className="mt-1 text-ink-2">Research · data · API services · small bounties · content</div>
+          <div className="mt-1 text-ink-2">{catList(autonomous)}</div>
+          <div className="mt-1 text-[11px] text-ink-3">Within the limits above</div>
         </div>
         <div className="rounded-[8px] border border-warning/30 bg-warning/[0.04] p-2.5">
           <div className="label text-warning">Needs approval</div>
-          <div className="mt-1 text-ink-2">Creator payments · sponsorships · large bounties · bridges</div>
+          <div className="mt-1 text-ink-2">{catList(approval)}</div>
+          <div className="mt-1 text-[11px] text-ink-3">Plus anything over a limit above</div>
         </div>
         <div className="rounded-[8px] border border-critical/30 bg-critical/[0.04] p-2.5">
           <div className="label text-critical">Forbidden</div>
           <div className="mt-1 text-ink-2">Mass unsolicited messaging · automated DMs, cold email, mentions</div>
+          <div className="mt-1 text-[11px] text-ink-3">And any spend above the hard ceiling or outside the mission budget</div>
         </div>
       </div>
+      <p className="px-4 pb-3 text-[11.5px] text-ink-3">You can change which categories are autonomous or approval-gated in Settings → Spend policy. A category in neither list is denied.</p>
 
       {state && !state.ok && (
         <div className="px-4 pb-4">
           <Callout tone="danger">{state.error}</Callout>
         </div>
       )}
-      <StepFooter note="Activating queues the first market scan right away.">
+      <StepFooter note="Activating queues a first market scan right away — discovery only; it spends nothing.">
         <Button type="submit" variant="primary" size="md" loading={pending}>
           {pending ? "Activating…" : "Activate GrowthOS"}
           {!pending && <ArrowRight />}

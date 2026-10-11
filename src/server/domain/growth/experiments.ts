@@ -9,6 +9,7 @@ import { experimentSpend, missionSpend } from "@/server/domain/agent/ledger";
 import { proposeFinancialAction, type ProposalOutcome } from "@/server/domain/agent/execute";
 import type { Logger } from "@/server/domain/intel/analyze";
 import { utmSlug } from "@/server/domain/growth/attribution-links";
+import { ARC } from "@/server/integrations/circle/config";
 
 /**
  * STRATEGIST — turns an opportunity into a measurable experiment:
@@ -187,7 +188,7 @@ export async function launchExperiment(db: DB, p: { projectId: string; experimen
       recipient: payoutAddressFor(kol?.payoutAddress),
       amount: microToDecimal(amount),
       currency: "USDC",
-      chain: "Arc_Testnet",
+      chain: ARC.appKitChain,
       experimentId: exp.id,
       reasonCode: exp.channel === "kol" ? "PAY_CREATOR" : exp.channel === "bounty" ? "PAY_BOUNTY" : "RUN_EXPERIMENT",
       expectedValue: opp?.expectedValue === "HIGH" ? "high" : opp?.expectedValue === "LOW" ? "low" : "medium",

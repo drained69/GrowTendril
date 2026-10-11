@@ -105,7 +105,7 @@ export function Sidebar(p: ShellProps & { onNavigate?: () => void }) {
               <Avatar name={p.user.name} size={22} />
               <span className="min-w-0 flex-1">
                 <span className="block truncate text-[12px] text-ink">{p.user.isGuest ? "Guest" : p.user.name}</span>
-                <span className="block truncate text-[11px] text-ink-4">{p.user.isGuest ? "Demo session · expires in 7 days" : p.role}</span>
+                <span className="block truncate text-[11px] text-ink-4">{p.user.isGuest ? `Demo session${p.user.guestExpires ? ` · ${p.user.guestExpires}` : ""}` : p.role}</span>
               </span>
             </button>
           )}

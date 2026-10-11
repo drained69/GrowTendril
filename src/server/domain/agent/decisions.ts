@@ -1,9 +1,9 @@
-import { eq } from "drizzle-orm";
+import { and, asc, desc, eq, isNotNull, isNull } from "drizzle-orm";
 import type { DB } from "@/server/db/client";
 import * as s from "@/server/db/schema";
 import { nextNumber, audit } from "@/server/db/helpers";
 import { canonicalJson, newId, sha256 } from "@/server/lib/ids";
-import { CHAINS } from "@/server/integrations/circle/config";
+import { chainLabel } from "@/server/integrations/circle/config";
 import type { PolicyResult } from "@/server/domain/agent/policy";
 
 type Mode = (typeof s.dataMode.enumValues)[number];
@@ -58,22 +58,32 @@ export async function updateDecision(db: DB, id: string, patch: Partial<typeof s
 }
 
 const TERMINAL = new Set(["SETTLED", "SIMULATED", "FAILED", "DENIED", "REJECTED"]);
+/** Decision statuses after which a decision without a payment can no longer change. */
+const TERMINAL_DECISION = new Set(["executed", "denied", "rejected", "failed", "duplicate"]);
 
 /**
- * (Re)build the receipt for a decision from the ledger. The body is canonical JSON and its
- * sha256 is stored, so any later edit to the stored body is detectable.
+ * (Re)build the receipt for a decision from the ledger while it is open. The body is canonical JSON
+ * and its sha256 is stored, so an edit to the stored body that doesn't also recompute the digest is
+ * detectable. Once finalized (payment terminal, or decision closed) the receipt is never rewritten,
+ * and it records the digest of the project's previous finalized receipt (prevDigest), chaining them.
  */
 export async function writeReceipt(db: DB, decisionId: string) {
   const [d] = await db.select().from(s.agentDecisions).where(eq(s.agentDecisions.id, decisionId));
   if (!d) return;
+  const [existing] = await db.select({ finalizedAt: s.decisionReceipts.finalizedAt }).from(s.decisionReceipts).where(eq(s.decisionReceipts.decisionId, d.id));
+  if (existing?.finalizedAt) return;
   const [tx] = await db.select().from(s.transactions).where(eq(s.transactions.decisionId, d.id));
   const purchase = tx ? (await db.select().from(s.x402Purchases).where(eq(s.x402Purchases.transactionId, tx.id)))[0] : undefined;
   const service = purchase?.serviceId ? (await db.select({ svc: s.services, vendor: s.vendors }).from(s.services).innerJoin(s.vendors, eq(s.services.vendorId, s.vendors.id)).where(eq(s.services.id, purchase.serviceId)))[0] : undefined;
   const [approval] = await db.select().from(s.approvals).where(eq(s.approvals.decisionId, d.id));
-  const events = tx ? await db.select().from(s.transactionEvents).where(eq(s.transactionEvents.transactionId, tx.id)) : [];
+  const events = tx ? await db.select().from(s.transactionEvents).where(eq(s.transactionEvents.transactionId, tx.id)).orderBy(asc(s.transactionEvents.at)) : [];
 
-  const inputs = d.inputs as { confidenceBefore?: number; reasons?: string[] };
+  const inputs = d.inputs as { confidenceBefore?: number; reasons?: string[]; approvalRecheck?: unknown };
   const result = (d.result ?? {}) as { confidenceAfter?: number; summary?: string };
+  const finalized = tx ? TERMINAL.has(tx.state) : TERMINAL_DECISION.has(d.status);
+  const prev = finalized
+    ? (await db.select({ digest: s.decisionReceipts.digest }).from(s.decisionReceipts).where(and(eq(s.decisionReceipts.projectId, d.projectId), isNotNull(s.decisionReceipts.finalizedAt))).orderBy(desc(s.decisionReceipts.finalizedAt)).limit(1))[0]
+    : undefined;
   const body = {
     decision: d.number,
     agent: d.agent,
@@ -83,6 +93,7 @@ export async function writeReceipt(db: DB, decisionId: string) {
     costMicro: tx?.amountMicro ?? null,
     why: { rationale: d.rationale, reasons: inputs.reasons ?? [] },
     policy: d.policyVerdict ? { verdict: d.policyVerdict, checks: d.policyChecks } : null,
+    approvalRecheck: inputs.approvalRecheck ?? null,
     approval: approval ? { status: approval.status, resolvedAt: approval.resolvedAt?.toISOString() ?? null, approvedMicro: approval.approvedMicro, note: approval.note } : null,
     status: tx?.state ?? d.status,
     autonomous: d.autonomous,
@@ -91,8 +102,10 @@ export async function writeReceipt(db: DB, decisionId: string) {
     payment: tx
       ? {
           rail: tx.rail,
-          network: CHAINS[tx.chain]?.label ?? tx.chain,
-          destination: tx.destChain ? CHAINS[tx.destChain]?.label ?? tx.destChain : null,
+          chain: tx.chain,
+          network: chainLabel(tx.chain),
+          destination: tx.destChain ? chainLabel(tx.destChain) : null,
+          recipient: tx.recipient,
           state: tx.state,
           settlementId: tx.settlementId,
           settlementStatus: tx.settlementStatus,
@@ -105,11 +118,13 @@ export async function writeReceipt(db: DB, decisionId: string) {
       : null,
     dataMode: tx?.dataMode ?? d.dataMode,
     createdAt: d.createdAt.toISOString(),
+    ...(finalized ? { prevDigest: prev?.digest ?? null } : {}),
   };
   const digest = sha256(canonicalJson(body));
-  const finalizedAt = !tx || TERMINAL.has(tx.state) ? new Date() : null;
+  const finalizedAt = finalized ? new Date() : null;
   await db
     .insert(s.decisionReceipts)
     .values({ id: newId(), decisionId: d.id, projectId: d.projectId, body, digest, finalizedAt })
-    .onConflictDoUpdate({ target: s.decisionReceipts.decisionId, set: { body, digest, finalizedAt } });
+    // Only an open receipt may be rewritten; a concurrent finalization wins.
+    .onConflictDoUpdate({ target: s.decisionReceipts.decisionId, set: { body, digest, finalizedAt }, setWhere: isNull(s.decisionReceipts.finalizedAt) });
 }

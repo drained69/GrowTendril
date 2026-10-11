@@ -7,6 +7,7 @@ import { schema as s } from "@/server/db/client";
 import { audit } from "@/server/db/helpers";
 import { sha256 } from "@/server/lib/ids";
 import { toMicro } from "@/lib/money";
+import { ARC, IS_MAINNET } from "@/server/integrations/circle/config";
 import { attachCircleWallet, getWallet, provisionWallet, walletIsLive } from "@/server/integrations/circle/wallets";
 import { createTransaction, transition } from "@/server/domain/agent/ledger";
 import { recordDecision, writeReceipt } from "@/server/domain/agent/decisions";
@@ -22,7 +23,7 @@ export async function provisionWalletAction(): Promise<ActionResult> {
     await limited(`wallet:${user.id}`, 3, 0.01);
     const w = await provisionWallet(db, { projectId: project.id, userId: user.id, projectName: project.name });
     revalidatePath("/app", "layout");
-    return { ok: true, message: `Wallet ${w.address?.slice(0, 10)}… created on Arc Testnet` };
+    return { ok: true, message: `Wallet ${w.address?.slice(0, 10)}… created on ${ARC.name}${IS_MAINNET ? " — spending is frozen until an owner unfreezes it" : ""}` };
   } catch (e) {
     return fail(e);
   }
@@ -42,9 +43,11 @@ export async function attachWalletAction(circleWalletId: string): Promise<Action
 
 export async function toggleFreezeAction(): Promise<ActionResult> {
   try {
-    const { project, db, user } = await guard("manage_wallet");
+    const { project, db, user, role } = await guard("manage_wallet");
     const w = await getWallet(db, project.id);
     if (!w) return { ok: false, error: "No wallet yet" };
+    // Anyone who manages the wallet may stop spending; on mainnet only an owner may resume it.
+    if (w.frozen && IS_MAINNET && role !== "owner") return { ok: false, error: "On mainnet only a workspace owner can resume spending" };
     await db.update(s.wallets).set({ frozen: !w.frozen }).where(eq(s.wallets.id, w.id));
     await audit(db, { projectId: project.id, actorType: "user", actorId: user.id, action: w.frozen ? "wallet.unfreeze" : "wallet.freeze" });
     revalidatePath("/app", "layout");
@@ -71,13 +74,13 @@ export async function depositToGatewayAction(amount: string): Promise<ActionResu
       projectId: project.id,
       agent: "founder",
       kind: "gateway_deposit",
-      action: { action: "gateway_deposit", amount: a, currency: "USDC", chain: "Arc_Testnet" },
+      action: { action: "gateway_deposit", amount: a, currency: "USDC", chain: ARC.appKitChain },
       rationale: `${user.name} moved ${a} USDC from the agent wallet into Circle Gateway to fund x402 nanopayments.`,
       status: "approved",
       autonomous: false,
-      dataMode: "TESTNET",
+      dataMode: ARC.dataMode,
     });
-    const { tx } = await createTransaction(db, { projectId: project.id, walletId: w!.id, decisionId: d.id, kind: "gateway_deposit", rail: "gateway_deposit", budgetCategory: "treasury", amountMicro: micro, chain: "Arc_Testnet", recipient: null, idempotencyKey: sha256(`deposit:${d.id}`), dataMode: "TESTNET" });
+    const { tx } = await createTransaction(db, { projectId: project.id, walletId: w!.id, decisionId: d.id, kind: "gateway_deposit", rail: "gateway_deposit", budgetCategory: "treasury", amountMicro: micro, chain: ARC.appKitChain, recipient: null, idempotencyKey: sha256(`deposit:${d.id}`), dataMode: ARC.dataMode });
     await transition(db, tx.id, "AUTHORIZED", {}, `founder ${user.email}`);
     await writeReceipt(db, d.id);
     await enqueue(db, { kind: "gateway_deposit", projectId: project.id, payload: { transactionId: tx.id, amount: a }, trigger: "user", maxAttempts: 1 });

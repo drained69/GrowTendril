@@ -73,21 +73,35 @@ export async function readyProviders(db: DB, projectId: string): Promise<{ provi
   return out;
 }
 
+/**
+ * Builds the values to store from a form submission. Secrets are never sent back to the browser,
+ * so a blank secret field means "keep the stored one" — never "wipe it".
+ */
+export function mergeCredentialFields(p: MarketProvider, fields: Record<string, string>, stored: Credentials | null): { secret: Credentials; config: Credentials } {
+  const secret: Credentials = {};
+  const config: Credentials = {};
+  let entered = 0;
+  for (const f of p.credentialFields) {
+    const v = (fields[f.key] ?? "").trim();
+    if (v.length > 2000) throw new Error(`${f.label} is too long`);
+    if (v) {
+      entered++;
+      (f.secret ? secret : config)[f.key] = v;
+    } else if (f.secret && stored?.[f.key]) secret[f.key] = stored[f.key];
+    else if (!f.optional) throw new Error(`${f.label} is required`);
+  }
+  if (!entered) throw new Error("Nothing to save — enter at least one value");
+  return { secret, config };
+}
+
 export async function saveIntegration(db: DB, a: { projectId: string; providerId: string; fields: Record<string, string>; userId: string }) {
   const p = providerById(a.providerId);
   if (!p || p.access === "restricted") throw new Error("Unknown or restricted provider");
-  const secret: Credentials = {};
-  const config: Credentials = {};
-  for (const f of p.credentialFields) {
-    const v = (a.fields[f.key] ?? "").trim();
-    if (!v) {
-      if (!f.optional) throw new Error(`${f.label} is required`);
-      continue;
-    }
-    if (v.length > 2000) throw new Error(`${f.label} is too long`);
-    (f.secret ? secret : config)[f.key] = v;
-  }
+  const [row] = await db.select().from(s.integrations).where(and(eq(s.integrations.projectId, a.projectId), eq(s.integrations.provider, p.id)));
+  const stored = row ? decryptJson(row.secret, aad(a.projectId, p.id)) : null;
+  const { secret, config } = mergeCredentialFields(p, a.fields, stored);
   if (!p.isReady({ ...secret, ...config })) throw new Error("These credentials are incomplete for this provider");
+  await p.validate?.({ ...secret, ...config });
   const firstSecret = p.credentialFields.find((f) => f.secret && secret[f.key]);
   const values = {
     secret: encryptJson(secret, aad(a.projectId, p.id)),
@@ -109,7 +123,10 @@ export async function removeIntegration(db: DB, a: { projectId: string; provider
   await audit(db, { projectId: a.projectId, actorType: "user", actorId: a.userId, action: "integration.disconnect", target: a.providerId });
 }
 
-/** Live check: one tiny search with the workspace's credentials. Records the outcome. */
+/**
+ * Live check: one tiny search with the resolved credentials. The outcome is stored only for
+ * workspace credentials (platform/keyless sources have no row) — the caller shows it directly.
+ */
 export async function testIntegration(db: DB, a: { projectId: string; providerId: string }): Promise<{ ok: boolean; message: string }> {
   const p = providerById(a.providerId);
   if (!p) throw new Error("Unknown provider");
@@ -117,9 +134,12 @@ export async function testIntegration(db: DB, a: { projectId: string; providerId
   if (!p.isReady(creds)) return { ok: false, message: "Not configured" };
   const [profile] = await db.select({ k: s.productProfiles.keywords }).from(s.productProfiles).where(eq(s.productProfiles.projectId, a.projectId));
   let result: { ok: boolean; message: string };
+  const warnings: string[] = [];
   try {
-    const posts = await p.search(profile?.k[0] ?? "api", { since: daysAgo(7), limit: 5 }, creds);
-    result = { ok: true, message: `Connected — ${posts.length} result(s) for “${profile?.k[0] ?? "api"}” in the last 7 days` };
+    const posts = await p.search(profile?.k[0] ?? "api", { since: daysAgo(7), limit: 5, warnings }, creds);
+    result = warnings.length
+      ? { ok: false, message: `Partly working — ${posts.length} result(s), but ${warnings.join("; ")}`.slice(0, 300) }
+      : { ok: true, message: `Connected — ${posts.length} result(s) for “${profile?.k[0] ?? "api"}” in the last 7 days` };
   } catch (e) {
     result = { ok: false, message: (e as Error).message.slice(0, 300) };
   }

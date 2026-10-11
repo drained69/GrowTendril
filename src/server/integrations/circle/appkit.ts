@@ -1,4 +1,4 @@
-import { CHAINS, txExplorerUrl } from "@/server/integrations/circle/config";
+import { ACTIVE_CHAINS, ARC, IS_MAINNET, chainLabel, txExplorerUrl } from "@/server/integrations/circle/config";
 import type { SignableWallet } from "@/server/integrations/circle/signer";
 import { toMicro } from "@/lib/money";
 
@@ -32,7 +32,7 @@ async function adapter(provider: string): Promise<AnyAdapter> {
           const { createCircleWalletsAdapter } = await import("@circle-fin/adapter-circle-wallets");
           return createCircleWalletsAdapter({ apiKey: process.env.CIRCLE_API_KEY!, entitySecret: process.env.CIRCLE_ENTITY_SECRET! });
         }
-        if (provider === "local_testnet") {
+        if (provider === "local_testnet" && !IS_MAINNET) {
           const { createViemAdapterFromPrivateKey } = await import("@circle-fin/adapter-viem-v2");
           return createViemAdapterFromPrivateKey({ privateKey: process.env.AGENT_PRIVATE_KEY! });
         }
@@ -95,13 +95,13 @@ export interface UnifiedBalance {
 /** Read-only, address-based query — needs no signing capability. */
 export async function unifiedBalance(address: string): Promise<UnifiedBalance> {
   const k = await kit();
-  const chains = ["Arc_Testnet", "Base_Sepolia", "Arbitrum_Sepolia"];
+  const chains = ACTIVE_CHAINS.filter((c) => !c.startsWith("Ethereum"));
   const res = await k.unifiedBalance.getBalances({
     token: "USDC",
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     sources: { address, chains: chains as any },
-    networkType: "testnet",
+    networkType: ARC.network,
   });
-  const byChain = res.breakdown.flatMap((b) => b.breakdown.map((c) => ({ chain: String(c.chain), label: CHAINS[String(c.chain)]?.label ?? String(c.chain), micro: toMicro(c.confirmedBalance) })));
+  const byChain = res.breakdown.flatMap((b) => b.breakdown.map((c) => ({ chain: String(c.chain), label: chainLabel(String(c.chain)), micro: toMicro(c.confirmedBalance) })));
   return { totalMicro: toMicro(res.totalConfirmedBalance), byChain, source: "app_kit_unified_balance" };
 }

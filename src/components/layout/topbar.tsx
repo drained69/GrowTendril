@@ -32,6 +32,11 @@ export function Topbar({ shell, notices, canOperate }: { shell: ShellProps; noti
         <nav aria-label="Breadcrumb" className="flex min-w-0 items-center gap-1.5 text-[13px]">
           <span className="hidden truncate text-ink-3 sm:inline">{shell.workspace.name}</span>
           {demo && <ModeBadge mode="DEMO" className="hidden sm:inline-flex" />}
+          {!shell.network.mainnet && !demo && (
+            <span title={`Payments use test USDC on ${shell.network.name}`} className="hidden sm:inline-flex">
+              <Badge tone="info">Testnet</Badge>
+            </span>
+          )}
           {section && (
             <>
               <ChevronRight className="hidden size-3.5 text-ink-4 sm:block" />

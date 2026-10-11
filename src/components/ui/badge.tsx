@@ -25,8 +25,8 @@ export function Badge({ children, tone = "neutral", className, dot }: { children
 const MODE: Record<string, { tone: Tone; title: string }> = {
   DEMO: { tone: "accent", title: "Fictional seeded data" },
   SIMULATED: { tone: "warn", title: "Would have happened — nothing moved" },
-  TESTNET: { tone: "info", title: "Real Circle / Arc Testnet activity" },
-  LIVE: { tone: "good", title: "Real public data" },
+  TESTNET: { tone: "info", title: "Real Circle activity on Arc Testnet (test funds)" },
+  LIVE: { tone: "good", title: "Real public data, or real funds on Arc mainnet" },
 };
 
 /** Provenance label carried by every user-visible record. */

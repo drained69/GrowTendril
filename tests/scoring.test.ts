@@ -105,3 +105,27 @@ describe("money", () => {
     expect(fmtUsdc(1_000)).toBe("0.001 USDC");
   });
 });
+
+describe("mission budget availability", () => {
+  it("subtracts spent, awaiting approval and open-experiment reservations without double counting", async () => {
+    const { budgetAvailability } = await import("../src/server/queries/missions");
+    const b = budgetAvailability({
+      budgetMicro: 1_000,
+      spentMicro: 100,
+      awaitingApprovalMicro: 150, // 50 inside exp a's reservation, 100 standalone
+      openExperiments: [
+        { id: "a", budgetMicro: 300, spentMicro: 100 },
+        { id: "b", budgetMicro: 100, spentMicro: 150 },
+      ],
+      awaitingByExperiment: { a: 50 },
+    });
+    expect(b.reserved).toBe(200);
+    expect(b.awaitingApproval).toBe(100);
+    expect(b.committed).toBe(300);
+    expect(b.available).toBe(600);
+  });
+  it("never goes negative", async () => {
+    const { budgetAvailability } = await import("../src/server/queries/missions");
+    expect(budgetAvailability({ budgetMicro: 100, spentMicro: 90, awaitingApprovalMicro: 50, openExperiments: [], awaitingByExperiment: {} }).available).toBe(0);
+  });
+});

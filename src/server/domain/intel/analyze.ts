@@ -1,4 +1,4 @@
-import { and, eq, gte } from "drizzle-orm";
+import { and, eq, gte, notInArray } from "drizzle-orm";
 import type { DB } from "@/server/db/client";
 import * as s from "@/server/db/schema";
 import { mergeMode, nextNumber } from "@/server/db/helpers";
@@ -171,6 +171,13 @@ export async function analyzeProject(db: DB, projectId: string, log: Logger = ()
       .returning({ id: s.productIssues.id });
     issueIds.push({ id: row.id, key: i.key, blocks: i.blocksAcquisition, label: i.label, v7: i.mentions7d, change: i.changePct, rec: i.recommendation, mode });
   }
+  // Issues with no mentions in the last 14 days are not produced this run: zero them so a stale
+  // row can't keep blocking acquisition or show last month's counts.
+  const issueKeys = issues.map((i) => i.key);
+  await db
+    .update(s.productIssues)
+    .set({ mentions7d: 0, mentionsPrev7d: 0, changePct: 0, blocksAcquisition: false, recommendation: "No mentions in the last 14 days.", updatedAt: new Date() })
+    .where(issueKeys.length ? and(eq(s.productIssues.projectId, projectId), notInArray(s.productIssues.key, issueKeys)) : eq(s.productIssues.projectId, projectId));
   log("narrative", `${mentionPosts.length} product mentions, ${issues.length} recurring issue theme(s)`);
 
   // ── NARRATIVES ──────────────────────────────────────────────
@@ -203,6 +210,12 @@ export async function analyzeProject(db: DB, projectId: string, log: Logger = ()
     for (const co of companiesHere) await db.insert(s.narrativeCompanies).values({ narrativeId: n.id, companyId: co.id }).onConflictDoNothing();
     narrativeIds.push({ id: n.id, key: c.key, label: c.label, status: c.status, relevance: c.relevance, velocity: c.velocityPct, v7: c.volume7d, voices: c.voices, terms: c.terms, mode, reason: c.statusReason });
   }
+  // Narratives that no longer cluster in the current window keep their history but not their volume.
+  const narrativeKeys = clusters.map((c) => c.key);
+  await db
+    .update(s.narratives)
+    .set({ volume7d: 0, volumePrev7d: 0, velocityPct: 0, status: "DECLINING", summary: "No longer clustering in the last 14 days of collected posts", updatedAt: new Date() })
+    .where(narrativeKeys.length ? and(eq(s.narratives.projectId, projectId), notInArray(s.narratives.key, narrativeKeys)) : eq(s.narratives.projectId, projectId));
   log("narrative", `Clustered ${clusters.length} narratives: ${clusters.slice(0, 3).map((c) => `${c.label} (${c.velocityPct >= 0 ? "+" : ""}${c.velocityPct}%)`).join(", ")}`);
 
   // ── KOLs ────────────────────────────────────────────────────
@@ -298,14 +311,16 @@ export async function analyzeProject(db: DB, projectId: string, log: Logger = ()
     dataMode: Mode;
   }) {
     const number = await nextNumber(db, "opportunities", projectId);
-    await db
+    const [row] = await db
       .insert(s.opportunities)
       .values({ id: newId(), projectId, missionId: mission?.id ?? null, number, ...o, scores: o.scores ?? {} })
       .onConflictDoUpdate({
         target: [s.opportunities.projectId, s.opportunities.subjectKey],
         set: { title: o.title, whyNow: o.whyNow, recommendedAction: o.recommendedAction, confidence: o.confidence, expectedValue: o.expectedValue, estimatedCostMicro: o.estimatedCostMicro, overallScore: o.overallScore, scores: o.scores ?? {}, dataMode: o.dataMode, updatedAt: new Date() },
-      });
+      })
+      .returning({ id: s.opportunities.id });
     oppCount++;
+    return row.id;
   }
 
   for (const c of companyIds.filter((c) => c.overall >= 45)) {
@@ -385,7 +400,7 @@ export async function analyzeProject(db: DB, projectId: string, log: Logger = ()
     if (!["recommendation_request", "question", "competitor_usage"].includes(sig.type)) continue;
     if (now - p.publishedAt.getTime() > 10 * DAY_MS) continue;
     const ageD = days(p.publishedAt, now);
-    await upsertOpp({
+    const oppId = await upsertOpp({
       subjectKey: `post:${p.id}`,
       type: "DEVELOPER",
       title: `${p.authorHandle} on ${p.provider}: ${SIGNAL_LABEL[sig.type].toLowerCase()}`,
@@ -397,6 +412,11 @@ export async function analyzeProject(db: DB, projectId: string, log: Logger = ()
       overallScore: sig.type === "recommendation_request" ? 62 : 48,
       dataMode: p.dataMode,
     });
+    // The opportunity has no company/creator/narrative subject, so link the public thread directly.
+    await db
+      .insert(s.evidence)
+      .values({ id: newId(), projectId, postId: p.id, opportunityId: oppId, dedupeKey: `post:${p.id}:opportunity:${oppId}`, sourceUrl: p.url, sourceTitle: p.title, provider: p.provider, excerpt: p.content.slice(0, 400), signalType: sig.type, observedAt: p.publishedAt, classifiedBy: p.dataMode === "DEMO" ? "demo" : "rule", dataMode: p.dataMode })
+      .onConflictDoNothing();
   }
   log("operator", `${oppCount} opportunities prioritized`);
 

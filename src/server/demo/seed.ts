@@ -1,3 +1,4 @@
+import { ARC } from "@/server/integrations/circle/config";
 import { and, eq } from "drizzle-orm";
 import type { DB } from "@/server/db/client";
 import * as s from "@/server/db/schema";
@@ -157,7 +158,7 @@ export async function seedDemo(db: DB, opts: { reset?: boolean; ownerId?: string
   const alloc: Record<string, number> = { research: 20, services: 15, kol: 325, bounty: 40, content: 100 };
   await db.insert(s.missionBudgets).values(Object.entries(alloc).map(([category, v]) => ({ id: newId(), missionId, category, allocatedMicro: toMicro(v) })));
   await db.insert(s.policies).values({ id: newId(), projectId, ...DEFAULT_POLICY });
-  await db.insert(s.wallets).values({ id: newId(), projectId, provider: "unconfigured", blockchain: "ARC-TESTNET", status: "SIMULATION", dataMode: "DEMO" });
+  await db.insert(s.wallets).values({ id: newId(), projectId, provider: "unconfigured", blockchain: ARC.circleBlockchain, status: "SIMULATION", dataMode: "DEMO" });
 
   // Feed the fictional corpus through the real pipeline.
   const byProvider = new Map<string, FetchedPost[]>();
@@ -226,13 +227,13 @@ export async function seedDemo(db: DB, opts: { reset?: boolean; ownerId?: string
       missionId,
       agent: "operator",
       kind: "send_payment",
-      action: { action: "send_payment", purpose: h.channel === "kol" ? "kol_payment" : "campaign_payment", amount: String(h.spent), currency: "USDC", chain: "Arc_Testnet", experimentId: expId, missionId },
+      action: { action: "send_payment", purpose: h.channel === "kol" ? "kol_payment" : "campaign_payment", amount: String(h.spent), currency: "USDC", chain: ARC.appKitChain, experimentId: expId, missionId },
       rationale: `Seeded DEMO history: spend for experiment #${h.n}.`,
       status: "executed",
       autonomous: false,
       dataMode: "DEMO",
     });
-    const { tx } = await createTransaction(db, { projectId, decisionId: d.id, missionId, experimentId: expId, kind: "send", rail: "app_kit_send", budgetCategory: h.cat, amountMicro: toMicro(h.spent), chain: "Arc_Testnet", recipient: null, idempotencyKey: sha256(`demo-history-${projectId}-${h.n}`), dataMode: "SIMULATED" });
+    const { tx } = await createTransaction(db, { projectId, decisionId: d.id, missionId, experimentId: expId, kind: "send", rail: "app_kit_send", budgetCategory: h.cat, amountMicro: toMicro(h.spent), chain: ARC.appKitChain, recipient: null, idempotencyKey: sha256(`demo-history-${projectId}-${h.n}`), dataMode: "SIMULATED" });
     await db.update(s.transactions).set({ createdAt: new Date(now - h.started * DAY_MS) }).where(eq(s.transactions.id, tx.id));
     await transition(db, tx.id, "AUTHORIZED", {}, "DEMO history");
     await transition(db, tx.id, "EXECUTING");

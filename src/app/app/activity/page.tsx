@@ -4,7 +4,7 @@ import { ArrowRight, Bot, Receipt, RefreshCw, Workflow } from "lucide-react";
 import { requireProject } from "@/server/auth/current";
 import { schema as s } from "@/server/db/client";
 import { recentDecisions, recentTransactions } from "@/server/queries/activity";
-import { CHAINS, txExplorerUrl } from "@/server/integrations/circle/config";
+import { ARC, chainLabel, txExplorerUrl } from "@/server/integrations/circle/config";
 import { DEMO_PAYOUT_FALLBACK } from "@/server/domain/growth/experiments";
 import { refreshSettlementsAction } from "@/server/actions/wallet";
 import { fmtUsdc } from "@/lib/money";
@@ -54,7 +54,7 @@ export default async function Activity() {
         <Stat label="x402 purchases" value={purchases.length} sub="paid API calls" />
         <Stat label="Gateway settlements" value={txs.filter((t) => t.settlementId).length} sub="with a settlement ID" />
         <Stat label="Arc transfers" value={txs.filter((t) => t.rail === "app_kit_send" && t.txHash).length} sub="App Kit Send with tx hash" />
-        <Stat label="On-chain / testnet" value={real.length} sub={`of ${txs.length} payment rows`} />
+        <Stat label={`On-chain · ${ARC.name}`} value={real.length} sub={`of ${txs.length} payment rows`} />
       </StatStrip>
 
       <Card>
@@ -78,7 +78,7 @@ export default async function Activity() {
             const request = purchase
               ? purchase.purpose
               : t.kind === "bridge"
-                ? `${CHAINS[t.chain]?.label ?? t.chain} → ${CHAINS[t.destChain ?? ""]?.label ?? t.destChain ?? "—"}`
+                ? `${chainLabel(t.chain)} → ${t.destChain ? chainLabel(t.destChain) : "—"}`
                 : t.recipient === DEMO_PAYOUT_FALLBACK
                   ? "Placeholder payout address (set the creator’s)"
                   : t.recipient
@@ -115,7 +115,7 @@ export default async function Activity() {
                   </span>
                 ),
                 tx: t.batchTxHash ? (
-                  <ExternalLink href={txExplorerUrl("Arc_Testnet", t.batchTxHash)} className="num whitespace-nowrap text-[11.5px]">
+                  <ExternalLink href={txExplorerUrl(ARC.appKitChain, t.batchTxHash)} className="num whitespace-nowrap text-[11.5px]">
                     batch {shortHash(t.batchTxHash, 4)}
                   </ExternalLink>
                 ) : t.txHash ? (

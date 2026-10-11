@@ -2,6 +2,7 @@ import Link from "next/link";
 import type { ReactNode } from "react";
 import { FileCheck2, Radar, ShieldCheck } from "lucide-react";
 import { Logo } from "@/components/layout/logo";
+import { isMainnetEnv } from "@/server/integrations/circle/network-env";
 
 const POINTS = [
   { icon: <Radar />, title: "Evidence before opinion", body: "Every customer, narrative and creator score links back to the public sources behind it." },
@@ -34,7 +35,7 @@ export function AuthShell({ children, title, description, footer }: { children: 
             ))}
           </ul>
         </div>
-        <p className="relative text-[11.5px] text-ink-4">Testnet build · Circle &amp; Arc · Demo data is fictional and always labelled.</p>
+        <p className="relative text-[11.5px] text-ink-4">{isMainnetEnv() ? "Arc mainnet" : "Arc Testnet"} · Circle &amp; Arc · Demo data is fictional and always labelled.</p>
       </aside>
 
       <main className="flex flex-col px-5 py-8 sm:px-10">

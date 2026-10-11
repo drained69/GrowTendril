@@ -42,7 +42,7 @@ export function SignupForm({ invite, email }: { invite?: string; email?: string 
       <Field label="Name" htmlFor="signup-name">
         <Input id="signup-name" name="name" autoComplete="name" placeholder="Ada Lovelace" className="h-9" autoFocus />
       </Field>
-      <Field label="Work email" htmlFor="signup-email" hint={invite && email ? "Must match the address the invite was sent to." : undefined}>
+      <Field label="Work email" htmlFor="signup-email" hint={invite && email ? "The invite is for this address." : undefined}>
         <Input id="signup-email" name="email" type="email" required autoComplete="email" defaultValue={email} readOnly={!!(invite && email)} placeholder="you@company.com" className="h-9" />
       </Field>
       <Field label="Password" htmlFor="signup-password" hint="At least 8 characters.">

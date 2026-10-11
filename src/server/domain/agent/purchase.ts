@@ -110,7 +110,7 @@ export async function purchaseCompanyIntel(db: DB, p: { projectId: string; compa
     missionId: mission.id,
     confidence: before,
     subject: { type: "company", id: company.id },
-    chain: "Arc_Testnet",
+    chain: ARC.appKitChain,
   });
   if (!parsed.success) throw new Error(`Action failed schema validation: ${parsed.error.message}`);
   const action = parsed.data;
@@ -130,7 +130,7 @@ export async function purchaseCompanyIntel(db: DB, p: { projectId: string; compa
     inputs: { confidenceBefore: before, reasons, eviMicro: ivi.eviMicro, quoteError },
     policy: verdict,
     status: verdict.verdict === "ALLOW" ? "approved" : verdict.verdict === "DENY" ? "denied" : "awaiting_approval",
-    dataMode: simulated ? "SIMULATED" : projectMode === "DEMO" ? "DEMO" : "TESTNET",
+    dataMode: simulated ? "SIMULATED" : projectMode === "DEMO" ? "DEMO" : ARC.dataMode,
   });
   const { tx, duplicate } = await createTransaction(db, {
     projectId: p.projectId,
@@ -140,10 +140,10 @@ export async function purchaseCompanyIntel(db: DB, p: { projectId: string; compa
     rail: "gateway_x402",
     budgetCategory: verdict.category,
     amountMicro: priceMicro,
-    chain: "Arc_Testnet",
+    chain: ARC.appKitChain,
     recipient: liveQuote?.kind === "quote" ? liveQuote.quote.payTo : pick.svc.payTo,
     idempotencyKey: sha256(`x402:${p.projectId}:${company.id}:${pick.svc.id}:${new Date().toISOString().slice(0, 13)}`),
-    dataMode: simulated ? "SIMULATED" : "TESTNET",
+    dataMode: simulated ? "SIMULATED" : ARC.dataMode,
   });
   if (duplicate) {
     log("operator", "Same purchase already made this hour — idempotency key matched; not paying twice");
@@ -187,7 +187,7 @@ export async function executePurchase(
   const signer = walletIsLive(wallet) && !wallet!.frozen ? signerFor(wallet) : null;
   if (signer && a.liveQuote?.kind === "quote") {
     try {
-      log("operator", `Signing x402 authorization for ${fmtUsdc(a.priceMicro)} (EIP-712, ${signer.kind === "circle_dcw" ? "Circle wallet" : "server testnet key"})`);
+      log("operator", `Signing x402 authorization for ${fmtUsdc(a.priceMicro)} (EIP-712, ${signer.kind === "circle_dcw" ? "Circle wallet" : "server development key"})`);
       const res = await pay(a.liveQuote.quote, signer, { maxAmountMicro: a.priceMicro });
       data = res.data as typeof data;
       settlementId = res.settlementId;
@@ -251,7 +251,7 @@ export async function executePurchase(
   await updateDecision(db, a.decisionId, {
     status: finalState === "FAILED" ? "failed" : "executed",
     result: { confidenceAfter, signalsAdded: added, settlementId, state: finalState, summary: `${added} additional intent signal(s) found` },
-    dataMode: mergeMode([finalState === "SIMULATED" ? "SIMULATED" : "TESTNET", ...(data?.dataMode === "DEMO" ? (["DEMO"] as const) : [])]),
+    dataMode: mergeMode([finalState === "SIMULATED" ? "SIMULATED" : ARC.dataMode, ...(data?.dataMode === "DEMO" ? (["DEMO"] as const) : [])]),
   });
   await writeReceipt(db, a.decisionId);
   log("operator", `${company.name}: ${added} new signal(s); confidence ${(a.before * 100).toFixed(0)}% → ${confidenceAfter != null ? (confidenceAfter * 100).toFixed(0) : "?"}%`);

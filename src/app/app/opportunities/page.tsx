@@ -1,10 +1,12 @@
 import Link from "next/link";
 import { desc, eq } from "drizzle-orm";
-import { Lightbulb, Radar } from "lucide-react";
+import { Lightbulb } from "lucide-react";
 import { requireProject } from "@/server/auth/current";
+import { can } from "@/server/auth/access";
 import { schema as s } from "@/server/db/client";
 import { fmtUsdc } from "@/lib/money";
 import { Badge, Confidence, EmptyState, LinkButton, ModeBadge, PageHeader, StatusBadge, cn, type Tone } from "@/components/ui";
+import { RunScanButton } from "@/components/features/intel/run-scan-button";
 import { LinkTabs } from "@/components/ui/tabs";
 
 const TYPES = ["ALL", "CUSTOMER", "KOL", "NARRATIVE", "DEVELOPER", "PRODUCT_ISSUE", "COMPETITOR", "PARTNERSHIP", "CONTENT", "COMMUNITY", "EVENT"];
@@ -19,7 +21,7 @@ const typeTone = (t: string): Tone => (t === "PRODUCT_ISSUE" ? "bad" : t === "KO
 
 export default async function Opportunities({ searchParams }: { searchParams: Promise<{ type?: string; status?: string }> }) {
   const { type = "ALL", status = "active" } = await searchParams;
-  const { project, db } = await requireProject();
+  const { project, role, db } = await requireProject();
   const all = await db.select().from(s.opportunities).where(eq(s.opportunities.projectId, project.id)).orderBy(desc(s.opportunities.overallScore));
   const statusMatch = (o: (typeof all)[number]) => status === "all" || (status === "active" ? o.status !== "dismissed" : o.status === status);
   const inStatus = all.filter(statusMatch);
@@ -97,9 +99,7 @@ export default async function Opportunities({ searchParams }: { searchParams: Pr
             all.length ? (
               <LinkButton href="/app/opportunities">Reset filters</LinkButton>
             ) : (
-              <LinkButton href="/app/runs" variant="primary" icon={<Radar />}>
-                Run a scan
-              </LinkButton>
+              <RunScanButton canOperate={can(role, "operate")} />
             )
           }
         />

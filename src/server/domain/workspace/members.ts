@@ -7,8 +7,9 @@ import { newId, sha256 } from "@/server/lib/ids";
 import { isRole, type Role } from "@/server/auth/access";
 
 /**
- * Team membership. Invites are single-use links (token shown once, stored hashed) bound to an
- * email address; there is no outbound email — the inviter shares the link.
+ * Team membership. Invites are single-use links (token shown once, stored hashed) for an email
+ * address. There is no outbound email and addresses are not verified: whoever holds the link can
+ * join by signing up with that address — the link itself is the credential, so share it privately.
  */
 
 export async function listMembers(db: DB, projectId: string) {
@@ -59,8 +60,10 @@ export async function acceptInvite(db: DB, a: { token: string; userId: string; u
   const inv = await inviteByToken(db, a.token);
   if (!inv) throw new Error("This invite is invalid or has expired");
   if (inv.invite.email !== a.userEmail.toLowerCase()) throw new Error(`This invite is for ${inv.invite.email}. Sign in with that address to accept it.`);
+  // Claim the invite first (single use, even under concurrent accepts), then add the membership.
+  const claimed = await db.update(s.invites).set({ acceptedAt: new Date() }).where(and(eq(s.invites.id, inv.invite.id), isNull(s.invites.acceptedAt))).returning({ id: s.invites.id });
+  if (!claimed.length) throw new Error("This invite has already been used");
   await db.insert(s.memberships).values({ id: newId(), projectId: inv.invite.projectId, userId: a.userId, role: inv.invite.role }).onConflictDoNothing();
-  await db.update(s.invites).set({ acceptedAt: new Date() }).where(eq(s.invites.id, inv.invite.id));
   await audit(db, { projectId: inv.invite.projectId, actorType: "user", actorId: a.userId, action: "member.join", data: { role: inv.invite.role } });
   return inv.invite.projectId;
 }

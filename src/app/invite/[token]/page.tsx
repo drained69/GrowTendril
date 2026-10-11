@@ -84,7 +84,7 @@ export default async function Invite({ params }: { params: Promise<{ token: stri
             <LinkButton href={`/login?invite=${t}`} size="lg" className="w-full" icon={<LogIn />}>
               I already have an account
             </LinkButton>
-            <p className="text-center text-[11.5px] text-ink-3">Use {inv.invite.email} — invites are bound to that address.</p>
+            <p className="text-center text-[11.5px] text-ink-3">This invite is for {inv.invite.email} — sign up or sign in with that address.</p>
           </>
         ) : mismatch ? (
           <>

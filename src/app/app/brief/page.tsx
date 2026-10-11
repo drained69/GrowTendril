@@ -5,6 +5,7 @@ import { requireProject } from "@/server/auth/current";
 import { can } from "@/server/auth/access";
 import { schema as s } from "@/server/db/client";
 import { buildDailyBrief } from "@/server/domain/growth/brief";
+import { activeMission, missionBudget } from "@/server/queries/missions";
 import { rebuildDailyBriefAction } from "@/server/actions/agent";
 import { fmtUsdc } from "@/lib/money";
 import { Badge, Card, CardBody, CardFooter, CardHeader, Confidence, ModeBadge, PageHeader, Progress, Stat, StatStrip, Velocity } from "@/components/ui";
@@ -15,7 +16,11 @@ type Brief = Awaited<ReturnType<typeof buildDailyBrief>>;
 export default async function DailyBrief() {
   const { project, role, db } = await requireProject();
   const [row] = await db.select().from(s.dailyBriefs).where(eq(s.dailyBriefs.projectId, project.id)).orderBy(desc(s.dailyBriefs.date)).limit(1);
-  const b: Brief = row ? (row.content as unknown as Brief) : await buildDailyBrief(db, project.id);
+  // Viewing never writes: without a saved brief this is an unsaved preview until Rebuild or the next cycle.
+  const b: Brief = row ? (row.content as unknown as Brief) : await buildDailyBrief(db, project.id, Date.now(), { persist: false });
+  // Budget is read live (same helper as Overview) so "Available" matches everywhere, not a stale snapshot.
+  const mission = await activeMission(db, project.id);
+  const budget = mission ? await missionBudget(db, mission) : null;
   const date = new Date(b.date + "T00:00:00Z").toLocaleDateString("en-US", { weekday: "long", month: "long", day: "numeric", timeZone: "UTC" });
   const w = b.whatChanged;
 
@@ -45,13 +50,13 @@ export default async function DailyBrief() {
       </Card>
 
       <div>
-        <div className="label mb-2">What changed · last 24h</div>
+        <div className="label mb-2">What changed · as of {row ? "the last build" : "now"}</div>
         <StatStrip className="grid-cols-2 sm:grid-cols-5">
-          <Stat label="New conversations" value={w.newConversations} />
-          <Stat label="High-intent companies" value={w.highIntentCompanies} />
-          <Stat label="Emerging narratives" value={w.emergingNarratives} />
-          <Stat label="Creator opps" value={w.kolOpportunities} />
-          <Stat label="Product issues" value={w.productIssues} tone={w.productIssues ? "warn" : undefined} />
+          <Stat label="New conversations" value={w.newConversations} sub="collected in 24h" />
+          <Stat label="New high-intent companies" value={w.highIntentCompanies} sub="found in 24h" />
+          <Stat label="Emerging narratives" value={w.emergingNarratives} sub="emerging or accelerating now" />
+          <Stat label="New creator opps" value={w.kolOpportunities} sub="open, found in 24h" />
+          <Stat label="Product issues" value={w.productIssues} sub="mentioned this week" tone={w.productIssues ? "warn" : undefined} />
         </StatStrip>
       </div>
 
@@ -94,7 +99,7 @@ export default async function DailyBrief() {
       ) : (
         <Card>
           <CardHeader title="Top opportunity" icon={<Target />} />
-          <CardBody className="text-[12.5px] text-ink-3">No open opportunities — they appear after a cycle scores the evidence collected from your sources.</CardBody>
+          <CardBody className="text-[12.5px] text-ink-3">No open opportunities — they appear after a scan or cycle scores the evidence collected from your sources.</CardBody>
         </Card>
       )}
 
@@ -120,16 +125,16 @@ export default async function DailyBrief() {
         <Card>
           <CardHeader title="Budget" icon={<CircleDollarSign />} action={<Link href="/app/wallet" className="text-[12px] text-ink-3 hover:text-ink">Wallet →</Link>} />
           <CardBody>
-            {b.budget ? (
+            {budget ? (
               <>
                 <div className="grid grid-cols-3 gap-3">
-                  <Stat size="sm" label="Total" value={fmtUsdc(b.budget.totalMicro, { unit: false })} />
-                  <Stat size="sm" label="Spent" value={fmtUsdc(b.budget.spentMicro, { unit: false })} />
-                  <Stat size="sm" label="Remaining" value={fmtUsdc(b.budget.remainingMicro, { unit: false })} tone="good" />
+                  <Stat size="sm" label="Total" value={fmtUsdc(budget.budget, { unit: false })} />
+                  <Stat size="sm" label="Spent" value={fmtUsdc(budget.spent, { unit: false })} />
+                  <Stat size="sm" label="Available" value={fmtUsdc(budget.available, { unit: false })} tone="good" />
                 </div>
-                <Progress className="mt-4" value={b.budget.spentMicro + b.budget.pendingMicro} max={b.budget.totalMicro} />
+                <Progress className="mt-4" value={budget.spent + budget.committed} max={budget.budget} />
                 <div className="mt-1.5 text-[11px] text-ink-3">
-                  <span className="num">{fmtUsdc(b.budget.pendingMicro)}</span> pending settlement
+                  <span className="num">{fmtUsdc(budget.awaitingApproval)}</span> awaiting approval · <span className="num">{fmtUsdc(budget.reserved)}</span> reserved by open experiments
                 </div>
               </>
             ) : (
@@ -140,12 +145,12 @@ export default async function DailyBrief() {
       </div>
 
       <Card>
-        <CardHeader title="Experiments · last 24h" icon={<FlaskConical />} action={<Link href="/app/experiments" className="text-[12px] text-ink-3 hover:text-ink">All →</Link>} />
+        <CardHeader title="Experiments" icon={<FlaskConical />} action={<Link href="/app/experiments" className="text-[12px] text-ink-3 hover:text-ink">All →</Link>} />
         <CardBody>
           <div className="grid grid-cols-3 gap-4">
-            <Stat label="Succeeded / scaling" value={b.experiments.succeeded} tone={b.experiments.succeeded ? "good" : undefined} />
-            <Stat label="Failed / stopped" value={b.experiments.failed} tone={b.experiments.failed ? "bad" : undefined} />
-            <Stat label="Running" value={b.experiments.running} />
+            <Stat label="Succeeded / scaling" value={b.experiments.succeeded} sub="updated in 24h" tone={b.experiments.succeeded ? "good" : undefined} />
+            <Stat label="Failed / stopped" value={b.experiments.failed} sub="updated in 24h" tone={b.experiments.failed ? "bad" : undefined} />
+            <Stat label="Running" value={b.experiments.running} sub="now" />
           </div>
         </CardBody>
         <CardFooter>
