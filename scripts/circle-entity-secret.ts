@@ -11,6 +11,7 @@ import { randomBytes } from "node:crypto";
 import { existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import { homedir } from "node:os";
 import path from "node:path";
+import { entitySecretAlreadyRegistered } from "./circle-setup-errors";
 
 const ENV_FILE = path.join(process.cwd(), ".env");
 const RECOVERY_DIR = path.join(homedir(), ".growtendril", "circle-recovery");
@@ -52,9 +53,12 @@ try {
   // The SDK resolves this path relative to the working directory.
   await registerEntitySecretCiphertext({ apiKey, entitySecret, recoveryFileDownloadPath: path.relative(process.cwd(), RECOVERY_DIR) });
 } catch (e) {
-  const msg = (e as Error).message ?? String(e);
-  console.error(`Circle rejected the registration: ${msg}`);
-  console.error("If this account already has an entity secret, paste that existing secret into .env as CIRCLE_ENTITY_SECRET instead.");
+  if (entitySecretAlreadyRegistered(e)) {
+    console.log("Circle already has an entity secret registered for this API key. No new secret was written.");
+    console.log("Paste the previously registered CIRCLE_ENTITY_SECRET into .env. Do not replace it with the newly generated value.");
+    process.exit(0);
+  }
+  console.error("Circle rejected the entity-secret registration. Check the API key and Circle Console. No secret was written.");
   process.exit(1);
 }
 

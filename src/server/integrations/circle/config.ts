@@ -40,6 +40,23 @@ export type WalletProvider = "circle_dcw" | "local_testnet" | "unconfigured";
 
 /** Mainnet wallets require Circle custody; a local testnet key is never used here. */
 export function platformCustody(): "circle" | null {
-  if (process.env.CIRCLE_API_KEY && !process.env.CIRCLE_API_KEY.startsWith("TEST_API_KEY:") && process.env.CIRCLE_ENTITY_SECRET) return "circle";
+  if (process.env.CIRCLE_API_KEY && process.env.CIRCLE_ENTITY_SECRET && !custodyProblem()) return "circle";
+  return null;
+}
+
+/** Circle labels credentials by environment. Reject unknown prefixes too. */
+export function circleKeyEnvironment(key = process.env.CIRCLE_API_KEY): "live" | "test" | "unknown" | null {
+  if (!key) return null;
+  if (/^LIVE_API_KEY:[^:]+:[^:]+$/.test(key)) return "live";
+  if (/^TEST_API_KEY:[^:]+:[^:]+$/.test(key)) return "test";
+  return "unknown";
+}
+
+/** A public explanation; never includes any part of the credential. */
+export function custodyProblem(): string | null {
+  const environment = circleKeyEnvironment();
+  if (!environment) return null;
+  if (environment === "test") return "CIRCLE_API_KEY is a TEST key. Arc mainnet requires a LIVE_API_KEY from Circle.";
+  if (environment === "unknown") return "CIRCLE_API_KEY does not have a complete LIVE_API_KEY format for Arc mainnet.";
   return null;
 }

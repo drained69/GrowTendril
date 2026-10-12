@@ -7,7 +7,7 @@ import { schema as s } from "@/server/db/client";
 import { activeMission, missionSummary } from "@/server/queries/missions";
 import { spentTodayMicro } from "@/server/queries/activity";
 import { getWallet, walletBalances, walletIsLive } from "@/server/integrations/circle/wallets";
-import { ARC, addressExplorerUrl, platformCustody, txExplorerUrl } from "@/server/integrations/circle/config";
+import { ARC, addressExplorerUrl, custodyProblem, platformCustody, txExplorerUrl } from "@/server/integrations/circle/config";
 import { unifiedBalance } from "@/server/integrations/circle/appkit";
 import { recentJobs } from "@/server/jobs/queue";
 import { provisionWalletAction, refreshSettlementsAction, toggleFreezeAction } from "@/server/actions/wallet";
@@ -38,6 +38,7 @@ export default async function WalletPage() {
   const pid = project.id;
   const manage = can(role, "manage_wallet");
   const custody = platformCustody();
+  const custodyIssue = custodyProblem();
 
   const [wallet, spentToday, [policy], mission, jobs, exceptions] = await Promise.all([
     getWallet(db, pid),
@@ -91,6 +92,14 @@ export default async function WalletPage() {
         </Callout>
       )}
 
+      {custodyIssue && <Callout tone="danger" title="Circle credentials cannot operate on Arc mainnet">{custodyIssue}</Callout>}
+
+      {wallet && wallet.blockchain !== ARC.circleBlockchain && (
+        <Callout tone="danger" title="This wallet belongs to another network">
+          This wallet was created on {wallet.blockchain}. It cannot sign Arc mainnet payments. Create a new workspace, then use Wallet → Create wallet on Arc mainnet there. Historical payments stay linked to this workspace. <Link href="/onboarding?new=1" className="underline">Create a new workspace</Link>
+        </Callout>
+      )}
+
       {wallet?.frozen && (
         <Callout tone="danger" title="Kill switch is on" action={manage ? <ActionButton action={toggleFreezeAction} label="Resume spending" icon={<Unlock />} size="xs" /> : undefined}>
           Every spend is denied by the policy engine until a wallet manager resumes spending.
@@ -100,7 +109,7 @@ export default async function WalletPage() {
       <LedgerExceptions items={exceptions} canResolve={manage} />
 
       {!address ? (
-        <WalletSetup custody={custody} manage={manage} workspaceId={pid} />
+        <WalletSetup custody={custody} custodyIssue={custodyIssue} manage={manage} workspaceId={pid} />
       ) : (
         <div className="grid gap-4 lg:grid-cols-[1.35fr_1fr]">
           <div className="min-w-0 space-y-4">
@@ -128,7 +137,7 @@ export default async function WalletPage() {
                 />
                 {!live && (
                   <Callout tone="warn" title="This deployment can’t sign for this wallet">
-                    The wallet is recorded but its custody isn’t available here ({custody ? `custody is “${custody}”` : "no custody configured"}). Payments are disabled until an Arc mainnet Circle wallet and server credentials are configured.
+                    {wallet!.blockchain !== ARC.circleBlockchain ? `This ${wallet!.blockchain} wallet cannot sign on Arc mainnet.` : `The wallet is recorded but its custody isn’t available here (${custody ? `custody is “${custody}”` : "no custody configured"}).`} Payments are disabled until an Arc mainnet Circle wallet and server credentials are configured.
                   </Callout>
                 )}
               </CardBody>
@@ -270,7 +279,7 @@ export default async function WalletPage() {
   );
 }
 
-function WalletSetup({ custody, manage, workspaceId }: { custody: "circle" | null; manage: boolean; workspaceId: string }) {
+function WalletSetup({ custody, custodyIssue, manage, workspaceId }: { custody: "circle" | null; custodyIssue: string | null; manage: boolean; workspaceId: string }) {
   return (
     <div className="grid gap-4 lg:grid-cols-[1.35fr_1fr]">
       <Card>
@@ -282,7 +291,7 @@ function WalletSetup({ custody, manage, workspaceId }: { custody: "circle" | nul
             </Callout>
           ) : (
             <Callout tone="danger" title="No custody configured on this deployment">
-              Set <Code>CIRCLE_API_KEY</Code> and <Code>CIRCLE_ENTITY_SECRET</Code> in the server environment to create Circle developer-controlled wallets. Payments remain disabled until then.
+              {custodyIssue ?? <>Set <Code>CIRCLE_API_KEY</Code> and <Code>CIRCLE_ENTITY_SECRET</Code> in the server environment to create Circle developer-controlled wallets.</>} Payments remain disabled until then.
             </Callout>
           )}
           {manage ? (
