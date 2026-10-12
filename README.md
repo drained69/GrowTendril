@@ -9,6 +9,7 @@ GrowTendril is a growth operator for any product: a local business, a consumer a
 - **Approve:** every Arc mainnet payment goes through a deterministic policy engine and a founder approval. The launch hard ceiling is 10 USDC per payment. Cross-chain transfers are disabled.
 - **Pay:** Circle developer-controlled wallets send Arc USDC or sign Circle Gateway x402 payments. A wallet and real payment quote are required; there is no simulated-payment fallback.
 - **Learn:** tracked links, signed conversion events (or conversions recorded by hand on each experiment), receipts, and transaction states connect spend to a measured outcome.
+- **Customer value:** per campaign, which referred customers activate, pay and return, against confirmed (settled) spend. Send your own stable customer ID as `visitorId` and `value` on purchases. Gross profit and payback are labelled estimates from an optional margin; referral shows where a customer came from, not that the campaign caused the sale.
 
 The website presents product capabilities without seeded or fictional results. No demo workspace or guest entry point is available.
 
