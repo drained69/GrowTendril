@@ -1,11 +1,36 @@
-node_modules
-.next
-.data
-.env
-.env*.local
-.env.production
-*.tsbuildinfo
+# ── Dependencies ──
+node_modules/
+
+# ── Next.js build output (incl. side-by-side dist dirs: NEXT_DIST_DIR=.next-*) ──
+.next/
+.next-*/
+out/
+build/
 next-env.d.ts
+*.tsbuildinfo
+
+# ── Local data, secrets and environment ──
+.data/
+.env
+.env.*
+!.env.example
+*.pem
+
+# ── Test & tooling output ──
+coverage/
+*.log
+npm-debug.log*
 recovery_file_*.dat
-coverage
-.next-*
+
+# ── Launch / demo video (kept locally, never pushed) ──
+video/
+*.mp4
+*.mov
+*.webm
+*.wav
+
+# ── Editor, OS and local agent config ──
+.DS_Store
+.vscode/
+.idea/
+.claude/
