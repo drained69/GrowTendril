@@ -3,5 +3,6 @@ import path from "node:path";
 
 export default defineConfig({
   resolve: { alias: { "@": path.resolve(import.meta.dirname, "src") } },
-  test: { include: ["tests/**/*.test.ts"], environment: "node" },
+  // Cold route imports run PGlite migrations; under a full parallel run that can exceed the 5s/10s defaults.
+  test: { include: ["tests/**/*.test.ts"], environment: "node", testTimeout: 30_000, hookTimeout: 60_000 },
 });
