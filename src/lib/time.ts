@@ -13,6 +13,11 @@ export function relTime(d: Date | string | null | undefined, now = Date.now()): 
   return s < 5 ? "just now" : `${span} ago`;
 }
 
+/** "Oct 12, 2026" in UTC, so server and browser agree. */
+export function fmtDate(d: Date): string {
+  return d.toLocaleDateString("en-US", { month: "short", day: "numeric", year: "numeric", timeZone: "UTC" });
+}
+
 export function isoDate(d: Date = new Date()): string {
   return d.toISOString().slice(0, 10);
 }

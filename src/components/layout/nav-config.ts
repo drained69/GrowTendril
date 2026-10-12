@@ -1,4 +1,4 @@
-import { Map as MapIcon, Activity, Bot, Building2, ClipboardList, FlaskConical, Flag, LayoutDashboard, Megaphone, Network, Newspaper, Plug, Radar, Receipt, Settings, ShieldCheck, Target, TrendingUp, Users, Wallet } from "lucide-react";
+import { Map as MapIcon, Activity, Bot, Building2, ClipboardList, FlaskConical, Flag, Gem, LayoutDashboard, Megaphone, Network, Newspaper, Plug, Radar, Receipt, Settings, ShieldCheck, Target, TrendingUp, Users, Wallet } from "lucide-react";
 import type { LucideIcon } from "lucide-react";
 
 export interface NavItem {
@@ -36,6 +36,7 @@ export const NAV: { section: string | null; items: NavItem[] }[] = [
       { href: "/app/missions", label: "Missions", icon: Flag, keywords: "goal budget" },
       { href: "/app/campaigns", label: "Creator campaigns", icon: Megaphone, keywords: "rewards mindshare contribution budget" },
       { href: "/app/experiments", label: "Experiments", icon: FlaskConical, keywords: "campaigns tests" },
+      { href: "/app/customer-value", label: "Customer value", icon: Gem, keywords: "cohorts ltv cac cpa payback revenue repeat activation roi" },
     ],
   },
   {

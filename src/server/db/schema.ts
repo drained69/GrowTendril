@@ -984,3 +984,19 @@ export const creatorContributions = pgTable("creator_contributions", {
   reviewedAt: timestamp("reviewed_at", { withTimezone: true }), reviewedBy: text("reviewed_by").references(() => users.id),
   createdAt: createdAt(),
 }, t => [uniqueIndex("creator_contribution_program_post_uq").on(t.programId, t.postUrl)]);
+
+/**
+ * How the Customer value view defines its cohorts, plus the gross-margin assumption it uses for
+ * estimated gross profit and payback. No row = starting values (signup, 90 days, no margin).
+ */
+export const customerValueSettings = pgTable("customer_value_settings", {
+  projectId: text("project_id").primaryKey().references(() => projects.id, { onDelete: "cascade" }),
+  /** Conversion event that counts as "activated" (e.g. signup, sdk_install, booking). */
+  activationEvent: text("activation_event").notNull(),
+  /** A paying customer is "repeat" when a second purchase lands within this many days of the first. */
+  repeatWindowDays: integer("repeat_window_days").notNull(),
+  /** Optional assumption (1–100). Only used for estimates, never for recorded figures. */
+  grossMarginPct: integer("gross_margin_pct"),
+  updatedBy: text("updated_by").references(() => users.id, { onDelete: "set null" }),
+  updatedAt: updatedAt(),
+});

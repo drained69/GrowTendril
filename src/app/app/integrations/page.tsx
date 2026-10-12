@@ -1,4 +1,5 @@
 import type { ReactNode } from "react";
+import Link from "next/link";
 import { eq } from "drizzle-orm";
 import { BookOpen, Code2, Globe, Lock, MessagesSquare, Newspaper, PlaySquare, Plug, Webhook } from "lucide-react";
 import { requireProject } from "@/server/auth/current";
@@ -207,6 +208,9 @@ curl -X POST ${endpoint} \\
               </div>
               <p className="mt-2 text-[11.5px] leading-snug text-ink-3">
                 Optional fields: <code className="num">customName</code>, <code className="num">visitorId</code>, <code className="num">occurredAt</code> (ISO 8601), <code className="num">value</code> (USDC), <code className="num">metadata</code>.
+              </p>
+              <p className="mt-2 text-[11.5px] leading-snug text-ink-3">
+                For <Link href="/app/customer-value" className="text-s1 hover:underline">Customer value</Link>: send your own stable customer or account ID as <code className="num">visitorId</code> on every event about that customer. Send <code className="num">ref</code> at least once (e.g. on signup); later <code className="num">purchase</code> events with the same <code className="num">visitorId</code> are linked even without it. Include <code className="num">value</code> on purchases and <code className="num">metadata.orderId</code> so a resent order isn&apos;t counted twice. Use an opaque ID rather than an email where you can.
               </p>
             </div>
           </CardBody>

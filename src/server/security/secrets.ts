@@ -1,4 +1,4 @@
-import { createCipheriv, createDecipheriv, randomBytes } from "node:crypto";
+import { createCipheriv, createDecipheriv, createHmac, randomBytes } from "node:crypto";
 import { existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import path from "node:path";
 
@@ -42,6 +42,15 @@ export function decryptJson(blob: string, aad = "growthos"): Record<string, stri
   d.setAAD(Buffer.from(aad));
   d.setAuthTag(buf.subarray(12, 28));
   return JSON.parse(Buffer.concat([d.update(buf.subarray(28)), d.final()]).toString("utf8"));
+}
+
+/**
+ * Stable, non-reversible alias for an identifier (e.g. a customer ID that may be an email).
+ * Keyed with the server secret and scoped, so aliases can't be dictionary-guessed from the
+ * identifier and the same person gets unrelated aliases in different workspaces.
+ */
+export function pseudonym(scope: string, value: string, length = 8): string {
+  return createHmac("sha256", loadKey()).update(`pseudonym:${scope}:${value}`).digest("hex").slice(0, length);
 }
 
 /** "••••a1f3" — enough to recognize a key, never enough to use it. */
