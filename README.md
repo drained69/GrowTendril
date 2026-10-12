@@ -10,6 +10,7 @@ GrowTendril is a growth operator for any product: a local business, a consumer a
 - **Pay:** Circle developer-controlled wallets send Arc USDC or sign Circle Gateway x402 payments. A wallet and real payment quote are required; there is no simulated-payment fallback.
 - **Learn:** tracked links, signed conversion events (or conversions recorded by hand on each experiment), receipts, and transaction states connect spend to a measured outcome.
 - **Customer value:** per campaign, which referred customers activate, pay and return, against confirmed (settled) spend. Send your own stable customer ID as `visitorId` and `value` on purchases. Gross profit and payback are labelled estimates from an optional margin; referral shows where a customer came from, not that the campaign caused the sale.
+- **Notifications:** Integrations → Outbound notifications sends approval requests, settled or failed payments, finished cycles and creator post submissions to Slack, Discord or a signed JSON endpoint (HTTPS only, retried, `x-growtendril-signature` like the inbound events webhook).
 
 The website presents product capabilities without seeded or fictional results. No demo workspace or guest entry point is available.
 
@@ -25,7 +26,7 @@ npm run dev
 
 Keep keys in `.env`: it is what `npm run env:push` uploads. Next.js lets `.env.local` override `.env`, including with empty values, so only put local-only switches there (such as `BILLING_DEV=1`).
 
-With no `DATABASE_URL`, local development uses PGlite in `.data/pglite`. Production should use Postgres with persistent storage. The app applies Drizzle migrations on startup. Run `npm run typecheck`, `npm test`, and `npm run build` before deployment.
+With no `DATABASE_URL`, local development uses PGlite in `.data/pglite`. Production should use Postgres with persistent storage. The app applies Drizzle migrations on startup. Run `npm run typecheck`, `npm test`, and `npm run build` before deployment. CI runs the same three on every push to `main`.
 
 ## Accounts, email and billing
 
@@ -54,6 +55,8 @@ Production setup (all in `.env`, uploaded with `npm run env:push`):
 Existing Arc testnet wallets are not converted or reused. Create a new workspace for mainnet. The application retains historical testnet transaction metadata so old receipts can still link to the correct explorer.
 
 Circle credentials are currently required for live wallet operations. Without them, discovery and planning can run, while payment proposals remain disabled by policy.
+
+Before trusting the money path, run `npm run doctor`. It is read-only: it checks the Circle key is a LIVE key, the entity secret, Circle API access and wallet sets, the Arc RPC and, when `DATABASE_URL` points at production, the newest Arc wallet's USDC and Gateway balances. It never moves funds or prints credentials. `npm run ledger:exceptions` lists ledger rows that disagree with what Arc reports.
 
 ## Important limits
 
