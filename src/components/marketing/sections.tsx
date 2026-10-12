@@ -228,11 +228,11 @@ export function Guardrails() {
 /* ───────────── Creator shortlist ───────────── */
 
 const CREATORS = [
-  { h: "thebrewguide", p: "YouTube", on: 8, fit: 91, cost: 45, last: "2 days ago" },
-  { h: "morningpour", p: "Bluesky", on: 7, fit: 86, cost: 30, last: "today" },
-  { h: "homeroastnotes", p: "Reddit", on: 9, fit: 84, cost: 20, last: "yesterday" },
-  { h: "kettleandco", p: "YouTube", on: 6, fit: 77, cost: 60, last: "4 days ago" },
-  { h: "cuppingclub", p: "Reddit", on: 5, fit: 70, cost: 15, last: "last week" },
+  { h: "thebrewguide", p: "YouTube", on: 8, fit: 91, cost: 5, last: "2 days ago" },
+  { h: "morningpour", p: "Bluesky", on: 7, fit: 86, cost: 4, last: "today" },
+  { h: "homeroastnotes", p: "Reddit", on: 9, fit: 84, cost: 3, last: "yesterday" },
+  { h: "kettleandco", p: "YouTube", on: 6, fit: 77, cost: 8, last: "4 days ago" },
+  { h: "cuppingclub", p: "Reddit", on: 5, fit: 70, cost: 2, last: "last week" },
 ];
 
 export function Shortlist() {
