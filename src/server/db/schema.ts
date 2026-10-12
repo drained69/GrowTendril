@@ -925,3 +925,17 @@ export const projectEconomics = pgTable("project_economics", {
   updatedBy: text("updated_by").references(() => users.id, { onDelete: "set null" }),
   updatedAt: updatedAt(),
 });
+
+/**
+ * How the Customer Value view defines its cohorts. Kept apart from project_economics so saving a
+ * cohort definition never marks the campaign planner's figures as reviewed. No row = starting values.
+ */
+export const customerValueSettings = pgTable("customer_value_settings", {
+  projectId: text("project_id").primaryKey().references(() => projects.id, { onDelete: "cascade" }),
+  /** Conversion event that counts as "activated" (e.g. signup, sdk_install, booking). */
+  activationEvent: text("activation_event").notNull(),
+  /** A paying customer is "repeat" when a second purchase lands within this many days of the first. */
+  repeatWindowDays: integer("repeat_window_days").notNull(),
+  updatedBy: text("updated_by").references(() => users.id, { onDelete: "set null" }),
+  updatedAt: updatedAt(),
+});

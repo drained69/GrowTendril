@@ -29,6 +29,13 @@
       "when": 1791722791292,
       "tag": "0003_campaign_economics",
       "breakpoints": true
+    },
+    {
+      "idx": 4,
+      "version": "7",
+      "when": 1791785976222,
+      "tag": "0004_customer_value",
+      "breakpoints": true
     }
   ]
 }
