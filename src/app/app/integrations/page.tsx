@@ -14,6 +14,8 @@ import { WebhookSecret } from "@/components/features/integrations/webhook-secret
 import { appOrigin } from "@/server/lib/origin";
 import { schema as s } from "@/server/db/client";
 import { sourceAppliesTo, sourceAudienceLabel } from "@/lib/source-readiness";
+import { Notifications } from "@/components/features/integrations/notifications";
+import { WEBHOOK_EVENTS, listEndpoints, recentDeliveries } from "@/server/domain/notifications/webhooks";
 
 const CATEGORY: Record<string, { label: string; icon: ReactNode }> = {
   social: { label: "Social", icon: <Globe /> },
@@ -45,7 +47,7 @@ function dotTone(c: ProviderConnection): "good" | "warn" | "bad" | "idle" {
 
 export default async function Integrations() {
   const { project, role, db } = await requireProject();
-  const [connections, [profile]] = await Promise.all([listConnections(db, project.id), db.select({ audience: s.productProfiles.audience }).from(s.productProfiles).where(eq(s.productProfiles.projectId, project.id))]);
+  const [connections, [profile], notificationEndpoints, notificationDeliveries] = await Promise.all([listConnections(db, project.id), db.select({ audience: s.productProfiles.audience }).from(s.productProfiles).where(eq(s.productProfiles.projectId, project.id)), listEndpoints(db, project.id), recentDeliveries(db, project.id)]);
   const canManage = can(role, "manage_integrations");
   const origin = await appOrigin();
   const endpoint = `${origin}/api/events`;
@@ -147,6 +149,11 @@ curl -X POST ${endpoint} \\
           );
         })}
       </div>
+
+      <Card id="notifications">
+        <CardHeader title="Outbound notifications" description="Send approval, payment, operator cycle and creator post updates to Slack, Discord or a signed JSON endpoint." icon={<Webhook />} />
+        <CardBody><Notifications endpoints={notificationEndpoints} deliveries={notificationDeliveries.map((delivery) => ({ ...delivery, createdAt: delivery.createdAt.toISOString() }))} events={[...WEBHOOK_EVENTS]} canManage={canManage} /></CardBody>
+      </Card>
 
       <Card id="events">
         <CardHeader

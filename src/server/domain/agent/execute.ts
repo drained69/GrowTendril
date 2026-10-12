@@ -20,6 +20,7 @@ import { executePurchase } from "@/server/domain/agent/purchase";
 import { applyReallocation } from "@/server/domain/growth/learning-run";
 import { confirmSend } from "@/server/domain/reconcile/wallet";
 import { assertPayeeApprovable } from "@/server/domain/agent/payees";
+import { notify } from "@/server/domain/notifications/webhooks";
 
 type Mode = (typeof s.dataMode.enumValues)[number];
 
@@ -124,6 +125,7 @@ async function proposeFinancialActionLocked(db: DB, p: Parameters<typeof propose
       })
       .returning({ id: s.approvals.id });
     await writeReceipt(db, decision.id);
+    await notify(db, p.projectId, { event: "approval.requested", key: `approval.requested:${ap.id}`, summary: `Approval needed: ${p.title} (${verdict.amountMicro / 1_000_000} USDC)`, path: "/app/approvals", data: { approval_id: ap.id, amount_usdc: verdict.amountMicro / 1_000_000 } });
     log("policy", `Approval required: ${verdict.checks.filter((c) => !c.passed).map((c) => c.rule).join(", ")}`);
     return { decisionId: decision.id, verdict: "APPROVAL_REQUIRED", state: "AWAITING_APPROVAL", approvalId: ap.id, message: "Sent to Approval Inbox" };
   }

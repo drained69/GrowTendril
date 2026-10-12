@@ -9,6 +9,7 @@ import { experimentCommitted, isPayableAddress } from "@/server/domain/growth/ex
 import { missionSpend, categorySpend, SPENT_STATES, PENDING_STATES } from "@/server/domain/agent/ledger";
 import { proposeFinancialAction } from "@/server/domain/agent/execute";
 import { microToDecimal } from "@/lib/money";
+import { notify } from "@/server/domain/notifications/webhooks";
 
 const ACTIVE = ["proposed", "running", "awaiting_approval"];
 async function locked<T>(db: DB, projectId: string, work: (db: DB) => Promise<T>): Promise<T> {
@@ -137,6 +138,7 @@ export async function submitContribution(db: DB, userId: string, participantId: 
     if (duplicate) throw new Error("This post has already been submitted");
     await db.insert(s.creatorContributions).values({ id: newId(), programId: program.id, participantId: p.id, postUrl, publishedAt });
     await audit(db, { projectId: program.projectId, actorType: "user", actorId: userId, action: "creator_campaign.submit", target: p.id, data: { postUrl } });
+    await notify(db, program.projectId, { event: "creator.post_submitted", key: `creator.post_submitted:${p.id}`, summary: "A creator submitted a post for review", path: `/app/campaigns/${program.id}`, data: { program_id: program.id, participant_id: p.id, post_url: postUrl } });
   });
 }
 /** One signed, LIVE event per distinct visitor across the entire campaign. Manual events and visits earn no bonuses. */

@@ -99,6 +99,13 @@
       "when": 1791800000000,
       "tag": "0013_customer_value",
       "breakpoints": true
+    },
+    {
+      "idx": 14,
+      "version": "7",
+      "when": 1791900000000,
+      "tag": "0014_outbound_notifications",
+      "breakpoints": true
     }
   ]
 }

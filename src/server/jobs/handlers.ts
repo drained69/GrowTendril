@@ -12,9 +12,14 @@ import type { Job } from "@/server/jobs/queue";
 import { chargeService, checkOpenInvoices, expireInvoices, InsufficientCredit, refundCharge } from "@/server/domain/billing";
 import { reconcileBillingPayments } from "@/server/domain/reconcile/billing";
 import { reconcileWalletOutflows } from "@/server/domain/reconcile/wallet";
+import { deliver } from "@/server/domain/notifications/webhooks";
 
 /** One handler per job kind. Handlers must be idempotent: a retried job may run again. */
 export const HANDLERS: Record<string, (db: DB, job: Job) => Promise<Record<string, unknown>>> = {
+  async webhook(db, job) {
+    if (typeof job.payload.deliveryId !== "string") throw new Error("Missing notification delivery ID");
+    return deliver(db, job.payload.deliveryId, job.attempts >= job.maxAttempts);
+  },
   async cycle(db, job) {
     const pid = job.projectId!;
     // Never run two cycles for the same workspace at once. A running job keeps its lease alive,
@@ -101,6 +106,7 @@ export const HANDLERS: Record<string, (db: DB, job: Job) => Promise<Record<strin
     const cutoff = new Date(Date.now() - 7 * 86_400_000);
     const gone = await db.delete(s.users).where(and(eq(s.users.isGuest, true), lt(s.users.createdAt, cutoff))).returning({ id: s.users.id });
     await db.delete(s.jobs).where(and(sql`${s.jobs.status} in ('done','failed')`, lt(s.jobs.createdAt, new Date(Date.now() - 30 * 86_400_000))));
+    await db.delete(s.webhookDeliveries).where(and(sql`${s.webhookDeliveries.status} in ('delivered','failed')`, lt(s.webhookDeliveries.createdAt, new Date(Date.now() - 90 * 86_400_000))));
     return { guestsRemoved: gone.length };
   },
 };

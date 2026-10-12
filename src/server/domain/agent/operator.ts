@@ -11,6 +11,7 @@ import { COMMIT_THRESHOLD } from "@/server/domain/agent/information-value";
 import { createExperimentFromOpportunity, launchExperiment } from "@/server/domain/growth/experiments";
 import { runLearning } from "@/server/domain/growth/learning-run";
 import { buildDailyBrief } from "@/server/domain/growth/brief";
+import { notify } from "@/server/domain/notifications/webhooks";
 
 /**
  * OPERATOR — one autonomous cycle of the loop:
@@ -105,6 +106,7 @@ export async function runCycle(db: DB, projectId: string, opts: { trigger?: "man
 
     stats.brief = await buildDailyBrief(db, projectId);
     await db.update(s.agentRuns).set({ status: "completed", stats, log: lines, finishedAt: new Date() }).where(eq(s.agentRuns.id, run.id));
+    await notify(db, projectId, { event: "cycle.finished", key: `cycle.finished:${run.id}`, summary: "Operator cycle finished", path: "/app/runs", data: { run_id: run.id } });
   } catch (e) {
     log("operator", `Cycle failed: ${(e as Error).message}`);
     await db.update(s.agentRuns).set({ status: "failed", stats, log: lines, finishedAt: new Date() }).where(eq(s.agentRuns.id, run.id));

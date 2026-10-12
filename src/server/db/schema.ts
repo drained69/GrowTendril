@@ -773,6 +773,34 @@ export const wallets = pgTable("wallets", {
   createdAt: createdAt(),
 });
 
+export const webhookEndpoints = pgTable("webhook_endpoints", {
+  id: id(),
+  projectId: text("project_id").notNull().references(() => projects.id, { onDelete: "cascade" }),
+  urlHint: text("url_hint").notNull(),
+  format: text("format").notNull(),
+  events: jsonb("events").$type<string[]>().notNull(),
+  sealed: text("sealed").notNull(),
+  enabled: boolean("enabled").notNull().default(true),
+  lastStatus: text("last_status"),
+  createdAt: createdAt(),
+  updatedAt: updatedAt(),
+}, (t) => [index("webhook_endpoints_project_idx").on(t.projectId)]);
+
+export const webhookDeliveries = pgTable("webhook_deliveries", {
+  id: id(),
+  endpointId: text("endpoint_id").notNull().references(() => webhookEndpoints.id, { onDelete: "cascade" }),
+  projectId: text("project_id").notNull().references(() => projects.id, { onDelete: "cascade" }),
+  event: text("event").notNull(),
+  eventKey: text("event_key").notNull(),
+  payload: jsonb("payload").$type<Record<string, unknown>>().notNull(),
+  status: text("status").notNull().default("pending"),
+  attempts: integer("attempts").notNull().default(0),
+  responseStatus: integer("response_status"),
+  error: text("error"),
+  createdAt: createdAt(),
+  updatedAt: updatedAt(),
+}, (t) => [uniqueIndex("webhook_deliveries_endpoint_event_uq").on(t.endpointId, t.eventKey), index("webhook_deliveries_project_idx").on(t.projectId, t.createdAt)]);
+
 export const vendors = pgTable("vendors", {
   id: id(),
   name: text("name").notNull().unique(),

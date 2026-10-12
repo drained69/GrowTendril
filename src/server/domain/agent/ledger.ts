@@ -10,6 +10,7 @@ import { evaluatePolicy } from "@/server/domain/agent/policy";
 import { parseFinancialAction } from "@/server/domain/agent/actions";
 import { toMicro } from "@/lib/money";
 import { updateDecision, writeReceipt } from "@/server/domain/agent/decisions";
+import { notify } from "@/server/domain/notifications/webhooks";
 
 /**
  * Transaction state machine. Every transition is validated and recorded in
@@ -50,7 +51,7 @@ export const SPENT_STATES: TxState[] = ["EXECUTING", "SUBMITTED", "SETTLED", "AU
 export const PENDING_STATES: TxState[] = ["AWAITING_APPROVAL"];
 
 export async function transition(db: DB, txId: string, to: TxState, patch: Partial<typeof s.transactions.$inferInsert> = {}, note?: string): Promise<boolean> {
-  return db.transaction(async (transaction) => {
+  const changed = await db.transaction(async (transaction) => {
   const db = transaction as unknown as DB;
   const [cur] = await db.select({ state: s.transactions.state }).from(s.transactions).where(eq(s.transactions.id, txId));
   if (!cur) throw new Error(`transaction ${txId} not found`);
@@ -69,6 +70,18 @@ export async function transition(db: DB, txId: string, to: TxState, patch: Parti
   await db.insert(s.transactionEvents).values({ id: newId(), transactionId: txId, fromState: from, toState: to, note: note ?? null });
   return true;
   });
+  if (changed && (to === "SETTLED" || to === "FAILED")) {
+    try {
+      const [payment] = await db.select({ projectId: s.transactions.projectId, kind: s.transactions.kind, amountMicro: s.transactions.amountMicro }).from(s.transactions).where(eq(s.transactions.id, txId));
+      if (payment) await notify(db, payment.projectId, {
+        event: to === "SETTLED" ? "payment.settled" : "payment.failed",
+        key: `payment.${to.toLowerCase()}:${txId}`,
+        summary: `${payment.kind.replace(/_/g, " ")} ${to === "SETTLED" ? "settled" : "failed"} (${payment.amountMicro / 1_000_000} USDC)`,
+        path: "/app/receipts", data: { transaction_id: txId, amount_usdc: payment.amountMicro / 1_000_000 },
+      });
+    } catch { console.error("[GrowTendril notifications] payment event lookup failed"); }
+  }
+  return changed;
 }
 
 export async function createTransaction(db: DB, v: Omit<typeof s.transactions.$inferInsert, "id" | "state">): Promise<{ tx: typeof s.transactions.$inferSelect; duplicate: boolean }> {

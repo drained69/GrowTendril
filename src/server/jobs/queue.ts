@@ -3,7 +3,7 @@ import type { DB } from "@/server/db/client";
 import * as s from "@/server/db/schema";
 import { newId } from "@/server/lib/ids";
 
-export type JobKind = "cycle" | "settlements" | "gateway_deposit" | "cleanup" | "billing_check" | "billing_renewals" | "billing_reconcile" | "wallet_reconcile";
+export type JobKind = "cycle" | "settlements" | "gateway_deposit" | "cleanup" | "billing_check" | "billing_renewals" | "billing_reconcile" | "wallet_reconcile" | "webhook";
 export type Job = typeof s.jobs.$inferSelect;
 
 /** Enqueue a job. With a dedupeKey, a second enqueue of the same logical job is a no-op. */
