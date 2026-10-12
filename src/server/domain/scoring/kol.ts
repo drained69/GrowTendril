@@ -54,6 +54,9 @@ export function scoreKol(
     competitors: string[];
     narrativeTerms: string[];
     followers?: number | null;
+    handle?: string | null;
+    displayName?: string | null;
+    bio?: string | null;
     devAudience?: boolean;
     /** Audience composition purchased via x402 (0-1 share matching ICP), when available. */
     verifiedAudienceShare?: number | null;
@@ -142,12 +145,27 @@ export function scoreKol(
     auth += 10;
     reasons.push("Real discussion in replies");
   }
+  const handleBot = /(?:^|[._-])(?:bot|rss|feed|alerts?)(?:$|[._-])/i.test(ctx.handle ?? "");
+  const profileBot = /\b(?:bot account|automated account|automatically posted|auto-post(?:ed|ing)?|rss feed)\b/i.test(`${ctx.displayName ?? ""} ${ctx.bio ?? ""}`)
+    || /\b(?:bot|automated)\b/i.test(ctx.displayName ?? "");
+  const times = posts.map((post) => post.publishedAt.getTime()).filter(Number.isFinite).sort((a, b) => a - b);
+  const gaps = times.slice(1).map((time, index) => time - times[index]).filter((gap) => gap > 0);
+  const meanGap = gaps.reduce((sum, gap) => sum + gap, 0) / (gaps.length || 1);
+  const cadence = gaps.length >= 7 && meanGap >= 30 * 60_000 && meanGap <= 48 * 60 * 60_000
+    && Math.sqrt(gaps.reduce((sum, gap) => sum + (gap - meanGap) ** 2, 0) / gaps.length) / meanGap < 0.12;
+  const linkOnly = posts.length >= 8 && posts.filter((post) => post.content.replace(/https?:\/\/\S+/g, "").replace(/[@#][\w.-]+/g, "").replace(/[^\p{L}\p{N}\s]/gu, "").trim().length < 30).length / posts.length >= 0.75;
+  const automated = handleBot || profileBot || (cadence && linkOnly);
+  if (automated) {
+    auth = Math.min(auth, 25);
+    reasons.unshift(handleBot || profileBot ? "Account identifies as an automated feed or bot" : "Very regular posting cadence with mostly link-only posts suggests automation");
+  }
   if (!reasons.length) reasons.push("No inauthenticity patterns detected in observed posts");
   const authenticity: ScoreComponent = { score: clamp(auth), weight: KOL_WEIGHTS.authenticity, reasons };
 
-  const overall = Math.round(
+  const weighted = Math.round(
     [audienceFit, topicAuthority, recentRelevance, engagementQuality, narrativeFit, historicalProductFit, authenticity].reduce((s, c) => s + c.score * c.weight, 0),
   );
+  const overall = automated ? Math.min(weighted, 34) : weighted;
 
   // CAMPAIGN FIT — summary used for decisions: needs fit, recency and authenticity together.
   const campaignFit: ScoreComponent = {

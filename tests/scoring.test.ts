@@ -56,6 +56,21 @@ describe("KOL scoring", () => {
     expect(focused.overall).toBeGreaterThan(famous.overall);
     expect(famous.authenticity.score).toBeLessThan(focused.authenticity.score);
   });
+  it("caps an explicit vulnerability-feed bot even when every post is relevant", () => {
+    const posts = Array.from({ length: 12 }, (_, i) => ({ content: `x402 developer security alert CVE-${i} https://example.com/${i}`, publishedAt: new Date(NOW - i * 60 * 60_000), provider: "bluesky", engagement: { likes: 120, comments: 30 } }));
+    const bot = scoreKol(posts, { ...ctx, handle: "euvd-bot.bsky.social", displayName: "EUVD Alerts", followers: 50_000 });
+    expect(bot.authenticity.score).toBeLessThanOrEqual(25);
+    expect(bot.overall).toBeLessThanOrEqual(34);
+    expect(bot.authenticity.reasons[0]).toMatch(/automated/);
+  });
+  it("flags regular link-only feeds but keeps a human creator above the automation ceiling", () => {
+    const posts = Array.from({ length: 10 }, (_, i) => ({ content: `https://example.com/${i}`, publishedAt: new Date(NOW - i * 60 * 60_000), provider: "bluesky", engagement: { likes: 5 } }));
+    const feed = scoreKol(posts, { ...ctx, handle: "daily-updates.bsky.social" });
+    const human = scoreKol(posts.map((post, i) => ({ ...post, content: `I tested x402 payments with a real app and learned ${i} useful things. ${post.content}` })), { ...ctx, handle: "alice.bsky.social" });
+    expect(feed.authenticity.score).toBeLessThanOrEqual(25);
+    expect(feed.overall).toBeLessThanOrEqual(34);
+    expect(human.authenticity.score).toBeGreaterThan(25);
+  });
 });
 
 describe("narratives", () => {

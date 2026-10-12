@@ -234,7 +234,7 @@ export async function analyzeProject(db: DB, projectId: string, log: Logger = ()
     const verifiedShare = (existing[0]?.metrics as { verifiedAudienceShare?: number } | undefined)?.verifiedAudienceShare ?? null;
     const sc = scoreKol(
       aps.map((p) => ({ content: text(p), publishedAt: p.publishedAt, provider: p.provider, engagement: p.engagement })),
-      { keywords, icpTerms, productName: project.name, competitors, narrativeTerms, followers, devAudience, verifiedAudienceShare: verifiedShare, now },
+      { keywords, icpTerms, productName: project.name, competitors, narrativeTerms, followers, handle, displayName: aps.find((post) => post.authorName)?.authorName, bio: existing[0]?.profile?.bio, devAudience, verifiedAudienceShare: verifiedShare, now },
     );
     if (sc.overall < 35) continue;
     const mode = mergeMode(aps.map((p) => p.dataMode));
@@ -409,4 +409,3 @@ export async function evidenceFor(db: DB, where: { companyId?: string; kolId?: s
   if (where.narrativeId) return db.select().from(s.evidence).where(eq(s.evidence.narrativeId, where.narrativeId));
   return [];
 }
-
