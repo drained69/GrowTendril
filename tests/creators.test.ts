@@ -60,6 +60,11 @@ describe("reading a website", () => {
   it("reads a postal address when there is no structured data", () => {
     expect(siteFacts({ ...home, jsonLd: [], text: "Visit us at 600 Guerrero St, San Francisco, CA 94110." }, []).location).toBe("San Francisco, CA");
   });
+  it("uses a country on a product page when the homepage has no address", () => {
+    const noAddress = { ...home, jsonLd: [] };
+    const contact = { ...home, url: "https://www.crumbclub.com/contact", jsonLd: [{ "@type": "LocalBusiness", address: { addressLocality: "Lagos", addressRegion: "Lagos", addressCountry: "NG" } }] };
+    expect(siteFacts(noAddress, [noAddress, contact]).location).toBe("Lagos, Nigeria");
+  });
   it("finds what the site keeps talking about, minus chrome, names and codes", () => {
     const terms = siteTerms(
       [
@@ -74,6 +79,10 @@ describe("reading a website", () => {
   it("ignores share links", () => {
     expect(socialProfiles(["https://twitter.com/share", "https://x.com/intent/post"])).toEqual({});
     expect(namedCompetitors([{ ...home, links: [], text: "" }], "Crumb Club")).toEqual([]);
+  });
+  it("keeps comparison links on the business site and ignores off-site slugs", () => {
+    const page = { ...home, text: "", headings: [], links: ["https://other.com/vs/fake-brand", "https://www.crumbclub.com/panera-alternative", "https://www.crumbclub.com/vs/you"] };
+    expect(namedCompetitors([page], "Crumb Club")).toEqual(["Panera"]);
   });
 });
 

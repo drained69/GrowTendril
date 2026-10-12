@@ -103,9 +103,17 @@ export function siteName(home: PageText): string {
 
 export function siteLocation(home: PageText): string | null {
   for (const b of home.jsonLd ?? []) {
-    const addr = (b as Ld)?.address as Ld | undefined;
-    const city = typeof addr?.addressLocality === "string" ? addr.addressLocality : null;
-    if (city) return [city, typeof addr?.addressRegion === "string" ? addr.addressRegion : null].filter(Boolean).join(", ");
+    const raw = (b as Ld)?.address;
+    const addr = (Array.isArray(raw) ? raw[0] : raw) as Ld | undefined;
+    if (!addr || typeof addr !== "object") continue;
+    const clean = (value: unknown) => typeof value === "string" && value.trim().length <= 80 ? value.trim() : null;
+    const city = clean(addr.addressLocality);
+    const region = clean(addr.addressRegion);
+    const rawCountry = typeof addr.addressCountry === "object" && addr.addressCountry !== null ? (addr.addressCountry as Ld).name : addr.addressCountry;
+    const country = clean(rawCountry);
+    const countryName = country && /^[A-Za-z]{2}$/.test(country) ? new Intl.DisplayNames(["en"], { type: "region" }).of(country.toUpperCase()) ?? country : country;
+    const parts = [city, region, countryName].filter((part): part is string => !!part).filter((part, index, list) => list.findIndex((other) => other.toLowerCase() === part.toLowerCase()) === index);
+    if (parts.length) return parts.join(", ");
   }
   // A postal address in the footer: "… San Francisco, CA 94110".
   const us = home.text.match(/\b([A-Z][a-z]+(?: [A-Z][a-z]+){0,2}),\s*([A-Z]{2})\s+\d{5}(?:-\d{4})?\b/);
@@ -119,14 +127,20 @@ const US_STATES = new Set("AL AK AZ AR CA CO CT DE DC FL GA HI ID IL IN IA KS KY
 export function namedCompetitors(pages: PageText[], ownName: string): string[] {
   const own = ownName.toLowerCase();
   const out = new Set<string>();
+  const invalid = /^(the|a|an|us|you|your|our|it|others?|other tools|spreadsheets?|excel|manual|in-house|diy|competitors?|alternatives?|everyone)$/i;
   for (const p of pages) {
     for (const l of p.links ?? []) {
-      const slug = l.match(/\/(?:vs|versus|compare|comparison|alternatives?)\/(?:[a-z0-9-]+-vs-)?([a-z0-9-]{2,30})\/?(?:[?#]|$)/i)?.[1];
+      let link: URL;
+      try { link = new URL(l, p.url); } catch { continue; }
+      if (link.hostname.replace(/^www\./, "") !== new URL(p.url).hostname.replace(/^www\./, "")) continue;
+      const slug = link.pathname.match(/\/(?:vs|versus|compare|comparison|alternatives?)\/([a-z0-9][a-z0-9-]{1,38})\/?$/i)?.[1]
+        ?? link.pathname.match(/\/vs-([a-z0-9][a-z0-9-]{1,38})\/?$/i)?.[1]
+        ?? link.pathname.match(/\/([a-z0-9][a-z0-9-]{1,38})-alternatives?\/?$/i)?.[1];
       if (slug) out.add(slug.split("-").map((w) => w.charAt(0).toUpperCase() + w.slice(1)).join(" "));
     }
     for (const m of `${p.headings.join(". ")}. ${p.text.slice(0, 6000)}`.matchAll(/\b(?:alternative to|better than|switch(?:ing)? from)\s+([A-Z][A-Za-z0-9.&]+(?:\s[A-Z][A-Za-z0-9.&]+)?)/g)) out.add(m[1]);
   }
-  return [...out].filter((c) => c.toLowerCase() !== own && c.length > 1).slice(0, 6);
+  return [...out].filter((c) => c.toLowerCase() !== own && !invalid.test(c) && c.length > 1).slice(0, 6);
 }
 
 export function siteFacts(home: PageText, pages: PageText[]): SiteFacts {
@@ -142,7 +156,7 @@ export function siteFacts(home: PageText, pages: PageText[]): SiteFacts {
     host: new URL(home.url).hostname.replace(/^www\./, ""),
     name,
     description,
-    location: siteLocation(home),
+    location: [home, ...readable.filter((page) => page.url !== home.url)].map(siteLocation).find(Boolean) ?? null,
     socials: socialProfiles(readable.flatMap((p) => p.links ?? []).concat((home.jsonLd ?? []).flatMap((b) => [(b as Ld)?.sameAs ?? []].flat().map(String)))),
     competitors: namedCompetitors(readable, name),
     readablePages: readable.length,
