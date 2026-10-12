@@ -34,3 +34,6 @@ video/
 .vscode/
 .idea/
 .claude/
+
+# ── Local notes / agent prompts ──
+CODEX_PROMPT.md
