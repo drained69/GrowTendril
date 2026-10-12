@@ -22,6 +22,12 @@ async function main() {
   if (process.argv.length > 2) throw new Error("doctor accepts no write flags; it only performs read-only checks");
   const { ARC, circleKeyEnvironment, custodyProblem } = await import("../src/server/integrations/circle/config");
   console.log(`GrowTendril money-path doctor — Arc mainnet (${ARC.chainId})`);
+  // Next.js (and this doctor) let .env.local override .env, but `npm run env:push` uploads only .env.
+  // A key that passes here can therefore differ from the one production uses.
+  const { readFileSync, existsSync } = await import("node:fs");
+  const fileKey = (file: string) => (existsSync(file) ? readFileSync(file, "utf8").match(/^CIRCLE_API_KEY=(.*)$/m)?.[1].trim().replace(/^(["'])(.*)\1$/, "$2") : undefined) || undefined;
+  const pushed = fileKey(".env"), override = fileKey(".env.local");
+  if (override && pushed && override !== pushed) console.log("WARN .env.local overrides CIRCLE_API_KEY: these checks use that key, but env:push uploads the one in .env");
   const keyOk = await check("Circle API key network", "set a complete LIVE_API_KEY in CIRCLE_API_KEY", async () => {
     if (circleKeyEnvironment() !== "live" || custodyProblem()) throw new Error();
     return "LIVE key format";

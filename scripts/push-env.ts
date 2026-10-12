@@ -61,7 +61,10 @@ async function liveChecks(): Promise<string[]> {
   const circle = local.get("CIRCLE_API_KEY");
   if (circle?.startsWith("LIVE_API_KEY:")) {
     const r = await fetch("https://api.circle.com/v1/w3s/config/entity/publicKey", { headers: { Authorization: `Bearer ${circle}` }, signal: AbortSignal.timeout(15_000) }).catch(() => null);
-    if (r && !r.ok) console.warn(`warn  CIRCLE_API_KEY can't use Circle Wallets yet (HTTP ${r.status}): creator payouts stay off until Circle enables Wallets for this key`);
+    // 401/403 means Circle rejects the key outright (revoked, wrong account or mistyped). Pushing it
+    // would silently break wallet creation and every payment while /api/health still looks fine.
+    if (r && (r.status === 401 || r.status === 403)) out.push(`CIRCLE_API_KEY was rejected by Circle (HTTP ${r.status}): use an active LIVE key from the account that owns your wallets`);
+    else if (r && !r.ok) console.warn(`warn  Circle returned HTTP ${r.status} for CIRCLE_API_KEY; check it before relying on payments`);
   }
   const googleId = local.get("GOOGLE_CLIENT_ID");
   const appUrl = local.get("APP_URL") ?? remote.APP_URL ?? undefined;
@@ -104,6 +107,10 @@ for (const [key, value] of local) {
   }
   if (KEEP_IF_SET.has(key) && remote[key] !== undefined) {
     console.log(`skip  ${key} (already set on Railway; not overwritten)`);
+    continue;
+  }
+  if (remote[key] === value) {
+    console.log(`same  ${key}`);
     continue;
   }
   const problem = checks[key]?.(value);
