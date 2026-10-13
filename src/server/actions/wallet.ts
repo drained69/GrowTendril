@@ -133,3 +133,51 @@ export async function resolveLedgerExceptionAction(exceptionId: string, _: unkno
     return fail(e);
   }
 }
+
+// ───────────────────────────── owner withdrawal ─────────────────────────────
+
+const WithdrawInput = z.object({ amount: z.string().trim().min(1, "Enter an amount"), to: z.string().trim().min(1, "Enter a destination address"), toConfirm: z.string().trim() });
+
+function readWithdrawForm(form: FormData) {
+  const f = WithdrawInput.parse({ amount: form.get("amount") ?? "", to: form.get("to") ?? "", toConfirm: form.get("toConfirm") ?? "" });
+  if (f.to.toLowerCase() !== f.toConfirm.toLowerCase()) throw new Error("The two addresses don't match. Paste the destination again in both fields.");
+  return f;
+}
+
+/** Step 1: check the request and email the owner a code bound to this amount and address. */
+export async function requestWithdrawalCodeAction(_: unknown, form: FormData): Promise<ActionResult<{ summary: string }>> {
+  try {
+    const { project, db, user } = await guard("manage_workspace");
+    await limited(`withdraw-code:${user.id}`, 5, 0.02);
+    const f = readWithdrawForm(form);
+    const { checkWithdrawal, withdrawalScope } = await import("@/server/domain/agent/withdraw");
+    const { issueCode } = await import("@/server/domain/auth/codes");
+    const { fmtUsdc } = await import("@/lib/money");
+    const w = await checkWithdrawal(db, project.id, f);
+    const summary = `${fmtUsdc(w.amountMicro)} from ${w.walletAddress} to ${w.to} on Arc`;
+    await issueCode(db, user, "withdraw", Date.now(), { scope: withdrawalScope(project.id, w.amountMicro, w.to), summary });
+    return { ok: true, data: { summary }, message: `We emailed a code to ${user.email}. It works only for this amount and address.` };
+  } catch (e) {
+    return fail(e);
+  }
+}
+
+/** Step 2: consume the code and send. */
+export async function withdrawAction(_: unknown, form: FormData): Promise<ActionResult<{ state: string; txHash: string | null }>> {
+  try {
+    const { project, db, user } = await guard("manage_workspace");
+    await limited(`withdraw:${user.id}`, 5, 0.02);
+    const f = readWithdrawForm(form);
+    const { checkWithdrawal, withdraw, withdrawalScope } = await import("@/server/domain/agent/withdraw");
+    const { consumeCode } = await import("@/server/domain/auth/codes");
+    const { fmtUsdc } = await import("@/lib/money");
+    const checked = await checkWithdrawal(db, project.id, f);
+    const codeId = await consumeCode(db, user.id, "withdraw", String(form.get("code") ?? ""), Date.now(), withdrawalScope(project.id, checked.amountMicro, checked.to));
+    const r = await withdraw(db, { projectId: project.id, userId: user.id, amount: f.amount, to: checked.to, requestKey: codeId });
+    revalidatePath("/app", "layout");
+    if (r.state === "FAILED") return { ok: false, error: "The withdrawal didn't go out. Nothing left the wallet — check the receipt for the reason, then try again." };
+    return { ok: true, data: { state: r.state, txHash: r.txHash }, message: `${fmtUsdc(r.amountMicro)} ${r.state === "SETTLED" ? "settled at" : "sent to"} ${r.to.slice(0, 6)}…${r.to.slice(-4)} on Arc` };
+  } catch (e) {
+    return fail(e);
+  }
+}

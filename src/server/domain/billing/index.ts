@@ -255,6 +255,16 @@ export async function payInvoiceWithTx(db: DB, inv: Invoice, txHash: string, app
   if (p.amountMicro < inv.priceMicro) {
     throw new Error(p.amountMicro === 0 ? `That transaction didn't send USDC to ${inv.payTo}.` : `That transaction sent ${fmtUsdc(p.amountMicro)}; this top-up is ${fmtUsdc(inv.priceMicro)}.`);
   }
+  // A payment of another person's exact invoice amount is theirs, even if it hasn't been matched yet:
+  // without this, anyone who saw the hash could paste it into their own invoice and take the credit.
+  if (p.amountMicro !== inv.amountMicro) {
+    const [owner] = await db
+      .select({ id: s.billingInvoices.id })
+      .from(s.billingInvoices)
+      .where(and(eq(s.billingInvoices.payTo, inv.payTo), eq(s.billingInvoices.amountMicro, p.amountMicro), inArray(s.billingInvoices.status, ["pending", "expired"]), sql`${s.billingInvoices.userId} <> ${inv.userId}`, gt(s.billingInvoices.createdAt, new Date(Date.now() - 7 * 86_400_000))))
+      .limit(1);
+    if (owner) throw new Error("That transaction matches another top-up request. If it's yours, open that request from Billing and check the transaction there.");
+  }
   await settle(db, inv, { txHash, from: p.from, amountMicro: p.amountMicro }, appUrl);
   return { paid: true };
 }

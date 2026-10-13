@@ -104,6 +104,7 @@ The policy engine (`src/server/domain/agent/policy.ts`) runs on every payment pr
 - **Named recipient only** — the operator cannot propose a payment without a recipient whose provenance is auditable (`src/server/domain/agent/payees.ts`).
 - **Chain allowlist** — Arc mainnet for creator payouts; the policy engine refuses cross-chain transfers at mainnet launch, so funds stay on Arc.
 - **Kill switch** — one toggle on the Wallet page freezes the wallet; every spend is then denied until a wallet manager resumes it.
+- **Your money stays yours** — the workspace owner can withdraw unused USDC to any Arc address at any time, confirmed by an emailed code bound to that exact amount and address, and recorded and checked on Arc like every other payment (`src/server/domain/agent/withdraw.ts`).
 
 Approval-level rules (daily/weekly caps, category caps, autonomous-amount caps) can be waived for one decision when you approve it, but **deny** rules (hard ceiling, mission budget, chain allowlist, kill switch) are re-checked at execution and still apply.
 
@@ -153,7 +154,7 @@ Browsing, settings, team, exports and the growth plan are free. Credit never exp
 
 ## Stack
 
-- **Chain:** Arc mainnet (chainId 1419, USDC-native). RPC `https://rpc.mainnet.arc.io`.
+- **Chain:** Arc mainnet (chainId 5042, USDC-native). RPC `https://rpc.mainnet.arc.io`.
 - **Custody:** Circle developer-controlled wallets, server-side.
 - **Rails:** Circle App Kit (send/bridge/unified balance), Circle Gateway + x402 batching (data purchases), direct wallet payment flow for billing top-ups.
 - **Reading Arc:** viem, system emitter + ERC-20, chunked `eth_getLogs` with cursor persistence.

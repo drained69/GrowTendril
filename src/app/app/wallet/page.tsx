@@ -19,6 +19,8 @@ import { ActionButton } from "@/components/features/agent/action-button";
 import { OnrampButton } from "@/components/features/wallet/onramp-button";
 import { AttachWalletForm, DepositForm } from "@/components/features/wallet/wallet-controls";
 import { LedgerExceptions } from "@/components/features/wallet/ledger-exceptions";
+import { WithdrawForm } from "@/components/features/wallet/withdraw-form";
+import { GAS_RESERVE_MICRO, withdrawable } from "@/server/domain/agent/withdraw";
 import { exceptionsFor } from "@/server/domain/reconcile/exceptions";
 
 async function attempt<T>(fn: () => Promise<T>): Promise<{ v: T | null; err: string | null }> {
@@ -50,9 +52,12 @@ export default async function WalletPage() {
   ]);
   const sum = mission ? await missionSummary(db, mission) : null;
   const live = walletIsLive(wallet);
+  const owner = can(role, "manage_workspace");
   const address = wallet?.address ?? null;
   const [balances, ub] = await Promise.all([walletBalances(wallet), address ? attempt(() => unifiedBalance(address)) : Promise.resolve(null)]);
   const deposits = jobs.filter((j) => j.kind === "gateway_deposit").slice(0, 8);
+  const canWithdraw = owner && live && !!address;
+  const out = canWithdraw ? await attempt(() => withdrawable(db, pid)) : null;
 
   // Earn recommendation input: 7-day run rate of submitted or settled payments.
   const [rate] = await db
@@ -245,6 +250,24 @@ export default async function WalletPage() {
                 </div>
               </CardBody>
             </Card>
+
+            {canWithdraw && (
+              <Card>
+                <CardHeader title="Withdraw USDC" description="Move your money out of this workspace wallet to any Arc address you control" icon={<ArrowUpRight />} />
+                <CardBody>
+                  {out?.v ? (
+                    <>
+                      <p className="mb-4 text-[12.5px] leading-relaxed text-ink-3">
+                        Available now <span className="num text-ink">{fmtUsdc(out.v.availableMicro)}</span> — the wallet balance{out.v.inFlightMicro ? `, minus ${fmtUsdc(out.v.inFlightMicro)} committed to payments in progress,` : ""} minus {fmtUsdc(GAS_RESERVE_MICRO)} kept for Arc&apos;s network fee. Owner only; every withdrawal is confirmed with a code we email you, recorded with a receipt and checked on Arc.
+                      </p>
+                      {wallet!.frozen ? <Callout tone="warn">Resume spending above before withdrawing.</Callout> : <WithdrawForm availableUsdc={(Math.floor(out.v.availableMicro / 10_000) / 100).toFixed(2)} explorer={ARC.explorer} />}
+                    </>
+                  ) : (
+                    <p className="text-[12.5px] text-ink-3">Couldn&apos;t read the wallet balance from Arc right now: {out?.err ?? "—"}</p>
+                  )}
+                </CardBody>
+              </Card>
+            )}
 
             <Card>
               <CardHeader title="Gateway balance on Arc" description="Available USDC reported through Circle" icon={<Layers />} />

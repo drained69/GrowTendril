@@ -35,6 +35,11 @@ export function fail(e: unknown): ActionResult<never> {
   const human = !!zod && /^[A-Z]/.test(zod.message) && zod.message.length > 15;
   if (zod) return { ok: false, error: human ? zod.message : `${zod.path.join(".") || "input"}: ${zod.message}` };
   if (!(e instanceof Error)) return { ok: false, error: "Something went wrong. Please try again." };
+  // Circle rejecting the platform's credentials is an operator problem, not something the user can fix.
+  const circle = e as { isAxiosError?: boolean; response?: { status?: number }; config?: { baseURL?: string; url?: string } };
+  if (circle.isAxiosError && [401, 403].includes(circle.response?.status ?? 0) && /circle\.com/.test(`${circle.config?.baseURL ?? ""}${circle.config?.url ?? ""}`)) {
+    return { ok: false, error: "Circle rejected this deployment's wallet credentials, so wallets and payments are paused. Nothing was sent. The operator needs to update CIRCLE_API_KEY." };
+  }
   // Database/SDK diagnostics can contain SQL parameters, keys and account details.
   const infrastructure = !(e instanceof ActionError) && (e.name === "DrizzleQueryError" || e instanceof TypeError || e instanceof SyntaxError ||
     ("code" in e && typeof e.code === "string" && /^(?:[0-9A-Z]{5}|E[A-Z_]+)$/.test(e.code)) ||

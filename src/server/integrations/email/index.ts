@@ -9,7 +9,7 @@ import { newId } from "@/server/lib/ids";
  * Every attempt is recorded in email_log (recipient, kind, outcome; never the body).
  */
 
-export type EmailKind = "verify_code" | "reset_code" | "welcome" | "subscription_active" | "renewal_reminder" | "payment_failed" | "subscription_canceled" | "credit_added" | "invite" | "report" | "ledger_alert";
+export type EmailKind = "verify_code" | "reset_code" | "withdraw_code" | "withdrawal" | "welcome" | "subscription_active" | "renewal_reminder" | "payment_failed" | "subscription_canceled" | "credit_added" | "invite" | "report" | "ledger_alert";
 
 export interface EmailMessage {
   to: string;
@@ -40,7 +40,7 @@ export function renderHtml(m: Pick<EmailMessage, "subject" | "text" | "action">)
 }
 
 async function log(db: DB, m: EmailMessage, status: "sent" | "failed" | "logged", extra: { providerId?: string; error?: string } = {}) {
-  const sensitiveCode = m.kind === "verify_code" || m.kind === "reset_code";
+  const sensitiveCode = m.kind === "verify_code" || m.kind === "reset_code" || m.kind === "withdraw_code";
   const subject = sensitiveCode ? m.subject.replace(/\b\d{6}\b/g, "[code]") : m.subject;
   const error = sensitiveCode ? extra.error?.replace(/\b\d{6}\b/g, "[code]") : extra.error;
   await db.insert(s.emailLog).values({ id: newId(), userId: m.userId ?? null, to: m.to, kind: m.kind, subject, status, providerId: extra.providerId ?? null, error: error?.slice(0, 500) ?? null });

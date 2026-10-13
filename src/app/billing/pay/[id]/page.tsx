@@ -9,6 +9,12 @@ import { fmtUsdc } from "@/lib/money";
 import { nextStep } from "@/server/auth/next-step";
 import { ARC, txExplorerUrl } from "@/server/integrations/circle/config";
 import { relTime } from "@/lib/time";
+
+/** "in 1h 59m" — relTime rounds hours down, which made a 2-hour invoice read "in 1h". */
+const untilLabel = (d: Date) => {
+  const m = Math.max(0, Math.round((d.getTime() - Date.now()) / 60_000));
+  return m >= 60 ? `in ${Math.floor(m / 60)}h ${m % 60}m` : `in ${m}m`;
+};
 import { Badge, Callout, Card, CardBody, CardHeader, KeyValue, LinkButton } from "@/components/ui";
 import { CopyField } from "@/components/ui/copy";
 import { Logo } from "@/components/layout/logo";
@@ -93,7 +99,7 @@ export default async function PayInvoicePage({ params }: { params: Promise<{ id:
           </Card>
         ) : (
           <Card>
-            <CardHeader title={`Send exactly ${amount} USDC`} description={`Expires ${relTime(inv.expiresAt)}. The last digits identify your payment.`} action={<Badge tone="info">Waiting</Badge>} />
+            <CardHeader title={`Send exactly ${amount} USDC`} description={`Expires ${untilLabel(inv.expiresAt)}. The last digits identify your payment.`} action={<Badge tone="info">Waiting</Badge>} />
             <CardBody className="space-y-4">
               <div>
                 <div className="label mb-1.5">Amount (USDC)</div>
@@ -110,7 +116,7 @@ export default async function PayInvoicePage({ params }: { params: Promise<{ id:
                   { k: "USDC contract", v: <span className="num text-[11.5px]">{ARC.usdc}</span> },
                 ]}
               />
-              <Callout tone="info">Send on Arc only. USDC sent on another network can&apos;t be matched to your top-up.</Callout>
+              <Callout tone="info">Send on Arc only. USDC sent on another network can&apos;t be matched to your top-up. Arc&apos;s network fee is also paid in USDC (usually under a cent), so keep a little more than this amount in your wallet.</Callout>
               <PayInvoice invoiceId={inv.id} payTo={inv.payTo} amountMicro={inv.amountMicro} usdc={ARC.usdc} chainId={ARC.chainId} rpcUrl={ARC.publicRpcUrl} explorer={ARC.explorer} next="/billing" />
             </CardBody>
           </Card>
