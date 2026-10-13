@@ -6,7 +6,7 @@ import { newId } from "@/server/lib/ids";
 import { startOfUtcDay } from "@/lib/time";
 import { walletIsLive } from "@/server/integrations/circle/wallets";
 import type { PolicyConfig, PolicyState } from "@/server/domain/agent/policy";
-import { evaluatePolicy } from "@/server/domain/agent/policy";
+import { effectivePaymentCeiling, evaluatePolicy } from "@/server/domain/agent/policy";
 import { parseFinancialAction } from "@/server/domain/agent/actions";
 import { toMicro } from "@/lib/money";
 import { updateDecision, writeReceipt } from "@/server/domain/agent/decisions";
@@ -165,7 +165,8 @@ export async function experimentSpend(db: DB, experimentId: string): Promise<num
 export async function loadPolicy(db: DB, projectId: string): Promise<PolicyConfig> {
   const [p] = await db.select().from(s.policies).where(eq(s.policies.projectId, projectId));
   if (!p) throw new Error("No policy configured for project");
-  return p;
+  const hardCeilingMicro = effectivePaymentCeiling(p);
+  return { ...p, hardCeilingMicro, maxTransactionMicro: Math.min(p.maxTransactionMicro, hardCeilingMicro) };
 }
 
 /** Snapshot of everything the policy engine needs before a real payment. */

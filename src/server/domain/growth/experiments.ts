@@ -279,7 +279,7 @@ async function launchExperimentLocked(db: DB, p: Parameters<typeof launchExperim
   const evidence = exp.evidenceIds.length ? await db.select().from(s.evidence).where(inArray(s.evidence.id, exp.evidenceIds)) : [];
   // Each tranche is paid in installments no larger than the per-payment ceiling, counting what is
   // already paid or waiting for approval, so a 15 USDC tranche under a 10 USDC ceiling is 10 + 5.
-  const { amount, installment } = await nextInstallment(db, exp, p.tranche ?? "first", Math.min(toMicro(10), (await loadPolicy(db, p.projectId)).hardCeilingMicro));
+  const { amount, installment } = await nextInstallment(db, exp, p.tranche ?? "first", (await loadPolicy(db, p.projectId)).hardCeilingMicro);
   const purpose = exp.channel === "kol" ? "kol_payment" : exp.channel === "bounty" ? "developer_bounty" : exp.channel === "community" ? "partner_incentive" : "campaign_payment";
   const res = await proposeFinancialAction(db, {
     projectId: p.projectId,

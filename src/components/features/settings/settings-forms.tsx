@@ -175,13 +175,13 @@ export function PolicyForm({ p, disabled }: { p: Policy; disabled?: boolean }) {
         </p>
         <div className="grid gap-4 sm:grid-cols-3">
           <Field label="Spend on its own up to" htmlFor="pol-autonomousLimit" hint="Per payment, research and services only. 0 = always ask.">
-            <Input id="pol-autonomousLimit" name="autonomousLimit" defaultValue={p.autonomousLimit} inputMode="decimal" />
+            <Input id="pol-autonomousLimit" name="autonomousLimit" type="number" min={0} step="0.000001" defaultValue={p.autonomousLimit} inputMode="decimal" />
           </Field>
           <Field label="Daily limit" htmlFor="pol-dailySpend" hint="Above this total in a day, every payment asks you.">
-            <Input id="pol-dailySpend" name="dailySpend" defaultValue={p.dailySpend} inputMode="decimal" />
+            <Input id="pol-dailySpend" name="dailySpend" type="number" min={0} step="0.000001" defaultValue={p.dailySpend} inputMode="decimal" />
           </Field>
-          <Field label="Per-payment hard ceiling" htmlFor="pol-hardCeiling" hint="Maximum 10 USDC. Approval can't override it.">
-            <Input id="pol-hardCeiling" name="hardCeiling" defaultValue={p.hardCeiling} inputMode="decimal" />
+          <Field label="Per-payment hard ceiling" htmlFor="pol-hardCeiling" hint="Your maximum per payment. Approval can't override it.">
+            <Input id="pol-hardCeiling" name="hardCeiling" type="number" min="0.000001" step="0.000001" defaultValue={p.hardCeiling} inputMode="decimal" />
           </Field>
         </div>
         <div className="rounded-[8px] border border-line p-3 text-[12px] text-ink-3">Arc mainnet · {p.tokens.join(", ") || "USDC"} only · no cross-chain transfers. Forbidden actions: {p.forbidden.map((f) => f.replace(/_/g, " ")).join(", ")}.</div>

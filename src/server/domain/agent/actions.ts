@@ -1,4 +1,5 @@
 import { z } from "zod";
+import { toMicro } from "@/lib/money";
 
 /**
  * Structured financial actions. Nothing that moves money accepts free-form text:
@@ -8,8 +9,11 @@ import { z } from "zod";
 
 const usdcAmount = z
   .string()
-  .regex(/^\d{1,9}(\.\d{1,6})?$/, "USDC amount must be a decimal string with ≤ 6 decimals")
-  .refine((s) => Number(s) > 0, "amount must be positive");
+  .max(32)
+  .regex(/^\d+(\.\d{1,6})?$/, "USDC amount must be a decimal string with ≤ 6 decimals")
+  .refine((s) => {
+    try { return toMicro(s) > 0; } catch { return false; }
+  }, "USDC amount must be positive and within safe micro-USDC precision");
 
 const evmAddress = z.string().regex(/^0x[0-9a-fA-F]{40}$/, "must be a 0x-prefixed EVM address");
 
@@ -62,7 +66,7 @@ export const SendPaymentAction = z.object({
   /** Which payment this is for the experiment (1, 2, …). Part of the idempotency key, so a
    * second equal installment or a retry after a failure is a new payment, not a duplicate. */
   contributionId: z.string().min(1).optional(),
-  installment: z.number().int().min(1).max(100).optional(),
+  installment: z.number().int().min(1).max(Number.MAX_SAFE_INTEGER).optional(),
   reasonCode: ReasonCode,
   ...common,
 });

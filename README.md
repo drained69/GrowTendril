@@ -167,9 +167,10 @@ Every payment proposal is evaluated by code and produces one of three outcomes:
 
 The policy takes account of recipient provenance, category and mission budgets, daily spending limits, autonomy limits, payment history, and the current workspace wallet state.
 
-### Hard launch protections
+### Spending protections
 
-- **10 USDC maximum per payment:** the application enforces this launch ceiling in code.
+- **Workspace per-payment ceiling:** starts at 10 USDC for new workspaces and can be changed in Settings → Spend policy. Every payment must fit the effective ceiling, even with approval; existing workspaces keep their current effective limits until an owner or admin explicitly saves new rules.
+- **Mission budget:** payments cannot exceed the mission or experiment budget. The daily limit sends payments for approval once the day's total would exceed it.
 - **Arc mainnet only for live spending:** cross-chain transfers are disabled.
 - **Named, reviewable recipients:** payments require a recorded recipient and purpose.
 - **Approval by default:** creator payouts always require explicit review.
@@ -335,6 +336,8 @@ Live payments require a deliberate operating process. Do not use local or test c
 5. Create or attach a Circle developer-controlled **EOA** wallet on **Arc mainnet** for the workspace.
 6. Fund that wallet with Arc mainnet USDC. Deposit into Circle Gateway only when the workspace needs paid x402 services.
 7. Connect intended market sources, set a mission and spend policy, and begin with small founder-approved payments.
+
+To operate with larger budgets, set the mission budget and raise the workspace's per-payment ceiling in **Settings → Spend policy** to fit the payments you intend to make. The autonomous limit cannot exceed that ceiling. Creator campaign rewards must also fit it, and creator payouts still require approval. Funding the wallet and purchasing GrowTendril service credit remain separate steps.
 
 npm run doctor checks Circle-key environment shape, entity-secret format, Circle API and public-key access, wallet-set access, Arc RPC availability, and—when a production database is configured—the current Arc wallet and Gateway balances. It does not create a wallet, transfer funds, or reveal secret values.
 

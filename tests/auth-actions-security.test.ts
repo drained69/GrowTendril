@@ -30,6 +30,46 @@ beforeAll(async () => {
     { id: "actions-owner-membership", projectId: browser.projectId, userId: "actions-owner", role: "owner" },
     { id: "actions-viewer-membership", projectId: browser.projectId, userId: "actions-viewer", role: "viewer" },
   ]);
+  const { DEFAULT_POLICY } = await import("@/server/domain/agent/policy");
+  await db.insert(s.policies).values({ id: "actions-policy", projectId: browser.projectId, ...DEFAULT_POLICY, maxTransactionMicro: 500_000_000, hardCeilingMicro: 500_000_000 });
+});
+
+describe("real-budget spending settings", () => {
+  const rules = (hardCeiling: string, autonomousLimit = "0") => {
+    const form = new FormData();
+    form.set("dailySpend", "500");
+    form.set("hardCeiling", hardCeiling);
+    form.set("autonomousLimit", autonomousLimit);
+    return form;
+  };
+
+  it("keeps legacy ceilings until an authorized user explicitly saves new limits", async () => {
+    const { createSessionToken } = await import("@/server/auth/session");
+    const { updatePolicyAction } = await import("@/server/actions/workspace");
+    const { loadPolicy } = await import("@/server/domain/agent/ledger");
+    expect(await loadPolicy(db, browser.projectId)).toMatchObject({ hardCeilingMicro: 10_000_000, maxTransactionMicro: 10_000_000 });
+    browser.session = createSessionToken("actions-viewer");
+    expect((await updatePolicyAction(undefined, rules("250"))).ok).toBe(false);
+    expect((await loadPolicy(db, browser.projectId)).customPaymentCeilingEnabled).toBe(false);
+    browser.session = createSessionToken("actions-owner");
+    expect(await updatePolicyAction(undefined, rules("250"))).toMatchObject({ ok: true, message: "Policy saved (v2)" });
+    expect(await loadPolicy(db, browser.projectId)).toMatchObject({ customPaymentCeilingEnabled: true, hardCeilingMicro: 250_000_000, autonomyEnabled: false });
+    const { schema: s } = await import("@/server/db/client");
+    const { eq } = await import("drizzle-orm");
+    const rows = await db.select().from(s.auditLogs).where(eq(s.auditLogs.action, "policy.update"));
+    expect(rows).toHaveLength(1);
+    expect(rows[0]).toMatchObject({ actorId: "actions-owner", data: { hardCeilingMicro: 250_000_000, customPaymentCeilingEnabled: true } });
+  });
+
+  it("rejects invalid ceilings and autonomous limits without changing the saved policy", async () => {
+    const { updatePolicyAction } = await import("@/server/actions/workspace");
+    const { loadPolicy } = await import("@/server/domain/agent/ledger");
+    const before = await loadPolicy(db, browser.projectId);
+    for (const form of [rules("0"), rules("-1"), rules("9007199254740992"), rules("250", "251"), rules("250.0000001")]) {
+      expect((await updatePolicyAction(undefined, form)).ok).toBe(false);
+    }
+    expect(await loadPolicy(db, browser.projectId)).toEqual(before);
+  });
 });
 
 describe("integration action authorization", () => {

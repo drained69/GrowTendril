@@ -1,6 +1,7 @@
 import { beforeAll, afterAll, describe, it, expect, vi } from "vitest";
 import { eq } from "drizzle-orm";
-import { CampaignInput, campaignEconomics, qualityScore, rewardFor } from "@/lib/creator-campaigns";
+import { CampaignInput, MAX_CAMPAIGN_SLOTS, campaignEconomics, qualityScore, rewardFor } from "@/lib/creator-campaigns";
+import { toMicro } from "@/lib/money";
 import type { DB } from "@/server/db/client";
 process.env.PGLITE_DIR = "memory://";
 vi.mock("@/server/integrations/circle/signer", () => ({ signerFor: () => ({ kind: "test" }) }));
@@ -30,11 +31,38 @@ describe("creator campaign economics",()=>{
   it("reserves only the published creator commitments and caps against economics",()=>{
     expect(campaignEconomics(CampaignInput.parse(input))).toEqual({ceiling:100e6,perCreator:10e6,reserved:20e6,unallocated:80e6});
     expect(()=>campaignEconomics(CampaignInput.parse({...input,cashLimit:"19"}))).toThrow(/exceed/);
-    expect(()=>campaignEconomics(CampaignInput.parse({...input,base:"5"}))).toThrow(/10 USDC/);
+    expect(campaignEconomics(CampaignInput.parse({...input,base:"5"})).perCreator).toBe(11e6);
     expect(qualityScore(review as never)).toBe(80);
     expect(rewardFor({baseMicro:4e6,qualityBonusMicro:3e6,outcomeBonusMicro:1e6,outcomeCap:3},80,20)).toBe(9.4e6);
   });
-  it("creates a reserved pilot without replacing the mission",async()=>{
+  it("accepts real budgets, exact decimal amounts and bounded creator pools",()=>{
+    const terms = CampaignInput.parse({...input,cashLimit:"1000000.000001",maxCpa:"100000",slots:"12",base:"25",qualityBonus:"10",outcomeBonus:"5"});
+    expect(terms.cashLimit).toBe(1000000000001);
+    expect(campaignEconomics(terms).reserved).toBe(600e6);
+    expect(CampaignInput.safeParse({...input,slots:String(MAX_CAMPAIGN_SLOTS+1)}).success).toBe(false);
+    expect(CampaignInput.safeParse({...input,base:"9007199254.740992"}).success).toBe(false);
+    expect(()=>campaignEconomics(CampaignInput.parse({...input,target:"10000",maxCpa:"1000000000"}))).toThrow(/safe integer/);
+    expect(()=>campaignEconomics(CampaignInput.parse({...input,base:"9000000000",qualityBonus:"100000000"}))).toThrow(/safe integer/);
+    expect(()=>campaignEconomics(CampaignInput.parse({...input,base:"1000000000",slots:"1000"}))).toThrow(/safe integer/);
+  });
+  it("checks the maximum promised reward against the workspace ceiling",async()=>{
+    await expect(flow.createCreatorCampaign(db,"project","owner",{...input,base:"5"})).rejects.toThrow(/per-payment ceiling of 10 USDC/);
+  });
+  it("calculates quality rewards exactly when percentage multiplication exceeds safe precision",()=>{
+    expect(rewardFor({baseMicro:1,qualityBonusMicro:9007199254740990,outcomeBonusMicro:0,outcomeCap:0},50,0)).toBe(4503599627370496);
+  });
+  it("accepts the same safe monetary range for campaign terms and reward payment actions",async()=>{
+    const {parseFinancialAction} = await import("@/server/domain/agent/actions");
+    const action = {action:"send_payment",purpose:"kol_payment",recipient:wallet,currency:"USDC",chain:"Arc",experimentId:"experiment",missionId:"mission",reasonCode:"PAY_CREATOR",expectedValue:"medium",confidence:1};
+    for (const amount of ["1000000000.000001","9007199254.740991"]) {
+      const terms = CampaignInput.parse({...input,target:"1",slots:"1",cashLimit:amount,maxCpa:amount,base:amount,qualityBonus:"0",outcomeBonus:"0"});
+      expect(campaignEconomics(terms).perCreator).toBe(toMicro(amount));
+      expect(parseFinancialAction({...action,amount}).success).toBe(true);
+    }
+    expect(CampaignInput.safeParse({...input,base:"9007199254.740992"}).success).toBe(false);
+    expect(parseFinancialAction({...action,amount:"9007199254.740992"}).success).toBe(false);
+  });
+  it("creates a reserved campaign without replacing the mission",async()=>{
     programId=await flow.createCreatorCampaign(db,"project","owner",input);
     const {experiment}=await flow.programById(db,"project",programId);
     expect(experiment.budgetMicro).toBe(20e6); expect(experiment.channel).toBe("creator_program");
@@ -117,5 +145,82 @@ describe("creator reward payment controls",()=>{
     const result=await execute.resolveApproval(db,{approvalId:retry.approvalId!,userId:"owner",resolution:"approve"});expect(result.state).toBe("FAILED");
     const third=await flow.proposeCreatorReward(db,"project",contributionId);expect(third.verdict).toBe("APPROVAL_REQUIRED");
     await expect(flow.closeCreatorCampaign(db,"project","owner",programId)).rejects.toThrow(/pending/);
+  });
+});
+
+describe("owner-configured creator campaign budgets",()=>{
+  const projectId = "real-budget-project";
+  const terms = {...input,title:"Funded creator campaign",target:"20",maxCpa:"50",cashLimit:"1000",slots:"12",base:"25",qualityBonus:"10",outcomeBonus:"5"};
+  let realProgram: string, realContribution: string;
+  async function setCeiling(hardCeiling: string) {
+    await setup.activateWorkspace(db,{projectId,rules:{dailySpend:"1000",hardCeiling,autonomousLimit:"0"},autopilot:"off"});
+  }
+  it("reserves a funded pool above the old reward and participant limits",async()=>{
+    await db.insert(s.projects).values({id:projectId,ownerId:"owner",name:"Funded product",website:"https://example.test",webhookSecret:"real-budget-test"});
+    await setup.startMission(db,{projectId,templateKey:"first_users",goal:100,days:30,budget:"1000"});
+    await setCeiling("100");
+    await db.insert(s.wallets).values({id:"real-budget-wallet",projectId,provider:"circle_dcw",address:wallet,circleWalletId:"test",blockchain:"ARC",status:"ACTIVE",dataMode:"LIVE"});
+    await db.insert(s.kols).values({id:"real-budget-creator",projectId,provider:"bluesky",handle:"funded-creator",dataMode:"LIVE"});
+    realProgram = await flow.createCreatorCampaign(db,projectId,"owner",terms);
+    const {program,experiment} = await flow.programById(db,projectId,realProgram);
+    expect(program.slots).toBe(12);expect(program.baseMicro).toBe(25e6);
+    expect(experiment.budgetMicro).toBe(600e6);
+    const allocations = await db.select().from(s.missionBudgets).where(eq(s.missionBudgets.missionId,experiment.missionId));
+    expect(allocations.reduce((n,a)=>n+a.allocatedMicro,0)).toBe(1000e6);
+    expect(allocations.find(a=>a.category==="kol")!.allocatedMicro).toBe(600e6);
+    await expect(flow.createCreatorCampaign(db,projectId,"owner",{...terms,slots:"9"})).rejects.toThrow(/insufficient uncommitted/);
+    await expect(flow.createCreatorCampaign(db,projectId,"owner",{...terms,slots:"1",base:"76"})).rejects.toThrow(/per-payment ceiling of 100 USDC/);
+    expect((await flow.programById(db,projectId,realProgram)).experiment.budgetMicro).toBe(600e6);
+  });
+  it("keeps published terms and requires approval of the exact reviewed reward above 10 USDC",async()=>{
+    const token = await flow.inviteCreator(db,projectId,"owner",realProgram,"real-budget-creator");
+    await flow.acceptCreatorInvite(db,"creator",token,wallet,"https://bsky.app/profile/funded-creator/post/proof");
+    const participant = (await flow.invitation(db,token))!.participant.id;
+    await flow.verifyParticipant(db,projectId,"owner",participant);
+    vi.setSystemTime(Date.now()+1000);
+    await flow.submitContribution(db,"creator",participant,"https://bsky.app/profile/funded-creator/post/tutorial",new Date());
+    const [post] = await db.select().from(s.creatorContributions).where(eq(s.creatorContributions.participantId,participant));
+    realContribution = post.id;
+    const {experiment} = await flow.programById(db,projectId,realProgram);
+    vi.setSystemTime(experiment.endsAt!.getTime()+1000);
+    await flow.reviewContribution(db,projectId,"owner",realContribution,review);
+    expect((await db.select().from(s.creatorContributions).where(eq(s.creatorContributions.id,realContribution)))[0].rewardMicro).toBe(33e6);
+    await setCeiling("20");
+    const denied = await flow.proposeCreatorReward(db,projectId,realContribution);
+    expect(denied.verdict).toBe("DENY");expect(denied.approvalId).toBeUndefined();
+    expect(denied.message).toMatch(/hard ceiling/);
+    await setCeiling("100");
+    const proposal = await flow.proposeCreatorReward(db,projectId,realContribution);
+    expect(proposal.verdict).toBe("APPROVAL_REQUIRED");
+    await expect(execute.resolveApproval(db,{approvalId:proposal.approvalId!,userId:"owner",resolution:"approve",modifiedAmount:"20"})).rejects.toThrow(/exactly/);
+    await setCeiling("20");
+    const approval = await execute.resolveApproval(db,{approvalId:proposal.approvalId!,userId:"owner",resolution:"approve"});
+    expect(approval.status).toBe("denied");expect(approval.reason).toMatch(/hard ceiling/);
+    const payments = await flow.campaignPayments(db,experiment.id);
+    expect(payments.map(p=>p.transaction.state)).toEqual(["DENIED","DENIED"]);
+    expect(payments.every(p=>p.transaction.amountMicro===33e6)).toBe(true);
+    const {program} = await flow.programById(db,projectId,realProgram);
+    expect({base:program.baseMicro,quality:program.qualityBonusMicro,outcome:program.outcomeBonusMicro,cap:program.outcomeCap}).toEqual({base:25e6,quality:10e6,outcome:5e6,cap:3});
+    await expect(flow.closeCreatorCampaign(db,projectId,"owner",realProgram)).rejects.toThrow(/Pay every accepted/);
+  });
+  it("can propose an exact reviewed reward after 100 prior payment attempts",async()=>{
+    const {experiment} = await flow.programById(db,projectId,realProgram);
+    const previous = await flow.campaignPayments(db,experiment.id);
+    expect(previous).toHaveLength(2);
+    await db.insert(s.transactions).values(Array.from({length:98},(_,i)=>({
+      id:`real-budget-attempt-${i}`,projectId,missionId:experiment.missionId,experimentId:experiment.id,
+      decisionId:previous[0].transaction.decisionId,kind:"send",rail:"app_kit_send",budgetCategory:"kol",
+      amountMicro:33e6,recipient:wallet,chain:"Arc",state:"FAILED",dataMode:"LIVE" as const,
+      idempotencyKey:`real-budget-attempt-${i}`,
+    })));
+    await setCeiling("100");
+    const retry = await flow.proposeCreatorReward(db,projectId,realContribution);
+    expect(retry.verdict).toBe("APPROVAL_REQUIRED");expect(retry.approvalId).toBeDefined();
+    const [decision] = await db.select().from(s.agentDecisions).where(eq(s.agentDecisions.id,retry.decisionId));
+    expect(decision.action).toMatchObject({contributionId:realContribution,amount:"33",installment:101});
+    const payments = await flow.campaignPayments(db,experiment.id);
+    expect(payments).toHaveLength(101);
+    expect(payments.find(p=>p.transaction.decisionId===retry.decisionId)!.transaction.state).toBe("AWAITING_APPROVAL");
+    await expect(flow.proposeCreatorReward(db,projectId,realContribution)).rejects.toThrow(/already paid or awaiting/);
   });
 });

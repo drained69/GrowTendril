@@ -6,7 +6,7 @@ import { audit, nextNumber } from "@/server/db/helpers";
 import { newId, sha256, shortCode } from "@/server/lib/ids";
 import { CampaignInput, ReviewInput, campaignEconomics, qualityScore, rewardFor, publicLink } from "@/lib/creator-campaigns";
 import { experimentCommitted, isPayableAddress } from "@/server/domain/growth/experiments";
-import { missionSpend, categorySpend, SPENT_STATES, PENDING_STATES } from "@/server/domain/agent/ledger";
+import { missionSpend, categorySpend, loadPolicy, SPENT_STATES, PENDING_STATES } from "@/server/domain/agent/ledger";
 import { proposeFinancialAction } from "@/server/domain/agent/execute";
 import { microToDecimal } from "@/lib/money";
 import { notify } from "@/server/domain/notifications/webhooks";
@@ -32,6 +32,9 @@ function accepting(exp: typeof s.experiments.$inferSelect) {
 export async function createCreatorCampaign(db: DB, projectId: string, userId: string, input: unknown) {
   const v = CampaignInput.parse(input), economics = campaignEconomics(v);
   return locked(db, projectId, async db => {
+    const policy = await loadPolicy(db, projectId);
+    if (!Number.isSafeInteger(policy.hardCeilingMicro) || policy.hardCeilingMicro <= 0) throw new Error("Set a positive, safe per-payment ceiling before creating a creator campaign");
+    if (economics.perCreator > policy.hardCeilingMicro) throw new Error(`Each creator's maximum reward exceeds your workspace per-payment ceiling of ${microToDecimal(policy.hardCeilingMicro)} USDC. Raise the ceiling in Settings or reduce the rewards.`);
     const [mission] = await db.select().from(s.missions).where(and(eq(s.missions.projectId, projectId), eq(s.missions.status, "active")));
     if (!mission) throw new Error("Start a mission first so this campaign has a funded budget ceiling");
     const now = new Date(), endsAt = new Date(now.getTime() + 14 * 86400000);
@@ -133,7 +136,7 @@ export async function submitContribution(db: DB, userId: string, participantId: 
     if (!Number.isFinite(publishedAt.getTime()) || publishedAt < p.acceptedAt! || publishedAt > new Date() || publishedAt > experiment.endsAt!) throw new Error("The post must be published after joining and within the campaign window");
     const postUrl = publicLink(url);
     const [existing] = await db.select().from(s.creatorContributions).where(eq(s.creatorContributions.participantId, p.id));
-    if (existing) throw new Error("One post per creator is eligible in this pilot; your post is already recorded");
+    if (existing) throw new Error("One post per creator is eligible in this campaign; your post is already recorded");
     const [duplicate] = await db.select().from(s.creatorContributions).where(and(eq(s.creatorContributions.programId, program.id), eq(s.creatorContributions.postUrl, postUrl)));
     if (duplicate) throw new Error("This post has already been submitted");
     await db.insert(s.creatorContributions).values({ id: newId(), programId: program.id, participantId: p.id, postUrl, publishedAt });

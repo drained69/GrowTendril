@@ -90,9 +90,6 @@ export async function startMission(db: DB, a: { projectId: string; templateKey: 
   });
 }
 
-/** Launch caps: no single payment may exceed this, whatever the founder sets. */
-export const LAUNCH_CEILING_USDC = "10";
-
 export interface SpendingRules {
   dailySpend: string;
   hardCeiling: string;
@@ -104,7 +101,8 @@ export function policyValues(r: SpendingRules) {
   for (const value of [r.dailySpend, r.hardCeiling, r.autonomousLimit]) {
     if (!/^\d+(?:\.\d{1,6})?$/.test(value) || !Number.isSafeInteger(toMicro(value))) throw new Error("Enter a non-negative USDC amount with at most 6 decimal places");
   }
-  const ceiling = Math.min(toMicro(r.hardCeiling), toMicro(LAUNCH_CEILING_USDC));
+  const ceiling = toMicro(r.hardCeiling);
+  if (ceiling <= 0) throw new Error("Set a positive per-payment ceiling");
   const autonomous = Math.min(toMicro(r.autonomousLimit), ceiling);
   return {
     ...DEFAULT_POLICY,
@@ -114,6 +112,7 @@ export function policyValues(r: SpendingRules) {
     // Creator payments and bounties always go to the founder.
     kolApprovalThresholdMicro: 0,
     bountyApprovalThresholdMicro: 0,
+    customPaymentCeilingEnabled: true,
     hardCeilingMicro: ceiling,
     autonomousCategories: autonomous > 0 ? ["research", "services"] : [],
     approvalCategories: autonomous > 0 ? ["kol", "bounty", "content", "community", "treasury"] : DEFAULT_POLICY.approvalCategories,

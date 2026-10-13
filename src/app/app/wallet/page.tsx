@@ -21,6 +21,7 @@ import { AttachWalletForm, DepositForm } from "@/components/features/wallet/wall
 import { LedgerExceptions } from "@/components/features/wallet/ledger-exceptions";
 import { WithdrawForm } from "@/components/features/wallet/withdraw-form";
 import { GAS_RESERVE_MICRO, withdrawable } from "@/server/domain/agent/withdraw";
+import { effectivePaymentCeiling } from "@/server/domain/agent/policy";
 import { exceptionsFor } from "@/server/domain/reconcile/exceptions";
 
 async function attempt<T>(fn: () => Promise<T>): Promise<{ v: T | null; err: string | null }> {
@@ -72,7 +73,7 @@ export default async function WalletPage() {
     <div className="space-y-4">
       <PageHeader
         title="Wallet"
-        description="USDC operating funds on Arc. Creator payouts always require approval. Research purchases can run within the limits you enable; every payment is capped at 10 USDC."
+        description={`USDC operating funds on Arc. Creator payouts always require approval. Research purchases can run within the limits you enable${policy ? `; your per-payment ceiling is ${fmtUsdc(effectivePaymentCeiling(policy))}` : "; set your per-payment ceiling in Settings"}.`}
         meta={
           <>
             <ModeBadge mode={wallet?.dataMode ?? "LIVE"} />

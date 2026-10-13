@@ -45,6 +45,7 @@ describe("workspace and mission integrity", () => {
   it("rejects invalid financial settings rather than storing negative/unsafe limits", () => {
     expect(() => policyValues({ dailySpend: "-1", hardCeiling: "10", autonomousLimit: "0" })).toThrow();
     expect(() => policyValues({ dailySpend: "9007199254740992", hardCeiling: "10", autonomousLimit: "0" })).toThrow();
-    expect(policyValues({ dailySpend: "10", hardCeiling: "50", autonomousLimit: "20" })).toMatchObject({ hardCeilingMicro: 10_000_000, maxTransactionMicro: 10_000_000 });
+    expect(() => policyValues({ dailySpend: "10", hardCeiling: "0", autonomousLimit: "0" })).toThrow(/positive per-payment ceiling/);
+    expect(policyValues({ dailySpend: "100", hardCeiling: "50", autonomousLimit: "20" })).toMatchObject({ customPaymentCeilingEnabled: true, hardCeilingMicro: 50_000_000, maxTransactionMicro: 20_000_000 });
   });
 });

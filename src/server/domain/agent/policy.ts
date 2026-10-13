@@ -21,6 +21,8 @@ export interface PolicyConfig {
   dailySpendMicro: number;
   kolApprovalThresholdMicro: number;
   bountyApprovalThresholdMicro: number;
+  /** Owner explicitly saved a configurable payment ceiling; older policies keep their launch limit. */
+  customPaymentCeilingEnabled?: boolean;
   hardCeilingMicro: number;
   autonomousCategories: string[];
   approvalCategories: string[];
@@ -64,13 +66,22 @@ export interface PolicyResult {
   category: string;
 }
 
+/** Conservative starting limit; owners can explicitly choose a different ceiling. */
+export const DEFAULT_PAYMENT_CEILING_USDC = "10";
+
+export function effectivePaymentCeiling(policy: Pick<PolicyConfig, "hardCeilingMicro" | "customPaymentCeilingEnabled">): number {
+  if (!Number.isSafeInteger(policy.hardCeilingMicro) || policy.hardCeilingMicro <= 0) return 0;
+  return policy.customPaymentCeilingEnabled === true ? policy.hardCeilingMicro : Math.min(policy.hardCeilingMicro, toMicro(DEFAULT_PAYMENT_CEILING_USDC));
+}
+
 export const DEFAULT_POLICY: PolicyConfig = {
   autonomyEnabled: false,
   maxTransactionMicro: 0,
   dailySpendMicro: toMicro(10),
   kolApprovalThresholdMicro: toMicro(100),
   bountyApprovalThresholdMicro: toMicro(25),
-  hardCeilingMicro: toMicro(10),
+  customPaymentCeilingEnabled: false,
+  hardCeilingMicro: toMicro(DEFAULT_PAYMENT_CEILING_USDC),
   autonomousCategories: [],
   approvalCategories: ["research", "services", "kol", "bounty", "content", "community", "treasury"],
   forbiddenActions: ["mass_unsolicited_messaging", "automated_dm", "automated_cold_email", "automated_mentions"],
@@ -142,7 +153,7 @@ export function evaluatePolicy(
   const forbidden = policy.forbiddenActions.includes(kind);
   add("FORBIDDEN_ACTIONS", !forbidden, "deny", forbidden ? `${kind} is forbidden by policy` : `${kind} is not forbidden`);
 
-  const effectiveCeiling = Math.min(policy.hardCeilingMicro, toMicro(10));
+  const effectiveCeiling = effectivePaymentCeiling(policy);
   const overCeiling = amount > effectiveCeiling;
   add("HARD_CEILING", !overCeiling, "deny", `${fmtUsdc(amount)} ${overCeiling ? ">" : "≤"} hard ceiling ${fmtUsdc(effectiveCeiling)}`);
 

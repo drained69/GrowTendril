@@ -16,7 +16,7 @@ GrowTendril keeps two separate pots of money. Knowing which is which answers mos
 | Where you send USDC | GrowTendril's billing address on Arc (shown on the payment page, currently `0xdDE7B987A01717EEfCcA1Dc5280c164E2cCD133e`) | Your workspace's own wallet address on Arc (shown on the **Wallet** page) |
 | Who controls it | Becomes prepaid credit on your account | A Circle wallet created only for your workspace; keys are held by Circle, never by GrowTendril staff |
 | How it leaves | Each service deducts its fixed price when it runs: scan **2 USDC**, influencer report **3 USDC**, campaign brief **2 USDC** (first draft per creator free). Failed services are refunded automatically. | Only three ways: **(1)** a payment you approve to a named recipient, **(2)** a research purchase within limits you enabled, **(3)** you withdraw it to your own address |
-| Limits | — | Every payment ≤ **10 USDC**, within your mission budget and daily limit. Creator payouts always ask you first. |
+| Limits | — | Every payment stays within your workspace's per-payment ceiling and mission budget. The ceiling starts at **10 USDC** and is editable in Settings. Payments taking the day's total above the daily limit ask you first; creator payouts always ask you first. |
 | Proof | Receipt email with the Arc transaction | A receipt for every payment, checked against Arc; mismatches are flagged |
 
 Browsing, the growth plan, exports, settings and teammates are free. Credit never expires.
@@ -92,10 +92,14 @@ GrowTendril never messages anyone for you — it drafts, you send.
 ## 7. Choose your spending rules
 
 In **Settings → Spend policy** you set how much the agent may do on its own:
+
 - By default **every payment asks you first**.
 - You can allow small research purchases (buying data about a company) to run automatically under a limit.
 - **Creator payouts always need your approval.**
-- Hard limits always apply: **10 USDC per payment**, your mission budget, and a daily limit.
+- Set **Per-payment hard ceiling** to the largest payment your workspace may make. New workspaces start at **10 USDC**; raise it to fit your real operating budget. Approval cannot override this ceiling or the mission and experiment budgets.
+- The **Daily limit** controls automatic spending: a payment that takes the day's total above it needs your approval. You may approve payments above this total.
+
+For larger payments, set a mission budget that covers the planned work, choose a per-payment ceiling that fits it, and fund the workspace wallet. Raising these limits does not add USDC. Existing workspaces keep their current effective limits until an owner or admin explicitly saves new rules.
 
 ## 8. Run experiments and creator campaigns
 
@@ -104,6 +108,7 @@ tracked link, a budget, a time limit and a stop condition. Open one to set who g
 non-creator work), record delivery, and see results.
 
 **Creator campaigns** (to pay creators for posts):
+
 1. Open **Creator campaigns** and create a campaign: topic, platform, brief, number of creators and the reward rules.
 2. Open the campaign and **Invite a creator** from your shortlist. You get a private link — send it to them yourself.
 3. The creator opens the link, accepts the terms, and gives their **payout address** and an ownership proof.
@@ -111,10 +116,15 @@ non-creator work), record delivery, and see results.
 5. After the campaign window, **review** the post (quality score); GrowTendril calculates the reward
    from the published rules and the tracked customer actions, and proposes the payment.
 
+The reward pool must fit the campaign and mission budgets, and each creator's total reward must fit
+the workspace's per-payment ceiling. Raise that ceiling in **Settings → Spend policy** before creating
+a campaign with higher rewards. Every creator payment still needs your approval.
+
 ## 9. Approve payments
 
 Every payment that needs you appears in **Approvals** (the bell lights up, and Slack/Discord if
 connected). Each request shows:
+
 - **who** gets paid (address, creator handle, whether you've paid them before, who set the address and when),
 - **how much** and **why** (the experiment and its numbers),
 - the **policy checks** that passed or failed.

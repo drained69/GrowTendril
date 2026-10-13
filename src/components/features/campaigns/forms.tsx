@@ -6,7 +6,7 @@ import { toast } from "@/components/ui/toast";
 import { keepValues } from "@/components/ui/submit";
 import { createCampaignAction, inviteCreatorAction, acceptCreatorAction, submitCreatorPostAction, reviewCreatorPostAction } from "@/server/actions/creator-campaigns";
 import type { ActionResult } from "@/server/actions/_common";
-import { CAMPAIGN_GOALS, CAMPAIGN_PLATFORMS, QUALITY_CRITERIA } from "@/lib/creator-campaigns";
+import { CAMPAIGN_GOALS, CAMPAIGN_PLATFORMS, MAX_CAMPAIGN_SLOTS, QUALITY_CRITERIA } from "@/lib/creator-campaigns";
 import { EVENT_LABEL } from "@/server/domain/growth/attribution-links";
 
 type FormAction = (previous: unknown, form: FormData) => Promise<ActionResult>;
@@ -24,11 +24,12 @@ function ActionForm({ action: server, children, label }: { action: FormAction; c
     {data?.invite && <Field label="Private invite link" hint="Copy and share with this creator. Generating another link invalidates the previous invite."><Input readOnly aria-label="Private invite link" value={`${typeof window !== "undefined" ? window.location.origin : ""}${data.invite}`} onFocus={e => e.target.select()} /></Field>}
   </form>;
 }
-export function CampaignForm() {
+export function CampaignForm({ paymentCeilingUsdc }: { paymentCeilingUsdc: string }) {
   const [values, set] = useState({ cashLimit: 100, maxCpa: 10, target: 10, slots: 10, base: 4, qualityBonus: 3, outcomeBonus: 1, outcomeCap: 3 });
   const ceiling = Math.min(values.cashLimit, values.maxCpa * values.target);
   const perCreator = values.base + values.qualityBonus + values.outcomeBonus * values.outcomeCap;
   const reserved = values.slots * perCreator;
+  const paymentCeiling = Number(paymentCeilingUsdc);
   const numeric = (key: keyof typeof values, label: string, step = "0.01", min = "0", max?: string) => <Field key={key} label={label} htmlFor={`cc-${key}`}><Input id={`cc-${key}`} name={key} type="number" min={min} max={max} step={step} value={values[key]} required onChange={e => set({ ...values, [key]: Number(e.target.value) })} /></Field>;
   return <ActionForm action={createCampaignAction} label="Create campaign & reserve rewards">
     <div className="grid gap-4 sm:grid-cols-2">
@@ -37,7 +38,7 @@ export function CampaignForm() {
       <Field label="Social source" htmlFor="cc-platform"><Select id="cc-platform" name="platform">{CAMPAIGN_PLATFORMS.map(p => <option key={p}>{p}</option>)}</Select></Field>
       <Field label="Qualified customer action" htmlFor="cc-goal"><Select id="cc-goal" name="goal">{CAMPAIGN_GOALS.map(p => <option key={p} value={p}>{EVENT_LABEL[p]}</option>)}</Select></Field>
       {numeric("target", "Target actions", "1", "1", "10000")}{numeric("maxCpa", "Maximum cost per action · USDC", "0.000001", "0.000001")}
-      {numeric("cashLimit", "Maximum test budget · USDC", "0.000001", "0.000001")}{numeric("slots", "Creator slots", "1", "1", "10")}
+      {numeric("cashLimit", "Maximum campaign budget · USDC", "0.000001", "0.000001")}{numeric("slots", "Creator slots", "1", "1", String(MAX_CAMPAIGN_SLOTS))}
     </div>
     <div className="rounded-2xl bg-surface-2 p-4 space-y-3">
       <p className="font-semibold text-sm">Published reward terms · one post per creator</p>
@@ -46,10 +47,11 @@ export function CampaignForm() {
     </div>
     <Field label="Creator brief" htmlFor="cc-brief" hint="Describe the audience, the work, and evidence you expect. Terms are fixed once invitations open."><Textarea id="cc-brief" name="brief" rows={4} required minLength={30} maxLength={3000} placeholder="Try the product and share an original walkthrough for…" /></Field>
     <div aria-live="polite" className="rounded-2xl border border-line p-4 text-sm space-y-2">
-      <p>Economic ceiling: <strong>{ceiling.toFixed(2)} USDC</strong> · lower of your test budget and target × maximum cost.</p>
+      <p>Economic ceiling: <strong>{ceiling.toFixed(2)} USDC</strong> · lower of your campaign budget and target × maximum cost.</p>
       <p>Reward pool reserved: <strong>{reserved.toFixed(2)} USDC</strong> · up to {perCreator.toFixed(2)} per creator.</p>
-      <p className="text-xs text-ink-3">A 14-day test, followed by final review and payment approval. Reserved budget is a spending commitment; it is not escrow or a wallet deposit. Scans and reports use separate service credit. Results are targets, not guarantees.</p>
-      {(reserved > ceiling || perCreator > 10) && <p className="text-critical">Reduce rewards or slots: the pool must fit the economic ceiling and each creator is capped at 10 USDC.</p>}
+      <p className="text-xs text-ink-3">Each creator&apos;s total reward must fit your workspace&apos;s {paymentCeilingUsdc} USDC per-payment ceiling. Change it in Settings → Spend policy before setting higher rewards.</p>
+      <p className="text-xs text-ink-3">A 14-day campaign, followed by final review and payment approval. Reserved budget is a spending commitment; it is not escrow or a wallet deposit. Scans and reports use separate service credit. Results are targets, not guarantees.</p>
+      {(reserved > ceiling || perCreator > paymentCeiling) && <p className="text-critical">Reduce rewards or slots: the pool must fit the campaign ceiling and each creator&apos;s total reward must fit your workspace&apos;s per-payment ceiling.</p>}
     </div>
   </ActionForm>;
 }

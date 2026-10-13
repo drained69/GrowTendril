@@ -1,7 +1,7 @@
 "use server";
 
 import { revalidatePath } from "next/cache";
-import { and, eq } from "drizzle-orm";
+import { and, eq, sql } from "drizzle-orm";
 import { z } from "zod";
 import { randomBytes } from "node:crypto";
 import { schema as s } from "@/server/db/client";
@@ -9,7 +9,7 @@ import { audit } from "@/server/db/helpers";
 import { ProductProfileSchema } from "@/server/domain/intel/product-analyst";
 import { toMicro } from "@/lib/money";
 import { fail, guard, type ActionResult } from "@/server/actions/_common";
-import { LAUNCH_CEILING_USDC, policyValues } from "@/server/domain/workspace/setup";
+import { policyValues } from "@/server/domain/workspace/setup";
 
 const Amount = z.string().regex(/^\d+(\.\d{1,6})?$/, "Enter a USDC amount");
 const PolicyForm = z.object({
@@ -23,14 +23,20 @@ export async function updatePolicyAction(_: unknown, form: FormData): Promise<Ac
     const { project, db, user } = await guard("manage_policy");
     const f = PolicyForm.parse({ dailySpend: form.get("dailySpend"), hardCeiling: form.get("hardCeiling"), autonomousLimit: form.get("autonomousLimit") || "0" });
     const ceiling = toMicro(f.hardCeiling);
-    if (ceiling <= 0 || ceiling > toMicro(LAUNCH_CEILING_USDC)) return { ok: false, error: `Payments are limited to ${LAUNCH_CEILING_USDC} USDC each` };
+    if (ceiling <= 0) return { ok: false, error: "Set a positive per-payment ceiling" };
     if (toMicro(f.autonomousLimit) > ceiling) return { ok: false, error: "The autonomous limit can't be higher than the per-payment ceiling" };
     const vals = policyValues(f);
-    const [cur] = await db.select().from(s.policies).where(eq(s.policies.projectId, project.id));
-    await db.update(s.policies).set({ ...vals, version: (cur?.version ?? 1) + 1, updatedAt: new Date() }).where(eq(s.policies.projectId, project.id));
-    await audit(db, { projectId: project.id, actorType: "user", actorId: user.id, action: "policy.update", data: vals as Record<string, unknown> });
+    const version = await db.transaction(async (tx) => {
+      await tx.execute(sql`select pg_advisory_xact_lock(hashtext(${`financial:${project.id}`}))`);
+      const [cur] = await tx.select().from(s.policies).where(eq(s.policies.projectId, project.id)).for("update");
+      if (!cur) throw new Error("Finish workspace setup before changing spending rules");
+      const nextVersion = cur.version + 1;
+      await tx.update(s.policies).set({ ...vals, version: nextVersion, updatedAt: new Date() }).where(eq(s.policies.projectId, project.id));
+      await audit(tx as unknown as typeof db, { projectId: project.id, actorType: "user", actorId: user.id, action: "policy.update", data: vals as Record<string, unknown> });
+      return nextVersion;
+    });
     revalidatePath("/app", "layout");
-    return { ok: true, message: `Policy saved (v${(cur?.version ?? 1) + 1})` };
+    return { ok: true, message: `Policy saved (v${version})` };
   } catch (e) {
     return fail(e);
   }

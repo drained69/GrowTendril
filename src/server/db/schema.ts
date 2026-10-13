@@ -331,6 +331,8 @@ export const policies = pgTable("policies", {
   bountyApprovalThresholdMicro: micro("bounty_approval_threshold_micro").notNull(),
   /** Absolute ceiling — anything above is denied, approval or not. */
   hardCeilingMicro: micro("hard_ceiling_micro").notNull(),
+  /** Explicitly configured after the launch cap; existing policies retain their effective ceiling. */
+  customPaymentCeilingEnabled: boolean("custom_payment_ceiling_enabled").notNull().default(false),
   autonomousCategories: jsonb("autonomous_categories").$type<string[]>().notNull(),
   approvalCategories: jsonb("approval_categories").$type<string[]>().notNull(),
   forbiddenActions: jsonb("forbidden_actions").$type<string[]>().notNull(),

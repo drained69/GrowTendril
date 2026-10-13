@@ -106,6 +106,13 @@
       "when": 1791900000000,
       "tag": "0014_outbound_notifications",
       "breakpoints": true
+    },
+    {
+      "idx": 15,
+      "version": "7",
+      "when": 1792000000000,
+      "tag": "0015_configurable_payment_ceiling",
+      "breakpoints": true
     }
   ]
 }

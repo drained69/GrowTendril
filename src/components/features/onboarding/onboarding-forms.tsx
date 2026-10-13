@@ -241,7 +241,7 @@ export function MissionStep({ audience, category }: { audience?: string | null; 
 const LIMITS = [
   { name: "autonomousLimit", label: "Spend on its own up to", d: "0", hint: "Per payment, for research, data and API services from Circle's marketplace. 0 = always ask you first", fixed: false },
   { name: "dailySpend", label: "Daily limit", d: "10", hint: "Above this total in a day, every payment asks you first", fixed: false },
-  { name: "hardCeiling", label: "Per-payment hard ceiling", d: "10", hint: "Launch cap of 10 USDC; not even an approval can exceed it", fixed: false },
+  { name: "hardCeiling", label: "Per-payment hard ceiling", d: "10", hint: "Choose your maximum per payment; approval cannot exceed it. Starts at 10 USDC", fixed: false },
 ];
 
 export function AutonomyStep({ autopilot, billing }: { autopilot: Record<string, string>; billing?: boolean }) {
@@ -257,7 +257,7 @@ export function AutonomyStep({ autopilot, billing }: { autopilot: Record<string,
               <span className="block text-[11.5px] text-ink-3">{l.hint}</span>
             </label>
             <div className="relative">
-              <Input id={`au-${l.name}`} name={l.name} defaultValue={l.d} inputMode="decimal" readOnly={l.fixed} aria-readonly={l.fixed} className={cn("num pr-12 text-right", l.fixed && "cursor-not-allowed bg-surface-2 text-ink-3")} />
+              <Input id={`au-${l.name}`} name={l.name} type="number" min={l.name === "hardCeiling" ? "0.000001" : 0} step="0.000001" defaultValue={l.d} inputMode="decimal" readOnly={l.fixed} aria-readonly={l.fixed} className={cn("num pr-12 text-right", l.fixed && "cursor-not-allowed bg-surface-2 text-ink-3")} />
               <span className="pointer-events-none absolute inset-y-0 right-2.5 flex items-center text-[11px] text-ink-4">USDC</span>
             </div>
           </div>

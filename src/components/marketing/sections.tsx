@@ -163,7 +163,7 @@ const POLICY = [
   ["budget", "100 USDC for this mission"],
   ["ask first", "every payment, until you say otherwise"],
   ["daily limit", "10 USDC before more approvals"],
-  ["hard ceiling", "10 USDC per payment"],
+  ["hard ceiling", "10 USDC per payment (editable)"],
   ["never", "pay without a named recipient and a reason"],
 ];
 
@@ -211,7 +211,7 @@ export function Guardrails() {
           <div className="grid gap-5">
             <Reveal delay={120} className="rounded-[22px] bg-surface p-7 ring-1 ring-line shadow-[var(--shadow-card)]">
               <div className="display text-[64px] leading-none text-accent">0</div>
-              <div className="mt-3 text-[16px] font-semibold text-ink">payments allowed above the 10 USDC cap</div>
+              <div className="mt-3 text-[16px] font-semibold text-ink">payments allowed above your hard ceiling</div>
               <p className="mt-1.5 text-[14px] leading-relaxed text-ink-3">Each one names who, how much and why. It is paid within the limits you set, or it is not paid at all.</p>
             </Reveal>
             <Reveal delay={200} className="rounded-[22px] bg-[#f5f5f4] p-7">
@@ -443,7 +443,7 @@ export function Terms() {
   const cards = [
     {
       title: "Asks first",
-      body: "Every payment asks by default. You can allow limited research purchases. Creator payouts always ask, and every payment is capped at 10 USDC.",
+      body: "Every payment asks by default. You can allow limited research purchases. Creator payouts always ask. Choose your per-payment ceiling in Settings; new workspaces start at 10 USDC.",
       mock: (
         <div className="flex items-center justify-between rounded-[10px] bg-surface-2 px-3 py-2 font-mono text-[12px]">
           approval required <span className="flex h-5 w-9 items-center justify-end rounded-full bg-accent p-0.5"><span className="size-4 rounded-full bg-white" /></span>
@@ -505,7 +505,7 @@ export function Terms() {
 /* ───────────── FAQ ───────────── */
 
 const FAQ = [
-  ["Does it spend money on its own?", "Every payment asks by default and names its recipient, amount, chain and reason. You can enable limited research and service purchases in Settings. Creator payments always need approval. The launch cap is 10 USDC per payment; mission budgets still apply, and exceeding the daily limit asks for approval."],
+  ["Does it spend money on its own?", "Every payment asks by default and names its recipient, amount, chain and reason. You can enable limited research and service purchases in Settings. Creator payments always need approval. You set the per-payment hard ceiling, which starts at 10 USDC for new workspaces. Mission budgets still apply, and taking the day's total above the daily limit asks for approval."],
   ["What kinds of products does it work for?", "Shops, apps, services, software and developer tools. It learns your customers and market from your site and a short profile, then listens in the places they talk."],
   ["Where does the evidence come from?", "Public sources you connect or that need no key. Every claim links back to the post, page or profile it came from so you can judge it yourself."],
   ["How are payments made?", "In USDC on Arc through a wallet your workspace controls. You can freeze it at any time."],

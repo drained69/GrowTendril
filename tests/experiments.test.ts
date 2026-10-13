@@ -4,11 +4,14 @@ import type { DB } from "@/server/db/client";
 
 process.env.PGLITE_DIR = "memory://";
 
-// No Circle in tests: the wallet "can sign", and every App Kit send fails like an unreachable API.
+// No Circle in tests: the wallet "can sign", and App Kit is a controlled provider stub.
+const provider = vi.hoisted(() => ({ reachable: false, sends: [] as { chain: string; to: string; amount: string }[] }));
 vi.mock("@/server/integrations/circle/signer", () => ({ signerFor: () => ({ kind: "test" }) }));
 vi.mock("@/server/integrations/circle/appkit", () => ({
-  appKitSend: async () => {
-    throw new Error("Circle unreachable in tests");
+  appKitSend: async (_wallet: unknown, payment: { chain: string; to: string; amount: string }) => {
+    if (!provider.reachable) throw new Error("Circle unreachable in tests");
+    provider.sends.push(payment);
+    return { state: "pending", txHash: `0x${provider.sends.length.toString(16).padStart(64, "0")}`, explorerUrl: null, steps: [] };
   },
   appKitBridge: async () => {
     throw new Error("Circle unreachable in tests");
@@ -106,5 +109,47 @@ describe("paying for an experiment", () => {
     const [ap] = await pendingApprovals();
     await exec.resolveApproval(db, { approvalId: ap.id, userId: "u1", resolution: "reject", note: "not yet" });
     expect(await status()).toBe("proposed");
+  });
+
+  it("uses an explicitly configured higher ceiling across both tranches without exceeding remaining commitments", async () => {
+    const projectId = "real-budget";
+    const experimentId = "real-budget-experiment";
+    await db.insert(s.projects).values({ id: projectId, ownerId: "u1", name: "Customer campaign", webhookSecret: "secret" });
+    const { missionId: realMissionId } = await setup.startMission(db, { projectId, templateKey: "first_customers", goal: 100, days: 30, budget: "1000" });
+    await setup.activateWorkspace(db, { projectId, rules: { dailySpend: "200", hardCeiling: "50", autonomousLimit: "0" }, autopilot: "off" });
+    await db.insert(s.wallets).values({ id: "real-budget-wallet", projectId, provider: "circle_dcw", address: "0x2222222222222222222222222222222222222222", circleWalletId: "real-cw", blockchain: "ARC", status: "ACTIVE", dataMode: "LIVE" });
+    await db.insert(s.experiments).values({
+      id: experimentId, projectId, missionId: realMissionId, number: 1, title: "Commission customer research", hypothesis: "A useful post reaches qualified buyers.",
+      channel: "content", budgetCategory: "content", target: "10 purchases", action: "Commission a post", budgetMicro: toMicro(200), successEvent: "purchase", successTarget: 10,
+      stopMaxCpaMicro: toMicro(20), stopAfterSpendMicro: toMicro(75), timeframeDays: 10, status: "proposed", dataMode: "LIVE",
+      recipientAddress: "0x000000000000000000000000000000000000bEEF", recipientLabel: "Writer",
+    });
+
+    const propose = async (tranche: "first" | "second", expectedAmount: number) => {
+      const result = await x.launchExperiment(db, { projectId, experimentId, tranche });
+      expect(result.verdict).toBe("APPROVAL_REQUIRED");
+      const [approval] = await db.select().from(s.approvals).where(eq(s.approvals.id, result.approvalId!));
+      expect(approval.requestedMicro).toBe(toMicro(expectedAmount));
+      return approval;
+    };
+
+    const first = await propose("first", 50);
+    provider.reachable = true;
+    try {
+      const result = await exec.resolveApproval(db, { approvalId: first.id, userId: "u1", resolution: "approve" });
+      expect(result.state).toBe("SUBMITTED");
+      expect(provider.sends).toEqual([{ chain: "Arc", to: "0x000000000000000000000000000000000000bEEF", amount: "50" }]);
+    } finally {
+      provider.reachable = false;
+    }
+    await x.recordDelivery(db, { projectId, experimentId, userId: "u1", url: "https://example.test/delivered-post" });
+    await propose("first", 25);
+    await expect(x.launchExperiment(db, { projectId, experimentId })).rejects.toThrow(/first tranche is already paid or waiting/);
+
+    await propose("second", 50);
+    await propose("second", 50);
+    await propose("second", 25);
+    expect(await x.experimentCommitted(db, experimentId)).toMatchObject({ committedMicro: toMicro(200), attempts: 5 });
+    await expect(x.launchExperiment(db, { projectId, experimentId, tranche: "second" })).rejects.toThrow(/whole budget is already paid or waiting/);
   });
 });

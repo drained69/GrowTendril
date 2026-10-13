@@ -8,6 +8,7 @@ import { signOutEverywhereAction } from "@/server/actions/auth";
 import { requireProject } from "@/server/auth/current";
 import { can, ROLE_LABEL } from "@/server/auth/access";
 import { schema as s } from "@/server/db/client";
+import { effectivePaymentCeiling } from "@/server/domain/agent/policy";
 import { listMembers } from "@/server/domain/workspace/members";
 import { AUTOPILOT_LABEL } from "@/server/jobs/scheduler";
 import { microToDecimal } from "@/lib/money";
@@ -154,7 +155,7 @@ export default async function Settings() {
               action={
                 policy && (
                   <span className="flex items-center gap-1.5">
-                    <Badge tone={policy.autonomyEnabled ? "good" : "muted"}>{policy.autonomyEnabled ? `Autonomous ≤ ${microToDecimal(policy.maxTransactionMicro)} USDC` : "Asks first"}</Badge>
+                    <Badge tone={policy.autonomyEnabled ? "good" : "muted"}>{policy.autonomyEnabled ? `Autonomous ≤ ${microToDecimal(Math.min(policy.maxTransactionMicro, effectivePaymentCeiling(policy)))} USDC` : "Asks first"}</Badge>
                     <Badge className="num">v{policy.version}</Badge>
                   </span>
                 )
@@ -165,9 +166,9 @@ export default async function Settings() {
                 <PolicyForm
                   disabled={!canPolicy}
                   p={{
-                    autonomousLimit: policy.autonomyEnabled ? microToDecimal(policy.maxTransactionMicro) : "0",
+                    autonomousLimit: policy.autonomyEnabled ? microToDecimal(Math.min(policy.maxTransactionMicro, effectivePaymentCeiling(policy))) : "0",
                     dailySpend: microToDecimal(policy.dailySpendMicro),
-                    hardCeiling: microToDecimal(policy.hardCeilingMicro),
+                    hardCeiling: microToDecimal(effectivePaymentCeiling(policy)),
                     forbidden: policy.forbiddenActions,
                     tokens: policy.allowedTokens,
                   }}

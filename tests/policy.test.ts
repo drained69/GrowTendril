@@ -1,5 +1,5 @@
 import { describe, it, expect } from "vitest";
-import { evaluatePolicy, DEFAULT_POLICY, type PolicyState } from "../src/server/domain/agent/policy";
+import { effectivePaymentCeiling, evaluatePolicy, DEFAULT_POLICY, type PolicyState } from "../src/server/domain/agent/policy";
 import { parseFinancialAction } from "../src/server/domain/agent/actions";
 import { toMicro } from "../src/lib/money";
 
@@ -55,11 +55,32 @@ describe("policy engine", () => {
     expect(r.checks.find((c) => c.rule === "MAINNET_FOUNDER_APPROVAL")?.passed).toBe(false);
   });
 
-  it("denies a creator payment above the mainnet hard ceiling", () => {
+  it("denies a creator payment above the default payment ceiling", () => {
     const a = send("250");
     const r = evaluatePolicy(a.data!, DEFAULT_POLICY, state({ categoryAllocatedMicro: toMicro(300) }));
     expect(r.verdict).toBe("DENY");
     expect(r.checks.find((c) => c.rule === "HARD_CEILING")?.passed).toBe(false);
+  });
+
+  it("honors an explicitly configured real-budget ceiling and still requires approval", () => {
+    const policy = { ...DEFAULT_POLICY, customPaymentCeilingEnabled: true, hardCeilingMicro: toMicro(250) };
+    const request = send("250").data!;
+    const funds = state({ categoryAllocatedMicro: toMicro(300) });
+    expect(evaluatePolicy(request, policy, funds).verdict).toBe("APPROVAL_REQUIRED");
+    expect(evaluatePolicy(request, policy, funds, { founderApproved: true }).verdict).toBe("ALLOW");
+    expect(evaluatePolicy(send("250.000001").data!, policy, funds, { founderApproved: true }).verdict).toBe("DENY");
+    expect(evaluatePolicy(request, policy, { ...funds, walletFrozen: true }, { founderApproved: true }).verdict).toBe("DENY");
+    expect(evaluatePolicy(request, policy, { ...funds, missionCommittedMicro: toMicro(251) }, { founderApproved: true }).verdict).toBe("DENY");
+    expect(evaluatePolicy(request, policy, { ...funds, experimentActive: true, experimentBudgetMicro: toMicro(250), experimentCommittedMicro: 1 }, { founderApproved: true }).verdict).toBe("DENY");
+  });
+
+  it("preserves legacy ceilings and denies invalid stored ceilings", () => {
+    expect(effectivePaymentCeiling({ hardCeilingMicro: toMicro(500) })).toBe(toMicro(10));
+    expect(effectivePaymentCeiling({ hardCeilingMicro: toMicro(5) })).toBe(toMicro(5));
+    for (const hardCeilingMicro of [0, -1, NaN, Infinity, Number.MAX_SAFE_INTEGER + 1, 0.5]) {
+      const policy = { ...DEFAULT_POLICY, customPaymentCeilingEnabled: true, hardCeilingMicro };
+      expect(evaluatePolicy(send("1").data!, policy, state(), { founderApproved: true }).verdict).toBe("DENY");
+    }
   });
 
   it("DENYs a 2,000 USDC transfer even with founder approval", () => {
@@ -104,6 +125,17 @@ describe("policy engine", () => {
     expect(purchase("0.0000001").success).toBe(false);
     expect(purchase("-5").success).toBe(false);
     expect(send("10", "mass_unsolicited_messaging").success).toBe(false);
+  });
+
+  it("accepts the same safe monetary range as budgets and supports campaign payment 101", () => {
+    expect(send("1000000000").success).toBe(true);
+    expect(send("9007199254.740991").success).toBe(true);
+    expect(send("9007199254.740992").success).toBe(false);
+    expect(send("0").success).toBe(false);
+    const request = send("25").data!;
+    expect(parseFinancialAction({ ...request, installment: 101 }).success).toBe(true);
+    expect(parseFinancialAction({ ...request, installment: Number.MAX_SAFE_INTEGER + 1 }).success).toBe(false);
+    expect(parseFinancialAction({ ...request, installment: 1.5 }).success).toBe(false);
   });
 
   it("reallocation must come from unspent budget", () => {

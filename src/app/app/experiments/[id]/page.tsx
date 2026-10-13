@@ -358,7 +358,7 @@ export default async function Experiment({ params }: { params: Promise<{ id: str
                 </>
               )}
               <p className="text-[11.5px] leading-relaxed text-ink-3">
-                Every payment follows your spending rules and requires approval. Tranche 1 ({fmtUsdc(firstEnd)}) is the amount at risk before the stop condition is evaluated; tranche 2 pays once the delivered work is on record. No single payment exceeds {fmtUsdc(Math.min(policy.hardCeilingMicro, 10_000_000))}. Running it yourself costs nothing: share the tracked link and record results here.
+                Every payment follows your spending rules and requires approval. Tranche 1 ({fmtUsdc(firstEnd)}) is the amount at risk before the stop condition is evaluated; tranche 2 pays once the delivered work is on record. No single payment exceeds your workspace ceiling of {fmtUsdc(policy.hardCeilingMicro)}. Running it yourself costs nothing: share the tracked link and record results here.
               </p>
             </CardBody>
           </Card>
