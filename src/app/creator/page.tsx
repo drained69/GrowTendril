@@ -24,6 +24,7 @@ export default async function CreatorPortal() {
       const open=e.endsAt!>new Date()&&["running","proposed","awaiting_approval"].includes(e.status),link=`${origin}/r/${campaign.referralCode}`;
       return <Card key={p.id}><CardHeader title={e.title} description={`@${creator.handle} · ${p.status}`} action={<StatusBadge status={post?.status??p.status} />} /><CardBody className="space-y-5">
         <CampaignTerms program={program} experiment={e} />
+        <LinkButton href={`/creator/escrow/${program.id}`}>View testnet escrow prototype</LinkButton>
         {p.status==="accepted"&&<p className="text-sm text-ink-3">The business is reviewing your account ownership proof. Once verified, you can submit your post here.</p>}
         {p.status==="verified"&&<div className="rounded-xl border border-line p-4 space-y-2"><p className="text-sm font-medium">Include your tracked link so customer actions can count</p><div className="flex items-center gap-2"><code className="break-all text-xs">{link}</code><CopyButton value={link} /></div><p className="text-xs text-ink-3">{actions} verified customer actions so far.</p></div>}
         {post?<div className="space-y-3 text-sm"><a href={post.postUrl} target="_blank" rel="noopener noreferrer" className="underline">Your submitted post ↗</a>

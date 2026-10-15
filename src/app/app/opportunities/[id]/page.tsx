@@ -24,9 +24,10 @@ export default async function Opportunity({ params }: { params: Promise<{ id: st
   const [o] = await db.select().from(s.opportunities).where(and(eq(s.opportunities.id, id), eq(s.opportunities.projectId, project.id)));
   if (!o) notFound();
   const conds = [o.companyId ? eq(s.evidence.companyId, o.companyId) : undefined, o.kolId ? eq(s.evidence.kolId, o.kolId) : undefined, o.narrativeId ? eq(s.evidence.narrativeId, o.narrativeId) : undefined].filter((c) => c !== undefined);
-  const [ev, exps] = await Promise.all([
+  const [ev, exps, [conversation]] = await Promise.all([
     conds.length ? db.select().from(s.evidence).where(and(eq(s.evidence.projectId, project.id), or(...conds))).orderBy(desc(s.evidence.observedAt)).limit(12) : Promise.resolve([]),
     db.select().from(s.experiments).where(and(eq(s.experiments.opportunityId, o.id), eq(s.experiments.projectId, project.id))),
+    o.type === "PERSON" && o.subjectKey.startsWith("post:") ? db.select().from(s.socialPosts).where(and(eq(s.socialPosts.id, o.subjectKey.slice(5)), eq(s.socialPosts.projectId, project.id))).limit(1) : Promise.resolve([]),
   ]);
   const subject = o.companyId ? { href: `/app/customers/${o.companyId}`, label: "Company" } : o.kolId ? { href: `/app/kols/${o.kolId}`, label: "Creator" } : o.narrativeId ? { href: `/app/narratives/${o.narrativeId}`, label: "Narrative" } : null;
   const scores = o.scores as Record<string, { score: number; reasons?: string[] } | undefined>;
@@ -84,9 +85,10 @@ export default async function Opportunity({ params }: { params: Promise<{ id: st
           </Card>
 
           <Card>
-            <CardHeader title="Evidence" icon={<FileSearch />} action={<Badge>{ev.length}</Badge>} />
-            <CardBody>
-              <EvidenceList items={ev} empty={subject ? "No evidence linked directly — see the subject page." : "No evidence linked to this opportunity yet."} />
+            <CardHeader title="Evidence" icon={<FileSearch />} action={<Badge>{ev.length + (conversation ? 1 : 0)}</Badge>} />
+            <CardBody className="space-y-3">
+              {conversation && <div className="rounded-[14px] border border-line bg-surface-2/40 p-4"><div className="flex flex-wrap items-center gap-2 text-[11.5px] text-ink-3"><Badge>{conversation.provider}</Badge><span>@{conversation.authorHandle} · {relTime(conversation.publishedAt)}</span><ModeBadge mode={conversation.dataMode} /></div><blockquote className="my-3 text-[13px] leading-relaxed text-ink-2">{conversation.content.slice(0, 700)}{conversation.content.length > 700 ? "…" : ""}</blockquote>{/^https?:\/\//i.test(conversation.url) && <LinkButton href={conversation.url} external icon={<ArrowRight />}>Original conversation</LinkButton>}</div>}
+              {(ev.length > 0 || !conversation) && <EvidenceList items={ev} empty={subject ? "No evidence linked directly — see the subject page." : "No evidence linked to this opportunity yet."} />}
             </CardBody>
           </Card>
         </div>

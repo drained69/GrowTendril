@@ -48,7 +48,7 @@ export function VerdictBadge({ verdict }: { verdict: string | null | undefined }
   return <Badge tone={VERDICT[verdict] ?? "neutral"}>{verdict === "APPROVAL_REQUIRED" ? "Approval" : verdict === "ALLOW" ? "Allow" : "Deny"}</Badge>;
 }
 
-const TX: Record<string, Tone> = { SETTLED: "good", SUBMITTED: "info", EXECUTING: "info", AUTHORIZED: "info", AWAITING_APPROVAL: "warn", SIMULATED: "warn", FAILED: "bad", DENIED: "bad", REJECTED: "bad", PROPOSED: "neutral" };
+const TX: Record<string, Tone> = { SETTLED: "good", EXCEPTION: "bad", SUBMITTED: "info", EXECUTING: "info", AUTHORIZED: "info", AWAITING_APPROVAL: "warn", SIMULATED: "warn", FAILED: "bad", DENIED: "bad", REJECTED: "bad", PROPOSED: "neutral" };
 const TX_LABEL: Record<string, string> = { AWAITING_APPROVAL: "Awaiting approval" };
 export function TxStateBadge({ state }: { state: string }) {
   return (

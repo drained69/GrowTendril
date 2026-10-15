@@ -10,6 +10,7 @@ import { missionSpend, categorySpend, loadPolicy, SPENT_STATES, PENDING_STATES }
 import { proposeFinancialAction } from "@/server/domain/agent/execute";
 import { microToDecimal } from "@/lib/money";
 import { notify } from "@/server/domain/notifications/webhooks";
+import { netPurchases } from "@arc-growth/outcomes";
 
 const ACTIVE = ["proposed", "running", "awaiting_approval"];
 async function locked<T>(db: DB, projectId: string, work: (db: DB) => Promise<T>): Promise<T> {
@@ -101,7 +102,7 @@ export async function invitation(db: DB, token: string) {
     .innerJoin(s.campaigns, eq(s.campaigns.id, s.creatorParticipants.campaignId)).where(eq(s.creatorParticipants.tokenHash, sha256(token)));
   return r ?? null;
 }
-export async function acceptCreatorInvite(db: DB, userId: string, token: string, address: string, proofUrl: string) {
+export async function acceptCreatorInvite(db: DB, userId: string, token: string, address: string, proofUrl: string, walletProof?: string) {
   const inv = await invitation(db, token); if (!inv) throw new Error("Invalid invitation");
   if (!isPayableAddress(address)) throw new Error("Enter a valid Arc USDC payout address");
   const proof = publicLink(proofUrl);
@@ -112,6 +113,7 @@ export async function acceptCreatorInvite(db: DB, userId: string, token: string,
     if (fresh.participant.userId) throw new Error("This invitation has already been accepted");
     const [same] = await db.select().from(s.creatorParticipants).where(and(eq(s.creatorParticipants.programId, inv.program.id), eq(s.creatorParticipants.userId, userId)));
     if (same) throw new Error("One creator account can join each campaign once");
+    if (walletProof) { const { consumeRecipientProof } = await import("@/server/domain/growth/creator-wallet"); await consumeRecipientProof(db,userId,fresh.participant.id,address,walletProof); }
     await db.update(s.creatorParticipants).set({ userId, payoutAddress: address, proofUrl: proof, status: "accepted", acceptedAt: new Date() }).where(eq(s.creatorParticipants.id, fresh.participant.id));
     await audit(db, { projectId: inv.program.projectId, actorType: "user", actorId: userId, action: "creator_campaign.accept", target: fresh.participant.id, data: { to: address, proofUrl: proof } });
   });
@@ -157,9 +159,15 @@ export async function qualifiedOutcomes(db: DB, programId: string) {
       gte(s.conversionEvents.occurredAt, exp.startsAt!), lte(s.conversionEvents.occurredAt, exp.endsAt!), lte(s.conversionEvents.createdAt, exp.endsAt!)))
     .orderBy(s.conversionEvents.occurredAt, s.conversionEvents.id);
   const seen = new Set<string>();
+  const refunds = exp.successEvent === "purchase" ? await db.select().from(s.conversionEvents).where(and(eq(s.conversionEvents.projectId, program.projectId), eq(s.conversionEvents.eventType, "refund"), eq(s.conversionEvents.source, "webhook"), eq(s.conversionEvents.dataMode, "LIVE"))) : [];
+  const net = netPurchases([...rows.map(r => ({ id: r.event.id, type: r.event.eventType, orderId: typeof r.event.metadata.orderId === "string" ? r.event.metadata.orderId : null, customerId: r.event.visitorId, valueMicro: r.event.valueMicro, occurredAt: r.event.occurredAt })), ...refunds.map(e => ({ id: e.id, type: e.eventType, orderId: typeof e.metadata.orderId === "string" ? e.metadata.orderId : null, customerId: e.visitorId, valueMicro: e.valueMicro, occurredAt: e.occurredAt }))]);
+  const netById = new Map(net.purchases.map(p => [p.id, p.valueMicro]));
   return rows.filter(r => {
     const visitor = r.event.visitorId?.trim();
     if (!visitor || seen.has(visitor) || r.event.occurredAt < r.publishedAt || r.event.occurredAt > new Date()) return false;
+    if (exp.successEvent === "purchase" && (netById.get(r.event.id) ?? 0) <= 0) return false;
+    // Commerce payments get a 72-hour refund hold; the published 14-day campaign remains intact.
+    if (r.event.metadata.commerce === true && Date.now() < r.event.occurredAt.getTime() + 72 * 3_600_000) return false;
     seen.add(visitor); return true;
   });
 }
@@ -187,6 +195,13 @@ export async function proposeCreatorReward(db: DB, projectId: string, contributi
     const { program, experiment } = await programById(db, projectId, c.programId);
     const [p] = await db.select().from(s.creatorParticipants).where(eq(s.creatorParticipants.id, c.participantId));
     if (c.status !== "accepted" || !c.rewardMicro || p.status !== "verified") throw new Error("A verified creator and accepted post are required");
+    const outcomes = (await qualifiedOutcomes(db, program.id)).filter(o => o.participant === c.participantId);
+    const recalculated = rewardFor(program, c.score ?? 0, outcomes.length);
+    if (recalculated !== c.rewardMicro) {
+      await db.update(s.creatorContributions).set({ rewardMicro: recalculated, outcomeIds: outcomes.map(o => o.event.id) }).where(eq(s.creatorContributions.id, c.id));
+      await audit(db, { projectId, actorType: "system", action: "creator_campaign.reward_recalculated", target: c.id, data: { beforeMicro: c.rewardMicro, afterMicro: recalculated } });
+      c.rewardMicro = recalculated; c.outcomeIds = outcomes.map(o => o.event.id);
+    }
     const attempts = await db.select({ id: s.transactions.id }).from(s.transactions).where(eq(s.transactions.experimentId, experiment.id));
     return proposeFinancialAction(db, { projectId, input: { action: "send_payment", purpose: "kol_payment", recipient: p.payoutAddress,
       amount: microToDecimal(c.rewardMicro), currency: "USDC", chain: "Arc", experimentId: experiment.id, contributionId: c.id, installment: attempts.length + 1,

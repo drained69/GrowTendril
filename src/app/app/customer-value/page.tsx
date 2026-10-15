@@ -59,6 +59,8 @@ export default async function CustomerValue() {
         A referred customer used a campaign&apos;s link or code. Some of them would have found you anyway, so these numbers show where customers came from — not how many sales a campaign added. To measure lift, compare against a period or audience without the campaign.
       </Callout>
 
+      {(r.refundedMicro > 0 || r.unmatchedRefunds > 0) && <Callout title="Refund-adjusted revenue">{fmtUsdc(r.refundedMicro)} returned on matched referred orders. Fully refunded orders no longer count as paying customers. {r.unmatchedRefunds > 0 ? `${r.unmatchedRefunds} refund events need matching purchase records.` : ""}</Callout>}
+
       {r.gaps.length > 0 && (
         <Card>
           <CardHeader title="What's needed next" icon={<PlugZap />} description="Numbers below are only as complete as the events your product sends. Most fundamental first." />
@@ -84,7 +86,7 @@ export default async function CustomerValue() {
           <Stat label="Activated" value={<Ratio n={sum((x) => x.cohort.activated)} of={referred} />} sub={act} />
           <Stat label="Paying" value={<Ratio n={paying} of={referred} />} sub="≥1 purchase after referral" />
           <Stat label="Repeat" value={repeatEligible ? <Ratio n={sum((x) => x.cohort.repeat)} of={repeatEligible} /> : "—"} sub={repeatEligible ? `of ${repeatEligible} past the window` : "no cohort past the window yet"} />
-          <Stat label="Recorded revenue" value={anyValued ? fmtUsdc(revenue) : "—"} sub={anyValued ? "purchase values sent" : "no purchase values yet"} />
+          <Stat label="Net recorded revenue" value={anyValued ? fmtUsdc(revenue) : "—"} sub={anyValued ? "purchase values less matched refunds" : "no purchase values yet"} />
           <Stat label="Confirmed spend" value={fmtUsdc(confirmed)} sub={pending ? `+ ${fmtUsdc(pending)} pending` : "settled payments only"} />
         </StatStrip>
       )}

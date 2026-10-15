@@ -21,7 +21,7 @@ const STEPS = [
   { label: "Autonomy", sub: "Hard spending rules" },
 ];
 
-export default async function Onboarding({ searchParams }: { searchParams: Promise<{ new?: string; step?: string; manual?: string }> }) {
+export default async function Onboarding({ searchParams }: { searchParams: Promise<{ new?: string; step?: string; manual?: string; website?: string }> }) {
   const sp = await searchParams;
   const user = await requireUser();
   const db = await getDb();
@@ -67,7 +67,7 @@ export default async function Onboarding({ searchParams }: { searchParams: Promi
           <p className="mt-1 text-[13px] text-ink-3">{step === 1 && !sp.manual ? "One link is enough. Everything can be changed later in Settings." : "Four short steps. Everything here can be changed later in Settings."}</p>
         </div>
 
-        <ol className="mb-6 grid grid-cols-4 gap-2" aria-label="Onboarding progress">
+        {(step !== 1 || sp.manual) && <ol className="mb-6 grid grid-cols-4 gap-2" aria-label="Onboarding progress">
           {STEPS.map((x, i) => {
             const n = i + 1;
             const done = n < step;
@@ -87,7 +87,7 @@ export default async function Onboarding({ searchParams }: { searchParams: Promi
               </li>
             );
           })}
-        </ol>
+        </ol>}
 
         {user.isGuest && step === 1 && (
           <Callout tone="warn" title="Create an account" className="mb-4" action={<LinkButton href="/signup" size="xs" variant="primary">Create account</LinkButton>}>
@@ -97,8 +97,8 @@ export default async function Onboarding({ searchParams }: { searchParams: Promi
 
         {step === 1 && !sp.manual && (
           <Card>
-            <CardHeader title="Start with your website" description="Paste one link. GrowTendril reads your site, works out what you sell and who buys it, sets a first goal with safe limits, and starts finding customers and creators." icon={<Globe />} />
-            <QuickStartStep />
+            <CardHeader title="Find your first growth opportunity" description="Start with your website. Review the product profile and first goal, then run a market scan to find relevant customers and creators." icon={<Globe />} />
+            <QuickStartStep website={sp.website?.slice(0, 300)} />
             <CardFooter>
               <span>No website yet, or want to fill it in yourself?</span>
               <Link href={`/onboarding?manual=1${sp.new ? "&new=1" : ""}`} className="font-medium text-ink-2 hover:text-ink">

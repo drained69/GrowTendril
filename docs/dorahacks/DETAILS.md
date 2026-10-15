@@ -1,188 +1,177 @@
-# GrowTendril — an autonomous growth operator that pays in USDC on Arc
+# GrowTendril — an evidence-led growth operator with USDC payments on Arc
 
-**TL;DR.** GrowTendril is a full growth team for one website: it listens where your customers talk, shows you who is ready to buy, drafts first messages to the creators your customers already follow, proposes small experiments, and — when you say yes — pays creators and data sellers in **USDC on Arc mainnet**. Every payment is checked by a plain rules engine in code (not a prompt), limited to **10 USDC** per payment, verified against Arc as an independent witness, and left behind as a receipt you can inspect on-chain. Nothing moves without your approval.
+GrowTendril helps a small business move from a website to a measurable growth experiment. It reads permitted public sources, surfaces customer conversations and relevant creators, proposes a bounded test, records what the business approved, and reconciles payments and customer outcomes. The product is a working application and a set of composable Arc tools. A creator-reward escrow is deployed on Arc mainnet, but live creator payouts have **not** been routed through that escrow.
 
-Live at **[growtendril.xyz](https://growtendril.xyz)** · code at **[github.com/drained69/GrowTendril](https://github.com/drained69/GrowTendril)**
+**Product:** [growtendril.xyz](https://growtendril.xyz) · **Code:** [GrowTendril on GitHub](https://github.com/drained69/GrowTendril) · **Mainnet contract:** [OutcomeRewardsEscrow](https://explorer.arc.io/address/0x2964e74d30413de186f5f4936eb133ab815845d3) · **Source verification:** [Sourcify exact match](https://sourcify.dev/server/v2/verify/1c6ed23a-11ff-4440-a102-76dc05608be6)
 
-![Landing hero](https://raw.githubusercontent.com/drained69/GrowTendril/main/docs/dorahacks/01-landing-hero.png)
+**Arc mainnet contract address (chain ID 5042):** `0x2964e74d30413de186f5f4936eb133ab815845d3`
 
----
+![GrowTendril landing page](https://raw.githubusercontent.com/drained69/GrowTendril/main/docs/dorahacks/01-landing-hero.png)
 
-## The problem
+## The problem and the product
 
-Somewhere right now, someone is asking a public forum for exactly what you sell. Someone else is complaining about the competitor you beat. A creator your customers trust just posted about your category. **You will never see any of it** — there is too much, and it moves too fast. Growth, on paper, is a known loop: listen → test → spend → measure → do more of what worked. In practice it costs a human team weeks per month, and most teams don't have the team.
+A potential customer asks about your category in a public forum. A creator your audience trusts discusses the same problem. A competitor's customer complains about a gap you could fill. Small teams rarely have time to find these signals, test a response, follow up with creators, and measure whether any spending helped.
 
-Founders don't need another dashboard. They need an operator that does the chores — one that is **honest about what it saw**, **honest about what it spent**, and **cannot pay the wrong person**.
+GrowTendril connects those tasks in one workspace:
 
-That is what GrowTendril is.
+**Understand the business → collect source-linked evidence → choose a small experiment → review spending → observe customer events → reconcile the result.**
 
----
+It is an operator with review points, not a guarantee of customers or an automatic outreach bot. Scores and drafts help a human decide what to do. The application does not send unsolicited messages or promise that a referred purchase was caused by a campaign.
 
-## What it does, scene by scene
+## The journey, scene by scene
 
-1. **Paste your website.** GrowTendril reads your public pages (robots.txt respected) and builds a profile: what you sell, who your customers are, what they search for, who your competitors look like.
-2. **Listen.** It reads Reddit, Bluesky, Hacker News, YouTube, X and your RSS feeds through each platform's official or public API, scoring every post for intent, fit, recency and authenticity.
-3. **Show.** The customers page lists real posts from people ready to buy, each one with its score breakdown and a link to where it was said.
-4. **Shortlist creators** your customers already listen to — scored on what they publish, not on follower count. Automated accounts (bots, RSS feeds) are detected and capped so a vulnerability-feed bot doesn't score 100 on authenticity.
-5. **Propose a small experiment** with a hypothesis, a tracked link, a budget, a timeframe and a stop condition.
-6. **Draft the first message** to each creator; it never messages anyone on your behalf.
-7. **When you approve a payment,** GrowTendril sends the agreed USDC on Arc to a named recipient, reads it back from the chain and stores the receipt alongside the experiment.
-8. **Measure what converted.** The new **Customer value** view ties referred customers to confirmed (settled) spend, tells you cost per paying customer and payback, and recommends what to do next — only continue testing, improve the funnel, or stop spending.
+1. **Start with a website or a description.** A visitor can enter a public website on the landing page or describe the business. The website is carried through sign-in into onboarding. Public page fetching respects robots.txt; manual context remains possible when a website is unavailable. Entering a URL does not itself create a workspace or incur a scan charge. See website entry (src/components/marketing/website-start.tsx) and [onboarding routing](https://github.com/drained69/GrowTendril/blob/main/src/server/auth/next-step.ts).
+2. **Set a goal and sources.** The workspace records its audience, product, mission, budget, permitted providers and scan cadence. Owners can connect source credentials; availability depends on the provider and the workspace's configuration. The initial discovery journey does not require a funded payout wallet.
+3. **Find evidence.** A scan reads available public or authorized sources such as Reddit, Bluesky, Hacker News, YouTube, X and RSS feeds. It stores source references and scores intent, fit, recency and authenticity. A result is a lead to investigate, not a verified purchase intent or contact address.
+4. **Review customers and creators.** B2B company opportunities and individual public conversations appear with context and a link to the original source when available. Creators are evaluated for topical fit, activity, engagement quality and authenticity rather than follower count alone. Automated feeds and bot-like accounts receive capped authenticity scores.
+5. **Choose the next action.** Overview recommends one useful step based on workspace state: finish setup, inspect an active run, review an opportunity, handle an approval, add service credit or examine missing source coverage. Opportunity cards explain their rationale, proposed action, priority, confidence and known or unknown cost. They do not create a campaign or authorize payment.
+6. **Plan a bounded test.** Missions define goals and budgets. Experiments define a hypothesis, success event, tracked link, time frame and stop condition. A creator campaign adds a brief, slots, reward terms, evidence and a review process. The app drafts first messages; the business chooses whether to send them.
+7. **Apply payment policy.** A proposed money action is parsed into a structured action and evaluated by deterministic code. It becomes denied, awaits approval or is authorized. A person-to-person creator, bounty or partner payment requires a matching founder approval; bounded research purchases may be autonomous only when the owner explicitly enables that policy.
+8. **Settle on the appropriate Arc rail.** The current creator payout path uses a Circle-controlled workspace wallet and App Kit send. Paid data requests use Circle Gateway's x402 terms. Billing top-ups are direct USDC transfers to the configured billing address. Each has a different settlement contract or wallet path; a custom GrowTendril contract is not required for every on-chain transaction.
+9. **Check the result.** Direct sends are read back from Arc and compared with the approved recipient and amount. Mismatches and unexplained wallet outflows become exceptions. Gateway acceptance and later batch settlement remain distinct states. Receipts retain the decision, policy checks and available chain evidence.
+10. **Measure what followed.** First-party signup and purchase events, merchant commerce events where connected, refunds and referral links feed Customer value. It distinguishes recorded revenue, estimated profit based on an entered margin, confirmed versus pending costs, and small samples. Recommendations come from rules, not an LLM decision to spend.
 
-![Customer value](https://raw.githubusercontent.com/drained69/GrowTendril/main/docs/dorahacks/11-app-customer-value.png)
+![Customer value screen](https://raw.githubusercontent.com/drained69/GrowTendril/main/docs/dorahacks/11-app-customer-value.png)
 
-The recommendation rules are deterministic (see `src/server/domain/growth/customer-value.ts`): small-sample → "continue testing"; low activation → "improve the funnel"; past the stop-after-spend threshold with no payers → "stop spending". No LLM decides whether to spend your money.
+## What each product area is for
 
----
+| Area                                        | Operator decision or evidence                                                                                  |
+| ------------------------------------------- | -------------------------------------------------------------------------------------------------------------- |
+| Overview and Daily brief                    | What needs attention now, what changed, and the next useful action.                                            |
+| Discover and Narratives                     | Source-linked market signals and recurring language, with coverage dependent on connected sources.             |
+| Customers and Opportunities                 | Companies or individual public conversations, score explanations, original posts and reviewable proposals.     |
+| Creators and Influencer report              | Creator fit, a report, contact routes when known, and draft outreach for human review.                         |
+| Growth graph and Growth plan                | Relationships between evidence, audience, creators, goals and planned actions.                                 |
+| Missions and Experiments                    | Goal, budget, hypothesis, success event, time frame and stop rule.                                             |
+| Creator campaigns                           | Published reward terms, participant verification, submitted posts, qualified outcomes and final reward review. |
+| Customer value                              | Referred cohorts, purchases, matching refunds, net recorded revenue, confirmed spend and payback estimates.    |
+| Wallet, Approvals, Activity and Receipts    | Operating funds, exact payment decisions, Circle/Arc settlement state and auditable evidence.                  |
+| Agent runs, Integrations, Team and Settings | Execution history, provider and merchant connections, permissions, business context and spending policy.       |
 
-## Why Arc, specifically
+The sidebar keeps the common daily actions visible and places additional views in expandable groups. All routes remain available. See [navigation](https://github.com/drained69/GrowTendril/blob/main/src/components/layout/nav-config.ts) and the product review (docs/PRODUCT_REVIEW_ORIGAMI.md).
 
-GrowTendril is the kind of product Arc exists for: a stablecoin-native app that pays small amounts to many people, cheaply and verifiably, with no fiat rails to maintain. Every money path in the product runs on Arc mainnet:
+## Why Arc is part of the design
 
-### 1. **USDC is money.** No gas token.
+[Arc mainnet](https://docs.arc.io/arc/references/rpc-endpoints) uses chain ID 5042 and USDC as its native gas asset. A workspace can use USDC for fees and payments without acquiring a separate gas token. Arc exposes the same underlying USDC balance through native value with 18 decimals and an [ERC-20 interface](https://docs.arc.io/arc/concepts/stablecoin-native-model) at 0x3600000000000000000000000000000000000000 with 6 decimals. GrowTendril's business amounts use integer micro-USDC; native gas and native transfer values must be converted separately.
 
-Arc's native currency *is* USDC — the gas token and the thing you spend are the same asset. For founders this means they fund one wallet with one asset and the operator can run. For the product it means we can treat USDC as a unit of account end-to-end: every balance, invoice, budget, cap, receipt and ledger row is measured in micro-USDC. See `src/lib/money.ts` and `src/server/db/schema.ts` (the `micro` type).
+Arc's [system emitter](https://docs.arc.io/arc/concepts/stablecoin-native-model) logs USDC sends, ERC-20 transfers, mints and burns in 18-decimal units. An ERC-20 transfer also emits its 6-decimal token log. The [Arc reader](https://github.com/drained69/GrowTendril/blob/main/src/server/domain/billing/arc.ts) uses the system event for a complete movement view and avoids counting both logs as two payments. It checks the transaction receipt and the actual address and amount before treating a direct payout as verified. Gas deductions do not appear as transfer events.
 
-### 2. **One USDC balance, two interfaces.** We read both.
+A chain transaction is still possible without a new GrowTendril contract. Existing [Arc USDC, Gateway and CCTP contracts](https://docs.arc.io/arc/references/contract-addresses) already provide the token, paid-request and cross-chain primitives. A custom contract is useful when GrowTendril needs its own enforceable custody rule, such as holding a creator reward until a review and refund window closes.
 
-Arc exposes USDC as both native value (18 decimals) and the ERC-20 contract at `ARC.usdc` (6 decimals). A native send never calls the ERC-20 contract, so it emits no ERC-20 `Transfer` event. **GrowTendril solves that by reading the system emitter** at `0xffffFFFfFFffffffffffffffFfFFFfffFFFfFFfE`, which logs every USDC movement — native, ERC-20, mint, burn. It falls back to the ERC-20 log only when a receipt carries no system log. The real code lives in `src/server/domain/billing/arc.ts`:
+### Current payment routes
 
-```ts
-// Arc's system emitter logs a Transfer (18 decimals) for every USDC movement:
-// native sends, the native leg of ERC-20 transfers, mints and burns.
-export const SYSTEM_EMITTER = "0xffffFFFfFFffffffffffffffFfFFFfffFFFfFFfE";
-const NATIVE_PER_MICRO = 1_000_000_000_000n; // 18 − 6 decimals
-```
+| Flow                               | Current mechanism                                                              | What GrowTendril checks                                                                        | Relationship to our escrow                                                        |
+| ---------------------------------- | ------------------------------------------------------------------------------ | ---------------------------------------------------------------------------------------------- | --------------------------------------------------------------------------------- |
+| Creator, bounty and partner payout | Founder-approved Circle wallet/App Kit USDC send on Arc mainnet                | Policy, approved recipient and amount, Arc receipt, unexpected outflows                        | Mainnet escrow exists but production payouts have not switched to it.             |
+| Paid data purchase                 | Circle Gateway x402, using the seller's Arc Gateway terms                      | Quoted asset, network, contract, recipient and price; authorization limit; eventual settlement | A seller's Gateway verifying contract cannot be replaced with our creator escrow. |
+| Merchant sale                      | Merchant's configured AuthCaptureEscrow contract, if connected                 | Successful Arc receipt and decoded contract log; capture/refund lifecycle                      | Merchant funds stay in the merchant's contract. GrowTendril consumes evidence.    |
+| Billing top-up                     | User-signed USDC transfer to the configured billing address                    | Exact invoice amount, recipient, transaction and replay protection                             | No custom billing receiver is deployed.                                           |
+| Wallet funding and withdrawal      | Circle wallet and Arc USDC transfer                                            | Custody/network checks, owner authorization, destination and Arc evidence                      | No GrowTendril treasury vault is deployed.                                        |
+| Cross-chain bridge                 | App Kit implementation exists, but launch payment policy denies bridge actions | Mainnet policy rejects the action before execution                                             | The creator escrow is not a bridge.                                               |
 
-This matters because without it you would silently miss native sends — the fast path a wallet uses by default — and reconciliation would be wrong by exactly the amount Arc is best at.
+The account's **prepaid service credit** and its **operating wallet USDC** are separate balances. To fund scans, the user sends USDC from their own wallet to the Arc billing address shown on an invoice (`BILLING_ARC_ADDRESS`). After GrowTendril confirms that transfer, it credits the workspace owner's prepaid account. Each completed market scan deducts **2 USDC of credit in the application ledger**; running the scan does not send another on-chain transfer to any wallet or to the creator escrow. If a charged scan fails, its charge is refunded as credit. The separate Circle workspace wallet is for external purchases and founder-approved payouts to named recipients. Thus a credit-ledger entry is not itself an on-chain transfer.
 
-### 3. **The chain is the witness, not Circle.**
+### Billing on Arc
 
-Circle reporting a transaction as sent is not proof. GrowTendril only marks a payment **SETTLED** after Arc shows the approved amount reaching the approved address, and nothing else leaving the wallet in that transaction. Anything else is held as `unverified` or opened as a reconciliation exception. See `src/server/domain/reconcile/wallet.ts`:
+With BILLING_ARC_ADDRESS configured, a top-up creates a two-hour invoice for the requested amount plus a small unique micro-USDC suffix. The browser can prepare an ERC-20 transfer in the payer's own wallet; GrowTendril does not hold that wallet's key. The app checks the transfer on Arc, credits the amount received once, and records a receipt. Late, rounded, duplicate or unmatched payments go to a reviewable exception path. If billing is not configured, the deployment's billing mode can be off; development mode also exists for local testing. See [billing](https://github.com/drained69/GrowTendril/blob/main/src/server/domain/billing/index.ts), [Arc transfer reader](https://github.com/drained69/GrowTendril/blob/main/src/server/domain/billing/arc.ts) and [billing reconciliation](https://github.com/drained69/GrowTendril/blob/main/src/server/domain/reconcile/billing.ts).
 
-```ts
-// Arc as the independent witness for an agent wallet.
-//  confirmSend          — Arc shows the approved amount at the approved address.
-//  reconcileWalletOutflows — every USDC transfer out of the wallet must match a recorded payment.
-```
+![Arc billing screen](https://raw.githubusercontent.com/drained69/GrowTendril/main/docs/dorahacks/15-billing.png)
 
-The chain-check status is stored per transaction (`chainCheck`: `verified | mismatch | unverified`) so you can see at a glance whether the ledger agrees with Arc.
+### Circle wallets and Gateway
 
-### 4. **Billing is on-chain, exact-amount.**
+A live workspace wallet is a Circle developer-controlled Arc EOA. The server uses Circle credentials and an entity secret; the application never gives the creator or customer that wallet's private key. A TEST or malformed Circle API key is rejected for mainnet custody. See [wallet integration](https://github.com/drained69/GrowTendril/blob/main/src/server/integrations/circle/wallets.ts) and [chain configuration](https://github.com/drained69/GrowTendril/blob/main/src/server/integrations/circle/config.ts).
 
-Pay-per-service billing is paid in USDC on Arc. Each top-up is an invoice for an **exact** amount (the requested amount plus a few micro-USDC that identify the payment); the payer sends from a browser wallet (one click) or from any wallet. GrowTendril watches the billing address for the matching transfer and credits the balance. **No webhook, no payment processor, no card.** If someone rounds, pays after expiry, or pays twice, the reconciler opens a reviewable exception rather than silently sitting on the funds. See `src/server/domain/billing/arc.ts` + `src/server/domain/reconcile/billing.ts`.
+For x402 research, GrowTendril first requests the seller's payment terms. It accepts only the expected Arc USDC/Gateway option, runs policy against the quoted price, then creates a capped EIP-712 authorization. A seller cannot increase the amount beyond the approved maximum during payment creation. Gateway may accept the authorization before an on-chain batch settles, so the UI and ledger must not call that initial acceptance a confirmed individual on-chain payment. See [x402 integration](https://github.com/drained69/GrowTendril/blob/main/src/server/integrations/circle/x402.ts) and [settlement execution](https://github.com/drained69/GrowTendril/blob/main/src/server/domain/agent/execute.ts).
 
-![Billing on Arc](https://raw.githubusercontent.com/drained69/GrowTendril/main/docs/dorahacks/15-billing.png)
+![Operating wallet](https://raw.githubusercontent.com/drained69/GrowTendril/main/docs/dorahacks/12-app-wallet.png)
 
-The browser pay flow (`src/components/features/billing/pay-invoice.tsx`) adds Arc to the user's wallet if missing (`wallet_addEthereumChain`), switches to it, and calls `eth_sendTransaction` with the USDC ERC-20 `transfer` calldata. The sender's own wallet signs it; GrowTendril never touches their keys.
+## Spending rules and accountability
 
-### 5. **Wallets are Circle developer-controlled EOAs on Arc.**
+The [policy evaluator](https://github.com/drained69/GrowTendril/blob/main/src/server/domain/agent/policy.ts) returns ALLOW, APPROVAL_REQUIRED or DENY with a result for each rule. The default per-payment ceiling is **10 USDC**, and an owner can explicitly configure another ceiling. Deny-level rules such as the effective ceiling, mission budget, allowed chain and token, forbidden actions and wallet freeze cannot be waived by approving a request. Approval-level rules can be satisfied by a founder's approval of the exact decision. Autonomous spending starts off; when enabled, it is restricted to configured categories, transaction limits, daily limits and approved services. Payments to people still require approval.
 
-Each workspace gets its own dedicated **Circle wallet-set EOA on Arc mainnet** (`src/server/integrations/circle/wallets.ts`). Private keys live in Circle's custody; the server holds only the Circle API key and entity secret, server-side. A workspace wallet created on another chain never signs on Arc — the custody guard refuses it (`custodyProblem()` in `src/server/integrations/circle/config.ts`) and the UI explains why.
+The [ledger](https://github.com/drained69/GrowTendril/blob/main/src/server/domain/agent/ledger.ts) reserves committed spend, rechecks current rules before signing, and uses a conditional EXECUTING transition so concurrent workers cannot claim the same authorization. The [creator reward guard](https://github.com/drained69/GrowTendril/blob/main/src/server/domain/growth/creator-reward-guard.ts) also rechecks the accepted post, verified recipient, published amount, current eligible outcomes and previous payout attempts. A mismatch cannot be presented as a successful approved payout.
 
-![Wallet on Arc](https://raw.githubusercontent.com/drained69/GrowTendril/main/docs/dorahacks/12-app-wallet.png)
+Decision receipts record policy inputs, checks, approval and transaction evidence. Portable receipts (src/server/domain/agent/portable-receipts.ts) can carry an Ed25519 issuer signature when ARC_RECEIPT_SIGNING_KEY is configured; without that key, a digest alone does not authenticate who issued the receipt. See the receipt verifier (scripts/verify-arc-receipt.ts).
 
-### 6. **Circle Gateway + x402 for data purchases.**
+![Spending rules](https://raw.githubusercontent.com/drained69/GrowTendril/main/docs/dorahacks/02-landing-rules.png)
+![Decision receipts](https://raw.githubusercontent.com/drained69/GrowTendril/main/docs/dorahacks/03-landing-receipts.png)
 
-When the operator decides it's worth buying more intel on a company, it pays over **x402 through Circle Gateway**. We mirror `GatewayClient.pay()` but split it in two: `quote(url)` fetches the seller's terms (402 + `PAYMENT-REQUIRED`), the policy engine runs on the *quoted* price, and `pay(quote)` signs a `TransferWithAuthorization` (EIP-712) via `BatchEvmScheme`. The scheme's `onBeforePaymentCreation` hook enforces an absolute amount cap, so **a seller that changes its price between quote and payment cannot be paid more than was authorized.** See `src/server/integrations/circle/x402.ts`.
+## Creator campaigns, outcomes and refunds
 
-### 7. **The App Kit, used where it earns its place.**
+A live creator campaign publishes terms for a 14-day experiment: number of slots, base reward, quality bonus, outcome bonus and cap. A creator accepts those terms and submits a post. The business verifies the participant and payout address, reviews the post against its rubric, and completes final reward review after the campaign window. The proposed reward is recalculated immediately before payment. A confirmed customer purchase is eligible only under the campaign's attribution and timing rules; matching refunds reduce net purchase value and can remove pending outcome bonuses. Neither a public post nor a referral click alone proves revenue.
 
-Circle's App Kit is used for three things in GrowTendril: approved creator/bounty/partner **sends** (`appKitSend`), **bridging budget** to the chain a payment must land on (`appKitBridge`), and the **unified balance** that gives operators one chain-abstracted view of operating capital. See `src/server/integrations/circle/appkit.ts`.
+The optional merchant commerce connector provides stronger purchase evidence. An authorized merchant sends an order identifier, customer/referral association and transaction-log pointers. GrowTendril reads the pinned Arc network and merchant contract itself, requires a successful canonical receipt, decodes the payment event, and replays authorization, capture, charge, void and refund events idempotently. An authorization alone does not count as captured revenue. Order/customer/referral identity cannot change after registration. The chain proves a payment event; the merchant still attests which customer and referral belong to the order. The connector supports Arc testnet and mainnet configurations, but requires a real merchant contract and event feed before it produces live outcomes. See commerce connector (src/server/domain/growth/commerce.ts) and [integrations](https://github.com/drained69/GrowTendril/blob/main/src/app/app/integrations/page.tsx).
 
----
+Customer value applies matching refunds to recorded purchases, keeps unknown values visible, and bases cost-per-paying-customer and payback calculations on confirmed spend. Margin-based profit and payback remain estimates, and referral attribution is not proof of causal lift. See [customer value](https://github.com/drained69/GrowTendril/blob/main/src/server/domain/growth/customer-value.ts).
 
-## Your limits aren't suggestions. They're code.
+## The deployed creator escrow
 
-![Spend policy](https://raw.githubusercontent.com/drained69/GrowTendril/main/docs/dorahacks/02-landing-rules.png)
+**OutcomeRewardsEscrow mainnet address:** `0x2964e74d30413de186f5f4936eb133ab815845d3`
 
-The policy engine (`src/server/domain/agent/policy.ts`) runs on every payment proposal, in code, before anything is sent. It evaluates deterministic rules in order and emits an `ALLOW | APPROVAL_REQUIRED | DENY` verdict with a per-rule breakdown that lands on the Approvals page. Hard rules are enforced even against your own approval:
+**One GrowTendril contract has been deployed twice:** [Arc testnet](https://explorer.testnet.arc.io/address/0x2371d0f4a064d1eb5f154dd99d355a7f4fa71aa3) and [Arc mainnet](https://explorer.arc.io/address/0x2964e74d30413de186f5f4936eb133ab815845d3). The mainnet deployment transaction is [0x29d876…34a822](https://explorer.arc.io/tx/0x29d876d0d5ee161897959252af559a380fbb6511a409160edabe7b5b9134a822). Sourcify reported an exact creation-bytecode and runtime-bytecode match for the [mainnet source](https://sourcify.dev/server/v2/verify/1c6ed23a-11ff-4440-a102-76dc05608be6). Arc's explorer API blocked source publication with a Cloudflare challenge, so its own Contract tab may not yet display verified source. The deployment manifest (contracts/deployments/arc-mainnet.json) records the chain, address, constructor, source hash and verification status.
 
-- **Hard ceiling: 10 USDC per payment** (`LAUNCH_CEILING_USDC` in `src/server/domain/workspace/setup.ts`). An override above this is blocked, not warned. This is the mainnet launch cap.
-- **Daily cap** — rolls at UTC day start, resets automatically.
-- **Mission budget** — the ceiling for a goal, enforced against committed + pending spend.
-- **Named recipient only** — the operator cannot propose a payment without a recipient whose provenance is auditable (`src/server/domain/agent/payees.ts`).
-- **Chain allowlist** — Arc mainnet for creator payouts; the policy engine refuses cross-chain transfers at mainnet launch, so funds stay on Arc.
-- **Kill switch** — one toggle on the Wallet page freezes the wallet; every spend is then denied until a wallet manager resumes it.
-- **Your money stays yours** — the workspace owner can withdraw unused USDC to any Arc address at any time, confirmed by an emailed code bound to that exact amount and address, and recorded and checked on Arc like every other payment (`src/server/domain/agent/withdraw.ts`).
+OutcomeRewardsEscrow.sol (contracts/src/OutcomeRewardsEscrow.sol) is a prefunded, USDC-only reward pool. Each campaign fixes an owner, independent arbiter, deadline, maximum budget, reward formula, slot count and terms hash. The reward formula is base + quality bonus scaled from 0–100 + outcome bonus times eligible outcomes, within the campaign's cap. The owner can queue at most one reward per recipient after the campaign deadline and within a seven-day review window. A queued reward waits **72 hours** before claim. Before that hold ends, a qualifying refund can reduce its outcome bonus; owner or recipient can dispute, and the arbiter resolves release or rejection. Anyone can relay an eligible claim, but payment goes to the bound recipient. Unused, unreserved funds can be returned after the review window. The contract cannot itself determine whether a post was good or a customer event was genuine; those are business attestations supplied before queueing.
 
-Approval-level rules (daily/weekly caps, category caps, autonomous-amount caps) can be waived for one decision when you approve it, but **deny** rules (hard ceiling, mission budget, chain allowlist, kill switch) are re-checked at execution and still apply.
+The campaign escrow controls currently in the app connect **only to Arc testnet**. The mainnet contract was deployed and source-matched, but it was not funded or wired into live creator payouts at deployment. It has not received an independent security audit. The deployment and routing runbook (docs/ARC_DEPLOYMENT_RUNBOOK.md) tracks the remaining security review, testnet end-to-end exercise, production integration and reconciliation steps. Source verification is evidence that published source matches bytecode; it is not a security audit or a claim that every GrowTendril transaction flows through this contract.
 
-Everything is paired with a decision receipt — not an email summary, a stored row (`src/server/domain/agent/decisions.ts`, table `decision_receipts`) with the policy verdict, every rule's pass/fail, the inputs, the reasons, the on-chain hash and the explorer URL.
+## Composable tools for other Arc builders
 
-![Receipts](https://raw.githubusercontent.com/drained69/GrowTendril/main/docs/dorahacks/03-landing-receipts.png)
+The arc-growth-tools package (packages/arc-growth-tools/README.md) extracts parts of the workflow so an affiliate, marketplace, bounty or agent-payment app can use them without GrowTendril's UI, database or AI. It remains a **private package in this repository**, not a public registry release. The standalone example (examples/arc-outcome-demo.ts) imports the tools with fixtures and sends no transaction.
 
----
+| Module                              | Reusable job                                                                                                                         |
+| ----------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------ |
+| Commerce events                     | Normalize and replay contract events with chain, payment, transaction and log identity; calculate captured and refunded order state. |
+| Outcomes and rewards                | Apply a refund hold, calculate net purchases and capped creator rewards.                                                             |
+| Spending policy                     | Evaluate a typed intent, reserve against concurrent spend, bind approval to exact terms and reconcile ambiguous execution.           |
+| Arc payment evidence                | Check chain, token, sender, recipient and amount against an observed transfer.                                                       |
+| Portable receipts                   | Canonicalize evidence, sign with a configured issuer key and verify with an independently trusted public key.                        |
+| Recipient proof and escrow bindings | Bind a creator address to an invitation with a signed challenge; expose the escrow ABI and a deployed-code matcher.                  |
 
-## How a full cycle looks under the hood
+The package includes event definitions needed to interoperate with Circle's commerce example, with third-party attribution in its notices. The contribution is the composable **outcome-to-payout flow**: verified merchant payment → attributed and refund-aware customer outcome → bounded reward → policy and approval → Arc payout evidence. See the reference integration review (docs/ARC_COMPOSABLE_INTEGRATION_REVIEW.md) for the comparison with Circle's arc-commerce, arc-p2p-payments, arc-ecommerce-payments, arc-escrow, arc-nanopayments and arc-fintech examples.
 
-1. **Discover.** The operator schedules a cycle (manual, hourly, every 6h, or daily — each cycle = one priced market scan). Workers (`src/server/jobs/`) run signed reads against configured sources: Bluesky's open AppView, Reddit's public search feed (or official API where keys are present), Hacker News, YouTube, X, and RSS. Credentials are per-workspace and AES-256-GCM encrypted at rest (`src/server/security/secrets.ts`).
-2. **Score.** Posts, companies and creators are scored by deterministic components (intent, fit, recency, engagement quality, authority, authenticity). Bots are detected (handle, display name, bio, cadence, link-only share) and capped at 25 on authenticity and 34 overall.
-3. **Analyse.** The agent proposes experiments against a mission's goal, budget and stop condition.
-4. **Policy.** The policy engine runs on every money action. ALLOW → execute. APPROVAL_REQUIRED → inbox. DENY → the operator cannot even propose it.
-5. **Pay.** For creator payouts, the Circle wallet signs. For x402 data purchases, Gateway signs a `TransferWithAuthorization` through Batch EVM, capped by the quote.
-6. **Verify on Arc.** `confirmSend` reads the receipt, finds the Transfer log (system emitter first, ERC-20 fallback), confirms the right address got exactly the approved amount. Only then does the transaction become `SETTLED`.
-7. **Reconcile.** A separate job walks every USDC outflow from the agent wallet and matches it against recorded payments; anything else becomes an exception.
-8. **Measure.** Customer value joins referred customers to confirmed spend and recommends the next action — deterministically, from the data.
-9. **Notify.** If you've wired a Slack, Discord or signed JSON endpoint, the approval, payment, cycle and creator-post events fire with HMAC signatures and retries (`src/server/domain/notifications/webhooks.ts`).
+## Pricing and two kinds of USDC
 
----
+| GrowTendril service | Price when billing is enabled | What runs                                                                            |
+| ------------------- | ----------------------------: | ------------------------------------------------------------------------------------ |
+| Market scan         |               2 USDC per scan | Read connected sources, score signals, update the plan and propose tests.            |
+| Influencer report   |            3 USDC per refresh | Rebuild a creator report with available profiles, contact routes and draft messages. |
+| Campaign brief      |            2 USDC per rewrite | Generate a fresh brief; the first draft for a creator is free.                       |
 
-## Pricing: pay for what runs, in USDC on Arc
+Browsing, settings, team views and exports are not metered services. A failed charged service can receive an idempotent credit refund. Prices and top-up bounds are defined in [services.ts](https://github.com/drained69/GrowTendril/blob/main/src/lib/services.ts). Billing is deployment-dependent: production charges require a configured Arc billing address. **Service credit pays GrowTendril; the workspace wallet pays external recipients.** Moving credit between those concepts would require a separate financial design.
 
-![Pricing](https://raw.githubusercontent.com/drained69/GrowTendril/main/docs/dorahacks/04-landing-pricing.png)
+![Pricing screen](https://raw.githubusercontent.com/drained69/GrowTendril/main/docs/dorahacks/04-landing-pricing.png)
 
-- **Market scan — 2 USDC per scan.** One operator cycle: read sources, score, propose.
-- **Influencer report — 3 USDC per refresh.** Scout new creators, read their profiles, rebuild the report with contact routes.
-- **Campaign brief — 2 USDC per rewrite.** First draft per creator is free.
+## Trust boundaries and operational status
 
-Browsing, settings, team, exports and the growth plan are free. Credit never expires. A service that fails is refunded automatically. Prices are code (`src/lib/services.ts`).
+| Evidence                       | What it establishes                                       | What it does not establish                                      |
+| ------------------------------ | --------------------------------------------------------- | --------------------------------------------------------------- |
+| Source-linked public post      | What a source published at a particular URL/time          | The author will buy or that the post caused a sale.             |
+| Merchant-authenticated event   | Which merchant sent an order/referral claim               | That the claimed customer attribution is independently true.    |
+| Verified merchant Arc log      | A payment lifecycle event occurred at a pinned contract   | Who the off-chain customer is without the merchant association. |
+| Circle or Gateway status       | What the payment provider reports                         | A matching on-chain transfer until independently checked.       |
+| Arc receipt and movement check | Observed sender, recipient, amount and transaction status | Business value, marketing causality or contract security.       |
+| Sourcify exact match           | Published source reproduces deployed bytecode             | An independent security audit.                                  |
 
----
+Provider secrets are encrypted at rest with AES-256-GCM; inbound events use HMAC verification and a replay window; user-supplied outbound URLs pass through an SSRF guard. Workspace queries are permission-scoped. Payment proposals have idempotency keys, execution locks and explicit reconciliation states. A read-only [money-path doctor](https://github.com/drained69/GrowTendril/blob/main/scripts/doctor.ts) checks configured Circle and Arc dependencies without moving funds. See [security utilities](https://github.com/drained69/GrowTendril/blob/main/src/server/security) and [CI](https://github.com/drained69/GrowTendril/blob/main/.github/workflows/ci.yml).
 
-## Trust, by construction
+The application and contract have different readiness levels. The production app's creator payments still use approval plus Circle wallet sends. The optional testnet escrow UI is available for evaluation. The mainnet escrow is deployed and independently source-matched, but funding and production routing await contract review and a tested migration. Merchant commerce outcomes require an actual connected merchant. Passkey creator-wallet onboarding requires compatible Circle Modular Wallet mainnet configuration; the signed recipient proof path is present but configuration-dependent. Public-source coverage depends on provider access and credentials. Example or demo records must be identified as examples.
 
-- **AES-256-GCM** for provider credentials at rest, keyed by `ENCRYPTION_KEY`; secrets never leave the server.
-- **HMAC-signed** inbound events webhook with a 5-minute replay window (`src/server/security/hmac.ts`); signed JSON notifications on the way out; both over HTTPS only.
-- **SSRF guard** on every outbound HTTP call to a user-supplied URL (`src/server/security/public-http.ts`) — private, local and metadata addresses are blocked.
-- **Idempotency** everywhere money moves — every transaction row carries an `idempotencyKey` and the policy engine refuses duplicate proposals.
-- **Workspace isolation** — database rows are scoped by `project_id` and verified at every query boundary.
-- **Reproducible builds + CI** — typecheck, 290 tests and a production build run on every push to `main`.
-- **A read-only money-path doctor** — `npm run doctor` verifies the LIVE Circle key, the entity secret, Circle API access, Arc RPC and the current wallet's USDC/Gateway balance before you trust a deploy. It never moves funds.
+## Stack and validation
 
----
+- **Chain and contracts:** Arc mainnet for current live payment integrations; Arc testnet for escrow UI evaluation; Solidity 0.8.30 escrow with Cancun EVM settings.
+- **Application:** Next.js 15 App Router, React 19, strict TypeScript, Tailwind CSS 4 and Drizzle ORM over Postgres, with PGlite for local use.
+- **Wallets and payments:** Circle developer-controlled wallets, Circle App Kit, Gateway x402 batching, Arc USDC and viem reads.
+- **AI and jobs:** LLMs draft and analyze; deterministic code controls financial actions. Jobs are queued with retries, with a separate worker option.
+- **Authentication and operations:** email-code and Google sign-in, roles and permissions, encrypted integration secrets, notification webhooks and reconciliation jobs.
+- **Checks run for this workspace:** 340 application tests across 38 files passed on 15 October 2026; seven Arc Foundry escrow tests passed; TypeScript checking passed. These are implementation checks, not evidence of a live merchant sale or an independent audit.
 
-## Stack
+## A five-minute walkthrough
 
-- **Chain:** Arc mainnet (chainId 5042, USDC-native). RPC `https://rpc.mainnet.arc.io`.
-- **Custody:** Circle developer-controlled wallets, server-side.
-- **Rails:** Circle App Kit (send/bridge/unified balance), Circle Gateway + x402 batching (data purchases), direct wallet payment flow for billing top-ups.
-- **Reading Arc:** viem, system emitter + ERC-20, chunked `eth_getLogs` with cursor persistence.
-- **App:** Next.js 15 (App Router, server actions), TypeScript strict, Drizzle ORM over Postgres (PGlite locally), Tailwind v4.
-- **AI:** Gemini on free tier for launch (switchable to Claude via `LLM_PROVIDER=claude`). The LLM never decides whether to spend; it only drafts text and reads product sites.
-- **Jobs:** durable in-process queue with backoff retries; a standalone worker is available for multi-instance deploys.
-- **Email:** Resend. Google sign-in via OAuth 2.
-- **Deploy:** Railway, one service, Postgres with persistent storage. CI (GitHub Actions) runs typecheck, tests and the production build.
+1. Open the landing page, enter a website, and show that onboarding keeps the context without immediately charging for a scan.
+2. In Overview, explain the next recommended action. In Discover and Customers, open one source-linked signal and inspect why it scored well.
+3. Open Creators and a campaign. Show the published terms, human-reviewed post, capped reward and the distinction between draft outreach and sent outreach.
+4. In Experiments and Customer value, show a tracked link, actual or clearly marked demo customer events, a refund if available, confirmed spend and the recommendation's assumptions.
+5. In Wallet, Approvals and Receipts, show the exact recipient, amount, policy verdict, settlement state and Arc explorer link. Explain that a submitted transaction is not yet a verified transfer.
+6. For Arc builders, open the reusable package (packages/arc-growth-tools/README.md) and the [mainnet escrow source match](https://sourcify.dev/server/v2/verify/1c6ed23a-11ff-4440-a102-76dc05608be6). State that the escrow is deployed but the product's live creator payouts still use Circle's wallet route.
 
----
-
-## What is new in this submission
-
-- **Customer value** — a transparent, deterministic view that ties referred customers to confirmed Arc spend and recommends the next move.
-- **Hard mainnet guard** — TEST Circle keys are refused for mainnet operations; mis-chain wallets never sign.
-- **Money-path doctor** — read-only checks of the full Circle/Arc path, including Gateway balance.
-- **Outbound notifications** — Slack, Discord and signed-JSON webhooks for approvals, payments and cycles, over the job queue with retries and HMAC signatures.
-- **Honest fictional examples** — every illustrative figure on the landing page respects the 10 USDC per-payment cap the code enforces.
-
----
-
-## Try it in two minutes
-
-1. Go to **[growtendril.xyz](https://growtendril.xyz)** and sign in (email code or Google).
-2. Paste your website on the onboarding step. GrowTendril reads your public pages and fills in a profile.
-3. Pick a mission template (e.g. "Find 20 Buyers") and a small budget. Hard caps are enforced regardless.
-4. Open **Billing** and top up a few USDC on Arc (settles in about a second). Each market scan then costs 2 USDC.
-5. Click **Run cycle** on the overview. Watch the agent log, open the customers it found, and read the scores back to their sources.
-6. If and when it proposes a creator payment, approve it. Watch Arc confirm. Read the receipt.
-
-Everything that happens is a row you can inspect, and a hash you can look up on an Arc explorer.
+The honest claim is: **GrowTendril connects growth evidence, reviewable experiments, controlled Arc spending and measured outcomes.** Its reusable components let other Arc builders compose that path. The remaining production milestone is to review and exercise the escrow end to end before moving live creator funds through it.

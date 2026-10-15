@@ -1,10 +1,12 @@
 "use client";
+import Link from "next/link";
 import { useEffect, useState } from "react";
 import { CheckCircle2, Info, OctagonAlert, X } from "lucide-react";
 import { cn } from "@/components/ui/cn";
 
 type ToastKind = "success" | "error" | "info";
-type ToastItem = { id: number; kind: ToastKind; title: string; description?: string };
+type ToastAction = { label: string; href: string };
+type ToastItem = { id: number; kind: ToastKind; title: string; description?: string; action?: ToastAction };
 
 let seq = 0;
 const listeners = new Set<(t: ToastItem) => void>();
@@ -12,11 +14,11 @@ const listeners = new Set<(t: ToastItem) => void>();
 /** Fire-and-forget notifications from any client component. */
 export const toast = {
   success: (title: string, description?: string) => emit("success", title, description),
-  error: (title: string, description?: string) => emit("error", title, description),
+  error: (title: string, description?: string, action?: ToastAction) => emit("error", title, description, action),
   info: (title: string, description?: string) => emit("info", title, description),
 };
-function emit(kind: ToastKind, title: string, description?: string) {
-  const t = { id: ++seq, kind, title, description };
+function emit(kind: ToastKind, title: string, description?: string, action?: ToastAction) {
+  const t = { id: ++seq, kind, title, description, action };
   listeners.forEach((l) => l(t));
 }
 
@@ -40,6 +42,7 @@ export function Toaster() {
           <div className="min-w-0 flex-1">
             <div className="text-[13px] font-medium text-ink">{t.title}</div>
             {t.description && <div className="mt-0.5 break-words text-[12px] leading-snug text-ink-3">{t.description}</div>}
+            {t.action && <Link href={t.action.href} onClick={() => setItems((p) => p.filter((x) => x.id !== t.id))} className="mt-2 inline-block text-[12px] font-medium text-accent underline underline-offset-2">{t.action.label}</Link>}
           </div>
           <button aria-label="Dismiss" onClick={() => setItems((p) => p.filter((x) => x.id !== t.id))} className="shrink-0 text-ink-4 hover:text-ink [&_svg]:size-3.5">
             <X />
@@ -49,4 +52,3 @@ export function Toaster() {
     </div>
   );
 }
-

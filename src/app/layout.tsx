@@ -6,8 +6,9 @@ import "./globals.css";
 import { Toaster } from "@/components/ui/toast";
 
 export const metadata: Metadata = {
-  title: { default: "GrowTendril — your autonomous growth operator", template: "%s · GrowTendril" },
-  description: "Give your growth operator a goal and a budget. For shops, apps, services, software and developer tools alike, GrowTendril finds evidence-backed customers, conversations and creators, spends USDC within hard limits on Arc, measures what works and moves the next dollar there.",
+  metadataBase: new URL("https://growtendril.xyz"),
+  title: { default: "GrowTendril — find your next growth opportunity", template: "%s · GrowTendril" },
+  description: "Find relevant customers and creators, plan small growth experiments, and review recorded outcomes alongside spending. Start with your website and keep control of your budget.",
 };
 
 export const viewport: Viewport = { themeColor: [{ media: "(prefers-color-scheme: light)", color: "#f6f6f4" }, { media: "(prefers-color-scheme: dark)", color: "#0b0c0c" }] };

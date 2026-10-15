@@ -3,9 +3,9 @@ import { desc, eq } from "drizzle-orm";
 import { Lightbulb, Radar } from "lucide-react";
 import { requireProject } from "@/server/auth/current";
 import { schema as s } from "@/server/db/client";
-import { fmtUsdc } from "@/lib/money";
-import { Badge, Confidence, EmptyState, LinkButton, ModeBadge, PageHeader, StatusBadge, cn, type Tone } from "@/components/ui";
+import { EmptyState, LinkButton, ModeBadge, PageHeader, cn } from "@/components/ui";
 import { LinkTabs } from "@/components/ui/tabs";
+import { OpportunityCards } from "@/components/features/growth/opportunity-cards";
 
 const TYPES = ["ALL", "CUSTOMER", "KOL", "NARRATIVE", "PERSON", "PRODUCT_ISSUE", "COMPETITOR", "PARTNERSHIP", "CONTENT", "COMMUNITY", "EVENT"];
 const TYPE_LABEL: Record<string, string> = { ALL: "All", KOL: "Creator", PERSON: "Person asking", PRODUCT_ISSUE: "Product issue" };
@@ -15,7 +15,6 @@ const STATUSES = [
   { key: "dismissed", label: "Dismissed" },
 ];
 const typeLabel = (t: string) => TYPE_LABEL[t] ?? t.charAt(0) + t.slice(1).toLowerCase().replace(/_/g, " ");
-const typeTone = (t: string): Tone => (t === "PRODUCT_ISSUE" ? "bad" : t === "KOL" ? "accent" : t === "CUSTOMER" ? "info" : "neutral");
 
 export default async function Opportunities({ searchParams }: { searchParams: Promise<{ type?: string; status?: string }> }) {
   const { type = "ALL", status = "active" } = await searchParams;
@@ -31,7 +30,7 @@ export default async function Opportunities({ searchParams }: { searchParams: Pr
     <div className="space-y-4">
       <PageHeader
         title="Opportunities"
-        description="Everything GrowTendril found, prioritized. Each one answers: why this, why now, what evidence, what to do, and what it is worth spending."
+        description="Choose a next step from your collected market signals. Each recommendation shows why it matters, what you could do and the estimated spend."
         meta={
           <>
             <ModeBadge mode={project.dataMode} />
@@ -54,40 +53,7 @@ export default async function Opportunities({ searchParams }: { searchParams: Pr
       <LinkTabs param="type" tabs={TYPES.filter((t) => counts[t] > 0 || t === "ALL" || t === type).map((t) => ({ label: typeLabel(t), href: qs(t, status), value: t, count: counts[t] }))} />
 
       {rows.length ? (
-        <div className="grid gap-3 lg:grid-cols-2">
-          {rows.map((o) => (
-            <Link key={o.id} href={`/app/opportunities/${o.id}`} className="group flex flex-col rounded-[10px] border border-line bg-surface px-4 py-3.5 transition-colors hover:border-line-strong hover:bg-surface-2/40">
-              <div className="flex items-center gap-2 text-[11.5px] text-ink-3">
-                <span className="num text-ink-4">#{o.number}</span>
-                <Badge tone={typeTone(o.type)}>
-                  {typeLabel(o.type)}
-                  {o.secondaryType ? ` + ${typeLabel(o.secondaryType)}` : ""}
-                </Badge>
-                <span className="ml-auto flex items-center gap-1.5">
-                  {o.status !== "open" && <StatusBadge status={o.status} />}
-                  <ModeBadge mode={o.dataMode} />
-                </span>
-              </div>
-              <div className="mt-2 text-[13.5px] font-medium leading-snug text-ink">{o.title}</div>
-              <ul className="mb-3 mt-1.5 flex-1 space-y-1 text-[12px] leading-snug text-ink-2">
-                {o.whyNow.slice(0, 2).map((w, iw) => (
-                  <li key={`${iw}:${w}`} className="flex gap-2">
-                    <span className="mt-[6px] size-1 shrink-0 rounded-full bg-ink-4" />
-                    <span className="line-clamp-1">{w}</span>
-                  </li>
-                ))}
-              </ul>
-              <div className="flex items-center justify-between gap-3 border-t border-line pt-2.5">
-                <Confidence value={o.confidence} />
-                <span className="num flex items-center gap-3 text-[11.5px] text-ink-3">
-                  <span>EV {o.expectedValue}</span>
-                  <span>est. {fmtUsdc(o.estimatedCostMicro)}</span>
-                  <span className="text-ink">score {o.overallScore}</span>
-                </span>
-              </div>
-            </Link>
-          ))}
-        </div>
+        <OpportunityCards items={rows} />
       ) : (
         <EmptyState
           icon={<Lightbulb />}

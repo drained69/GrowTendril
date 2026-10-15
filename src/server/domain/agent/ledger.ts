@@ -26,7 +26,7 @@ import { notify } from "@/server/domain/notifications/webhooks";
  *                                          ├─► SETTLED
  *                                          └─► FAILED
  */
-export const TX_STATES = ["PROPOSED", "DENIED", "AWAITING_APPROVAL", "REJECTED", "AUTHORIZED", "EXECUTING", "SUBMITTED", "SETTLED", "SIMULATED", "FAILED"] as const;
+export const TX_STATES = ["PROPOSED", "DENIED", "AWAITING_APPROVAL", "REJECTED", "AUTHORIZED", "EXECUTING", "SUBMITTED", "SETTLED", "EXCEPTION", "SIMULATED", "FAILED"] as const;
 export type TxState = (typeof TX_STATES)[number];
 
 const ALLOWED: Record<TxState, TxState[]> = {
@@ -34,10 +34,11 @@ const ALLOWED: Record<TxState, TxState[]> = {
   AWAITING_APPROVAL: ["AUTHORIZED", "REJECTED", "DENIED"],
   AUTHORIZED: ["EXECUTING", "DENIED"],
   EXECUTING: ["SUBMITTED", "SETTLED", "FAILED"],
-  SUBMITTED: ["SETTLED", "FAILED"],
+  SUBMITTED: ["SETTLED", "EXCEPTION", "FAILED"],
   DENIED: [],
   REJECTED: [],
   SETTLED: [],
+  EXCEPTION: [],
   SIMULATED: [],
   FAILED: [],
 };
@@ -47,7 +48,7 @@ export function canTransition(from: TxState, to: TxState): boolean {
 }
 
 /** States whose amount counts as committed. Historical simulated rows are excluded. */
-export const SPENT_STATES: TxState[] = ["EXECUTING", "SUBMITTED", "SETTLED", "AUTHORIZED"];
+export const SPENT_STATES: TxState[] = ["EXECUTING", "SUBMITTED", "SETTLED", "EXCEPTION", "AUTHORIZED"];
 export const PENDING_STATES: TxState[] = ["AWAITING_APPROVAL"];
 
 export async function transition(db: DB, txId: string, to: TxState, patch: Partial<typeof s.transactions.$inferInsert> = {}, note?: string): Promise<boolean> {

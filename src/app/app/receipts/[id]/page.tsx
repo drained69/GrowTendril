@@ -6,8 +6,9 @@ import { schema as s } from "@/server/db/client";
 import { canonicalJson, sha256 } from "@/server/lib/ids";
 import { txExplorerUrl } from "@/server/integrations/circle/config";
 import { fmtUsdc } from "@/lib/money";
-import { Badge, Callout, Card, CardBody, CardHeader, ExternalLink, KeyValue, ModeBadge, PageHeader, StatusBadge, TxStateBadge, VerdictBadge, shortHash } from "@/components/ui";
+import { Badge, Callout, Card, CardBody, CardHeader, ExternalLink, KeyValue, LinkButton, ModeBadge, PageHeader, StatusBadge, TxStateBadge, VerdictBadge, shortHash } from "@/components/ui";
 import { CopyField } from "@/components/ui/copy";
+import { writeReceipt } from "@/server/domain/agent/decisions";
 
 type Body = {
   decision: number;
@@ -23,7 +24,7 @@ type Body = {
   autonomous: boolean;
   result: Record<string, unknown> | null;
   confidence: { before: number; after: number | null } | null;
-  payment: { rail: string; network: string; destination: string | null; state: string; settlementId: string | null; settlementStatus: string | null; txHash: string | null; batchTxHash: string | null; explorerUrl: string | null; responseDigest: string | null; trail: { from: string | null; to: string; at: string; note: string | null }[] } | null;
+  payment: { rail: string; network: string; destination: string | null; state: string; settlementId: string | null; settlementStatus: string | null; chainCheck?: string | null; txHash: string | null; batchTxHash: string | null; explorerUrl: string | null; responseDigest: string | null; trail: { from: string | null; to: string; at: string; note: string | null }[] } | null;
   dataMode: string;
   createdAt: string;
 };
@@ -35,7 +36,16 @@ const NETWORK_KEY: Record<string, string> = { "Arc Mainnet": "Arc", "Arc Testnet
 export default async function ReceiptPage({ params }: { params: Promise<{ id: string }> }) {
   const { id } = await params;
   const { project, db } = await requireProject();
-  const [r] = await db.select().from(s.decisionReceipts).where(and(eq(s.decisionReceipts.decisionId, id), eq(s.decisionReceipts.projectId, project.id)));
+  let [r] = await db.select().from(s.decisionReceipts).where(and(eq(s.decisionReceipts.decisionId, id), eq(s.decisionReceipts.projectId, project.id)));
+  if (!r) notFound();
+  if (sha256(canonicalJson(r.body)) === r.digest) {
+    const [tx] = await db.select().from(s.transactions).where(and(eq(s.transactions.projectId, project.id), eq(s.transactions.decisionId, id)));
+    const payment = (r.body as { payment?: { state?: string; chainCheck?: string | null } }).payment;
+    if (tx && (payment?.state !== tx.state || (payment.chainCheck ?? null) !== (tx.chainCheck ?? null))) {
+      await writeReceipt(db, id);
+      [r] = await db.select().from(s.decisionReceipts).where(and(eq(s.decisionReceipts.decisionId, id), eq(s.decisionReceipts.projectId, project.id)));
+    }
+  }
   if (!r) notFound();
   const b = r.body as unknown as Body;
   const intact = sha256(canonicalJson(r.body)) === r.digest;
@@ -68,10 +78,11 @@ export default async function ReceiptPage({ params }: { params: Promise<{ id: st
           </>
         }
         actions={
+          <div className="flex flex-wrap items-center gap-2"><LinkButton href={`/api/receipts/${id}`}>Export portable receipt</LinkButton>
           <Badge tone={intact ? "good" : "bad"} className="h-6 px-2 text-[11.5px]">
             {intact ? <ShieldCheck className="size-3.5" /> : <XCircle className="size-3.5" />}
             {intact ? "Digest verified" : "Digest mismatch"}
-          </Badge>
+          </Badge></div>
         }
       />
 
@@ -92,6 +103,7 @@ export default async function ReceiptPage({ params }: { params: Promise<{ id: st
                   ...(b.service ? [{ k: "Service", v: <span>{b.service.vendor} <span className="text-ink-3">({b.service.source === "circle_marketplace" ? "Circle Agent Marketplace" : "bundled x402 seller"})</span></span> }] : []),
                   ...(b.service?.resource ? [{ k: "Resource", v: <span className="num block max-w-[420px] truncate text-[11.5px] text-ink-2">{b.service.resource}</span> }] : []),
                   ...(b.costMicro != null ? [{ k: "Cost", v: <span className="num">{fmtUsdc(b.costMicro)}</span> }] : []),
+                  ...(p?.chainCheck ? [{ k: "Chain verification", v: p.chainCheck }] : []),
                   { k: "Status", v: b.payment ? <TxStateBadge state={status} /> : <StatusBadge status={status} /> },
                   { k: "Autonomy", v: b.autonomous ? "Autonomously approved by policy" : b.approval ? `Founder ${b.approval.status}` : "Human-initiated" },
                   ...(b.approval?.approvedMicro != null ? [{ k: "Approved amount", v: <span className="num">{fmtUsdc(b.approval.approvedMicro)}</span> }] : []),

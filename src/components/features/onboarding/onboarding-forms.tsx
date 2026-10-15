@@ -106,7 +106,7 @@ function AudiencePicker({ value, onChange }: { value: string; onChange: (v: stri
 }
 
 /** One link in, a working workspace out. */
-export function QuickStartStep() {
+export function QuickStartStep({ website = "" }: { website?: string }) {
   const [state, action, pending] = useActionState(quickStartAction, null);
   const [audience, setAudience] = useState("auto");
   const router = useRouter();
@@ -123,7 +123,7 @@ export function QuickStartStep() {
         <Field label="Your website" htmlFor="qs-url" required hint="GrowTendril reads your public pages (respecting robots.txt) and sets everything up. You can change anything afterwards.">
           <div className="relative">
             <Globe className="pointer-events-none absolute left-3 top-1/2 size-4 -translate-y-1/2 text-ink-4" />
-            <Input id="qs-url" name="url" required inputMode="url" autoComplete="url" placeholder="yourbusiness.com" autoFocus className="h-11 pl-9 text-[14px]" disabled={pending} />
+            <Input id="qs-url" name="url" required inputMode="url" autoComplete="url" placeholder="yourbusiness.com" defaultValue={website} autoFocus className="h-11 pl-9 text-[14px]" disabled={pending} />
           </div>
         </Field>
         <div>
@@ -139,9 +139,9 @@ export function QuickStartStep() {
         )}
         {!pending && state && !state.ok && <Callout tone="danger">{state.error}</Callout>}
       </div>
-      <StepFooter note="Payments always ask you first until you raise the limit in Settings.">
+      <StepFooter note="Setup is free. Paid scans use service credit. Creator payments always need approval.">
         <Button type="submit" variant="primary" size="md" loading={pending} icon={<Sparkles />}>
-          {pending ? "Setting things up…" : "Set everything up"}
+          {pending ? "Preparing your workspace…" : "Build my workspace"}
         </Button>
       </StepFooter>
     </form>

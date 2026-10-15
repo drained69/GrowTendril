@@ -23,6 +23,8 @@ import { WithdrawForm } from "@/components/features/wallet/withdraw-form";
 import { GAS_RESERVE_MICRO, withdrawable } from "@/server/domain/agent/withdraw";
 import { effectivePaymentCeiling } from "@/server/domain/agent/policy";
 import { exceptionsFor } from "@/server/domain/reconcile/exceptions";
+import { balanceMicro, billingMode } from "@/server/domain/billing";
+import { servicePriceMicro } from "@/lib/services";
 
 async function attempt<T>(fn: () => Promise<T>): Promise<{ v: T | null; err: string | null }> {
   try {
@@ -43,13 +45,14 @@ export default async function WalletPage() {
   const custody = platformCustody();
   const custodyIssue = custodyProblem();
 
-  const [wallet, spentToday, [policy], mission, jobs, exceptions] = await Promise.all([
+  const [wallet, spentToday, [policy], mission, jobs, exceptions, scanCredit] = await Promise.all([
     getWallet(db, pid),
     spentTodayMicro(db, pid),
     db.select().from(s.policies).where(eq(s.policies.projectId, pid)),
     activeMission(db, pid),
     recentJobs(db, pid, 60),
     exceptionsFor(db, { projectId: pid, scope: "wallet", limit: 30 }),
+    billingMode() === "off" ? Promise.resolve(null) : balanceMicro(db, project.ownerId),
   ]);
   const sum = mission ? await missionSummary(db, mission) : null;
   const live = walletIsLive(wallet);
@@ -60,11 +63,11 @@ export default async function WalletPage() {
   const canWithdraw = owner && live && !!address;
   const out = canWithdraw ? await attempt(() => withdrawable(db, pid)) : null;
 
-  // Earn recommendation input: 7-day run rate of submitted or settled payments.
+  // Earn recommendation input: 7-day run rate of committed payments, including exceptions under reconciliation.
   const [rate] = await db
     .select({ n: sql<string>`coalesce(sum(${s.transactions.amountMicro}),0)` })
     .from(s.transactions)
-    .where(and(eq(s.transactions.projectId, pid), inArray(s.transactions.state, ["SUBMITTED", "SETTLED"]), gte(s.transactions.createdAt, new Date(Date.now() - 7 * DAY_MS))));
+    .where(and(eq(s.transactions.projectId, pid), inArray(s.transactions.state, ["SUBMITTED", "SETTLED", "EXCEPTION"]), gte(s.transactions.createdAt, new Date(Date.now() - 7 * DAY_MS))));
   const weekly = Number(rate?.n ?? 0);
 
   const statusBadge = !address ? <Badge tone="warn">Not set up</Badge> : wallet?.frozen ? <Badge tone="bad" dot>Frozen</Badge> : live ? <Badge tone="good" dot>Active</Badge> : <Badge tone="warn">Cannot sign</Badge>;
@@ -91,6 +94,12 @@ export default async function WalletPage() {
         <Stat label="Spent today" value={fmtUsdc(spentToday, { unit: false })} sub={`limit ${fmtUsdc(policy?.dailySpendMicro, { unit: false })} USDC`} tone={policy && spentToday >= policy.dailySpendMicro ? "warn" : undefined} />
         <Stat label="Mission remaining" value={sum && mission ? fmtUsdc(mission.budgetMicro - sum.spent, { unit: false }) : "—"} sub={sum ? `${fmtUsdc(sum.available, { unit: false })} uncommitted` : "no active mission"} />
       </StatStrip>
+
+      {scanCredit != null && scanCredit < servicePriceMicro("scan") && (
+        <Callout tone="warn" title="Scan credit is low" action={<Link href={owner ? "/billing" : "/app/team"} className="text-[12px] font-medium text-accent underline">{owner ? "Add scan credit" : "Ask workspace owner"}</Link>}>
+          This wallet holds {balances.walletMicro == null ? "USDC for external payments" : fmtUsdc(balances.walletMicro)} for creator payouts and research. Market scans use a separate prepaid Billing balance, currently {fmtUsdc(scanCredit)}; each scan costs {fmtUsdc(servicePriceMicro("scan"))}. Wallet USDC is not charged automatically.
+        </Callout>
+      )}
 
       {balances.errors.length > 0 && (
         <Callout tone="warn" title="Live balance reads failed">

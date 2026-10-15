@@ -5,8 +5,8 @@ import { Clouds } from "@/components/ui/sky";
 
 const POINTS = [
   ["Find the signal", "Real people asking for what you sell — every one linked to its source."],
-  ["Set the boundary", "A goal and a budget. Nothing is paid until you approve it."],
-  ["Learn from the result", "Every action keeps a receipt and a measured outcome."],
+  ["Set the boundary", "Choose a goal, a budget and spending rules. Creator payments need your approval."],
+  ["Learn from the result", "Review decision receipts and the customer events connected to your experiments."],
 ];
 
 /** Shared frame for sign-in, sign-up and invite pages: open sky on the left, the form on the right. */
@@ -43,7 +43,7 @@ export function AuthShell({ children, title, description, footer }: { children: 
         </div>
         <p className="relative flex items-center gap-2 text-[12px] text-ink/55">
           <span className="live-halo size-1.5 rounded-full bg-good text-good" />
-          USDC on Arc · every payment approved by you
+          USDC on Arc · spending follows your rules
         </p>
       </aside>
 

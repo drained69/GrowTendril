@@ -176,7 +176,7 @@ export async function executeChainTx(db: DB, txId: string, log: Logger = () => {
     const [current] = await db.select().from(s.transactions).where(eq(s.transactions.id, txId));
     // The provider already submitted this payout. An RPC/receipt-write outage must never
     // make its committed amount disappear or let the founder pay the same work again.
-    if (current && ["SUBMITTED", "SETTLED"].includes(current.state)) {
+    if (current && ["SUBMITTED", "SETTLED", "EXCEPTION"].includes(current.state)) {
       await finish(db, current, current.state, current.txHash);
       return { state: current.state, txHash: current.txHash, message: `Payment sent; confirmation pending: ${msg}` };
     }
@@ -200,7 +200,7 @@ async function finish(db: DB, tx: typeof s.transactions.$inferSelect, state: str
   await updateDecision(db, tx.decisionId, { status: state === "FAILED" ? "failed" : "executed", result: { state, txHash } });
   if (tx.experimentId && state === "FAILED") await reopenExperiment(db, tx.experimentId);
   // A paid experiment starts running once its payment has gone out.
-  if (tx.experimentId && (state === "SETTLED" || state === "SUBMITTED")) {
+  if (tx.experimentId && (state === "SETTLED" || state === "SUBMITTED" || state === "EXCEPTION")) {
     await db.update(s.experiments).set({ status: "running", startsAt: new Date(), updatedAt: new Date() }).where(and(eq(s.experiments.id, tx.experimentId), inArray(s.experiments.status, ["proposed", "awaiting_approval"])));
   }
   await writeReceipt(db, tx.decisionId);
@@ -262,7 +262,7 @@ async function resolveApprovalPlan(db: DB, a: Parameters<typeof resolveApproval>
   const reallocationExperiments = parsed.data.action === "reallocate_budget" ? await db.select().from(s.experiments).where(and(eq(s.experiments.projectId, ap.projectId), eq(s.experiments.missionId, missionId))) : [];
   const remaining: Record<string, number> = {};
   for (const e of reallocationExperiments) {
-    const committed = (await db.select({ total: sql<string>`coalesce(sum(${s.transactions.amountMicro}), 0)` }).from(s.transactions).where(and(eq(s.transactions.experimentId, e.id), inArray(s.transactions.state, ["PROPOSED", "AWAITING_APPROVAL", "AUTHORIZED", "EXECUTING", "SUBMITTED", "SETTLED"]))))[0];
+    const committed = (await db.select({ total: sql<string>`coalesce(sum(${s.transactions.amountMicro}), 0)` }).from(s.transactions).where(and(eq(s.transactions.experimentId, e.id), inArray(s.transactions.state, ["PROPOSED", "AWAITING_APPROVAL", "AUTHORIZED", "EXECUTING", "SUBMITTED", "SETTLED", "EXCEPTION"]))))[0];
     remaining[e.id] = Math.max(0, e.budgetMicro - Number(committed.total));
   }
   const pstate = await loadPolicyState(db, { projectId: ap.projectId, missionId, category: tx?.budgetCategory ?? "research", experimentId: parsed.data.action === "send_payment" ? parsed.data.experimentId : undefined, excludeTxId: tx?.id, serviceKnown: true, experimentRemainingMicro: remaining });

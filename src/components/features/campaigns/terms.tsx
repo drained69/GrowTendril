@@ -8,7 +8,7 @@ export function CampaignTerms({ program: p, experiment: e }: { program: { brief:
       <p>Quality is scored 0–5 each for relevance, originality, usefulness and substantive discussion. Relevance, originality and usefulness each need 3/5 for acceptance. The quality bonus is proportional to the total score.</p>
       <p>Honest opinions, including criticism, are eligible. Sponsorship must be clearly disclosed. Copied posts, artificial engagement and unsupported claims are ineligible.</p>
       <p>Campaign: {e.startsAt?.toLocaleDateString("en-GB", { timeZone: "UTC" })}–{e.endsAt?.toLocaleDateString("en-GB", { timeZone: "UTC" })}. Ends {e.endsAt?.toISOString().slice(11,16)} UTC. Final review opens after the deadline; the business approves each payment.</p>
-      <p className="text-xs text-ink-3">Outcome bonuses count distinct customer identifiers from signed product events received during the campaign, after your post was published. The earliest qualifying referral wins within this campaign. Manual entries and visits do not earn bonuses. Mindshare is informational and does not change your reward.</p>
+      <p className="text-xs text-ink-3">Outcome bonuses count distinct customer identifiers from signed product events received during the campaign, after your post was published. The earliest qualifying referral wins within this campaign. Manual entries and visits do not earn bonuses. Purchases must retain positive value after refunds. Commerce purchases have a 72-hour refund hold; eligibility is checked again before payment. Mindshare is informational and does not change your reward.</p>
     </div>
   </div>;
 }

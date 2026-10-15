@@ -237,7 +237,7 @@ export async function deliveryEvidence(db: DB, exp: typeof s.experiments.$inferS
   const [first] = await db
     .select({ at: sql<Date | null>`min(${s.transactions.createdAt})` })
     .from(s.transactions)
-    .where(and(eq(s.transactions.experimentId, exp.id), inArray(s.transactions.state, ["SETTLED", "SUBMITTED"])));
+    .where(and(eq(s.transactions.experimentId, exp.id), inArray(s.transactions.state, ["SETTLED", "SUBMITTED", "EXCEPTION"])));
   const since = first?.at ? new Date(first.at) : exp.startsAt ?? exp.createdAt;
   const rows = await db
     .select({ type: s.conversionEvents.eventType, n: sql<number>`count(*)::int` })

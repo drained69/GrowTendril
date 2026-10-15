@@ -296,7 +296,7 @@ export default async function CampaignValue({ params }: { params: Promise<{ id: 
                   </span>
                 ),
                 state: <TxStateBadge state={t.state} />,
-                counts: <span className="text-[12px] text-ink-3">{t.budgetCategory === "treasury" ? "Not spend (treasury)" : t.state === "SETTLED" ? "Confirmed spend" : t.state === "SIMULATED" ? "Simulated" : ["DENIED", "REJECTED", "FAILED"].includes(t.state) ? "Not paid" : "Pending"}</span>,
+                counts: <span className="text-[12px] text-ink-3">{t.budgetCategory === "treasury" ? "Not spend (treasury)" : t.state === "SETTLED" ? "Confirmed spend" : t.state === "EXCEPTION" ? "Needs reconciliation" : t.state === "SIMULATED" ? "Simulated" : ["DENIED", "REJECTED", "FAILED"].includes(t.state) ? "Not paid" : "Pending"}</span>,
                 amount: <span className="num">{fmtUsdc(t.amountMicro)}</span>,
                 tx: t.explorerUrl ? <ExternalLink href={t.explorerUrl}>{shortHash(t.txHash, 4)}</ExternalLink> : <span className="text-ink-4">—</span>,
                 receipt: (

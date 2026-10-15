@@ -20,7 +20,7 @@ export async function runCycleAction(): Promise<ActionResult<{ jobId: string }>>
     const existing = await activeJob(db, project.id, "cycle");
     if (existing) return { ok: true, data: { jobId: existing.id }, message: "A cycle is already queued or running" };
     // The scan is charged when the worker starts it; check now so the person hears why at once.
-    if (!(await canAfford(db, project.ownerId, "scan"))) throw new InsufficientCredit("scan", await balanceMicro(db, project.ownerId));
+    if (!(await canAfford(db, project.ownerId, "scan"))) return { ok: false, error: new InsufficientCredit("scan", await balanceMicro(db, project.ownerId)).message, code: "INSUFFICIENT_CREDIT", nextHref: project.ownerId === user.id ? "/billing" : "/app/team" };
     const job = await enqueue(db, { kind: "cycle", projectId: project.id, trigger: "user", maxAttempts: 1 });
     kickWorker();
     return { ok: true, data: { jobId: job!.id } };

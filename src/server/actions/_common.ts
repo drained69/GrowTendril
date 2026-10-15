@@ -7,7 +7,7 @@ import { rateLimit, clientIp } from "@/server/security/ratelimit";
 import { ZodError } from "zod";
 
 /** Uniform result for server actions consumed by client components. */
-export type ActionResult<T = unknown> = { ok: true; data?: T; log?: { agent: string; message: string }[]; message?: string } | { ok: false; error: string };
+export type ActionResult<T = unknown> = { ok: true; data?: T; log?: { agent: string; message: string }[]; message?: string } | { ok: false; error: string; code?: "INSUFFICIENT_CREDIT"; nextHref?: "/billing" | "/app/team" };
 
 export class ActionError extends Error {}
 

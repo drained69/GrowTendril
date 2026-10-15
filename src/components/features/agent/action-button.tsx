@@ -6,7 +6,7 @@ import { Dialog } from "@/components/ui/dialog";
 import { toast } from "@/components/ui/toast";
 import { AgentLog } from "@/components/features/agent/agent-log";
 
-type Result = { ok: boolean; error?: string; message?: string; log?: { agent: string; message: string }[] };
+type Result = { ok: boolean; error?: string; code?: "INSUFFICIENT_CREDIT"; nextHref?: "/billing" | "/app/team"; message?: string; log?: { agent: string; message: string }[] };
 
 /**
  * Runs a server action, reports the outcome as a toast, refreshes server data, and (optionally)
@@ -50,7 +50,7 @@ export function ActionButton({
           start(async () => {
             try {
               const r = await action();
-              if (!r.ok) toast.error("Couldn’t complete that", r.error);
+              if (!r.ok) toast.error(r.code === "INSUFFICIENT_CREDIT" ? "Scan credit needed" : "Couldn’t complete that", r.error, r.code === "INSUFFICIENT_CREDIT" && r.nextHref ? { label: r.nextHref === "/billing" ? "Add credit in Billing" : "Ask workspace owner", href: r.nextHref } : undefined);
               else if (r.message) toast.success(r.message);
               if (r.ok && logTitle && r.log?.length) setLog(r.log);
               router.refresh();

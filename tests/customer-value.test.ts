@@ -335,4 +335,13 @@ describe("customer value report (database)", () => {
     expect(row.links).toHaveLength(3);
     expect(row.cost).toMatchObject({ confirmedMicro: toMicro(3), owedMicro: toMicro(2), uncommittedMicro: toMicro(400 - 3 - 2) });
   });
+
+  it("removes a fully refunded purchase from paying and revenue without mixing in testnet data", async () => {
+    await attribution.recordConversion(db,{projectId:"wsa",eventType:"refund",visitorId:"alice@example.com",idempotencyKey:"wsa:refund-A-1",valueMicro:toMicro(60),occurredAt:at(10),metadata:{orderId:"A-1"},source:"webhook",dataMode:"LIVE"});
+    await attribution.recordConversion(db,{projectId:"wsa",eventType:"purchase",visitorId:"alice@example.com",idempotencyKey:"wsa:testnet-order",valueMicro:toMicro(999),occurredAt:at(9),metadata:{orderId:"testnet-order"},source:"webhook",dataMode:"TESTNET"});
+    const r=await cv.loadCustomerValue(db,"wsa",NOW);
+    expect(r.rows[0].cohort).toMatchObject({paying:1,purchases:1,revenueMicro:toMicro(40)});
+    expect(r.refundedMicro).toBe(toMicro(60));
+    expect(r.events.some(e=>e.valueMicro===toMicro(999))).toBe(false);
+  });
 });

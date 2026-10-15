@@ -57,7 +57,7 @@ export async function updateDecision(db: DB, id: string, patch: Partial<typeof s
   await db.update(s.agentDecisions).set({ ...patch, updatedAt: new Date() }).where(eq(s.agentDecisions.id, id));
 }
 
-const TERMINAL = new Set(["SETTLED", "SIMULATED", "FAILED", "DENIED", "REJECTED"]);
+const TERMINAL = new Set(["SETTLED", "EXCEPTION", "SIMULATED", "FAILED", "DENIED", "REJECTED"]);
 
 /**
  * (Re)build the receipt for a decision from the ledger. The body is canonical JSON and its
@@ -94,6 +94,8 @@ export async function writeReceipt(db: DB, decisionId: string) {
           network: CHAINS[tx.chain]?.label ?? tx.chain,
           destination: tx.destChain ? CHAINS[tx.destChain]?.label ?? tx.destChain : null,
           state: tx.state,
+          chainCheck: tx.chainCheck,
+          chainCheckedAt: tx.chainCheckedAt?.toISOString() ?? null,
           settlementId: tx.settlementId,
           settlementStatus: tx.settlementStatus,
           txHash: tx.txHash,

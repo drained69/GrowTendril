@@ -69,3 +69,8 @@ venv/
 
 # ── Local notes / agent prompts ──
 CODEX_PROMPT.md
+
+# Rebuilt package and contract outputs
+packages/*/dist/
+contracts/out/
+contracts/cache/

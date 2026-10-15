@@ -1,5 +1,4 @@
 import Link from "next/link";
-import { ArrowRight } from "lucide-react";
 import { getDb } from "@/server/db/client";
 import { currentUser } from "@/server/auth/current";
 import { tractionMetrics } from "@/server/queries/metrics";
@@ -7,6 +6,7 @@ import { fmtUsdc } from "@/lib/money";
 import { Logo } from "@/components/layout/logo";
 import { Clouds } from "@/components/ui/sky";
 import { HeroWindow } from "@/components/marketing/hero-window";
+import { WebsiteStart } from "@/components/marketing/website-start";
 import { Chores, Faq, Finale, Footer, Guardrails, Intro, LiveCounts, Pricing, Receipts, Shortlist, Terms, Trio } from "@/components/marketing/sections";
 
 export const dynamic = "force-dynamic";
@@ -42,19 +42,14 @@ export default async function Landing() {
           <div className="relative z-10 mx-auto max-w-[1240px] px-5 pt-14 text-center sm:px-8 sm:pt-20">
             <div className="text-[14px] text-ink/55" style={{ animation: "rise-in 600ms cubic-bezier(0.2,0.75,0.2,1) both" }}>For shops, apps, services and software</div>
             <h1 className="display display-bounce mx-auto mt-5 text-[clamp(2.2rem,4.3vw,3.6rem)] leading-[1.1] text-ink" style={{ animation: "rise-in 700ms 80ms cubic-bezier(0.2,0.75,0.2,1) both" }}>
-              Your customers are asking for you.
+              Find your next customers.
               <br />
-              You just can&apos;t <span className="scribble">hear them</span> yet.
+              Know <span className="scribble">what to try</span> next.
             </h1>
             <p className="mx-auto mt-6 max-w-[600px] text-[clamp(1.05rem,1.6vw,1.25rem)] leading-[1.55] text-ink/65" style={{ animation: "rise-in 700ms 160ms cubic-bezier(0.2,0.75,0.2,1) both" }}>
-              GrowTendril listens where your customers talk, shows you who is ready to buy, and proposes a small, measured experiment — then waits for your yes before a dollar moves.
+              Start with your website. GrowTendril finds relevant conversations and creators, recommends small growth tests, and connects recorded results to what you spent.
             </p>
-            <div className="mt-9 flex flex-wrap items-center justify-center gap-3" style={{ animation: "rise-in 700ms 240ms cubic-bezier(0.2,0.75,0.2,1) both" }}>
-              <Link href={startHref} className="btn-sheen group inline-flex h-12 items-center gap-2 rounded-full bg-ink px-6 text-[15px] font-medium text-white shadow-[0_10px_24px_-12px_rgb(10_11_12/0.6)] transition-transform hover:-translate-y-0.5">
-                {startLabel} <ArrowRight className="size-4 transition-transform group-hover:translate-x-0.5" />
-              </Link>
-              <a href="#product" className="inline-flex h-12 items-center rounded-full bg-white/75 px-6 text-[15px] font-medium text-ink/80 backdrop-blur-sm transition-[transform,background-color] hover:-translate-y-0.5 hover:bg-white">See what it does</a>
-            </div>
+            <WebsiteStart signedIn={signedIn} />
             <div className="mt-16 pb-14 sm:mt-20 sm:pb-20" style={{ animation: "rise-in 900ms 360ms cubic-bezier(0.2,0.75,0.2,1) both" }}>
               <HeroWindow />
             </div>

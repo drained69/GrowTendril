@@ -27,7 +27,7 @@ export const DISCOVERY_API = process.env.CIRCLE_DISCOVERY_URL || "https://api.ci
 export const CHAINS: Record<string, { label: string; circle: string; explorer: string; caip2: string; rpc: string }> = {
   Arc: { label: "Arc Mainnet", circle: "ARC", explorer: ARC.explorer, caip2: ARC.caip2, rpc: ARC.rpcUrl },
   // Historical testnet records still need the correct explorer links.
-  Arc_Testnet: { label: "Arc Testnet", circle: "ARC-TESTNET", explorer: "https://testnet.arcscan.app", caip2: "eip155:5042002", rpc: process.env.ARC_TESTNET_RPC || "https://rpc.testnet.arc.network" },
+  Arc_Testnet: { label: "Arc Testnet", circle: "ARC-TESTNET", explorer: "https://explorer.testnet.arc.io", caip2: "eip155:5042002", rpc: process.env.ARC_TESTNET_RPC || "https://rpc.testnet.arc.io" },
   Base_Sepolia: { label: "Base Sepolia", circle: "BASE-SEPOLIA", explorer: "https://sepolia.basescan.org", caip2: "eip155:84532", rpc: "https://sepolia.base.org" },
   Arbitrum_Sepolia: { label: "Arbitrum Sepolia", circle: "ARB-SEPOLIA", explorer: "https://sepolia.arbiscan.io", caip2: "eip155:421614", rpc: "https://sepolia-rollup.arbitrum.io/rpc" },
   Ethereum_Sepolia: { label: "Ethereum Sepolia", circle: "ETH-SEPOLIA", explorer: "https://sepolia.etherscan.io", caip2: "eip155:11155111", rpc: "https://ethereum-sepolia-rpc.publicnode.com" },

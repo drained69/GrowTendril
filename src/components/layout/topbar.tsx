@@ -101,7 +101,7 @@ export function Topbar({ shell, notices, canOperate }: { shell: ShellProps; noti
               </>
             )}
           </Menu>
-          <RunAgentButton disabled={!canOperate} priceUsdc={shell.credit ? SERVICES.scan.priceUsdc : undefined} />
+          <RunAgentButton disabled={!canOperate} priceUsdc={shell.credit ? SERVICES.scan.priceUsdc : undefined} creditLow={shell.credit?.low} ownsCredit={shell.credit?.isOwner} />
         </div>
       </header>
       <CommandPalette open={palette} onOpenChange={setPalette} />

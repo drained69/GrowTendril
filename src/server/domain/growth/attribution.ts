@@ -18,6 +18,7 @@ export async function recordConversion(
   e: { projectId: string; eventType: ConversionEventType; referralCode?: string | null; visitorId?: string | null; idempotencyKey: string; occurredAt?: Date; source: "redirect" | "webhook" | "manual" | "demo"; valueMicro?: number; customName?: string | null; metadata?: Record<string, unknown>; dataMode: Mode },
 ): Promise<{ id: string; attributed: boolean; duplicate: boolean }> {
   if (!Number.isSafeInteger(e.valueMicro ?? 0) || (e.valueMicro ?? 0) < 0) throw new Error("Conversion value must be a nonnegative, safe integer amount of micro-USDC");
+  if (e.eventType === "refund" && (!e.visitorId?.trim() || typeof e.metadata?.orderId !== "string" || !e.metadata.orderId.trim() || !(e.valueMicro! > 0))) throw new Error("Refunds require a customer ID, metadata.orderId and positive value");
   return db.transaction(async (tx) => {
   const db = tx as unknown as DB;
   const campaign = e.referralCode ? (await db.select().from(s.campaigns).where(eq(s.campaigns.referralCode, e.referralCode)))[0] : undefined;

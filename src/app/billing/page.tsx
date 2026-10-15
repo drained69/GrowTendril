@@ -64,6 +64,7 @@ export default async function Billing() {
             <p className="mt-1.5 max-w-2xl text-[13px] leading-relaxed text-ink-3">
               Top up USDC on Arc once, then pay only for what runs. Each service has one fixed price, taken from your balance when it runs — whoever on your team starts it. Browsing, settings, team and exports are free.
             </p>
+            {mode !== "off" && <p className="mt-2 max-w-2xl text-[12.5px] leading-relaxed text-ink-3">This prepaid credit is separate from the workspace wallet shown on the Wallet page. Funding that wallet does not add scan credit; add credit here to run a market scan.</p>}
           </div>
 
           {mode === "off" && (

@@ -133,7 +133,7 @@ describe("payouts are settled only once Arc shows them", () => {
 
   it("flags a payout where Arc shows a different amount, or money going elsewhere", async () => {
     const { tx } = await payNext("exp-a", "u1", () => ({ status: "success", toRecipientMicro: usdc(4), elsewhere: [{ to: SWAPPED, amountMicro: usdc(1) }], blockNumber: 4_901n }));
-    expect(tx).toMatchObject({ state: "SETTLED", chainCheck: "mismatch" });
+    expect(tx).toMatchObject({ state: "EXCEPTION", chainCheck: "mismatch" });
     const [e] = await exceptions("payout_mismatch");
     expect(e).toMatchObject({ scope: "wallet", projectId: "p1", transactionId: tx.id, status: "open" });
     expect(e.detail).toMatch(/Approved: 5(\.00)? USDC/);

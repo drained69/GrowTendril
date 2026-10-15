@@ -27,5 +27,7 @@ export async function nextStep(db: DB, userId: string, invitedProject: string | 
   const destination = safeNext(requested);
   if (/^\/creator(?:\/invite\/[a-f0-9]{64})?$/.test(destination)) return destination;
   const [membership] = await db.select({ id: s.memberships.id }).from(s.memberships).innerJoin(s.projects, eq(s.memberships.projectId, s.projects.id)).where(and(eq(s.memberships.userId, userId), eq(s.projects.dataMode, "LIVE"))).limit(1);
-  return membership ? safeNext(requested) : "/onboarding";
+  // A website entered before sign-up must survive email/Google verification. Other
+  // app destinations still take a new account through setup first.
+  return membership || destination.split(/[?#]/, 1)[0] === "/onboarding" ? destination : "/onboarding";
 }

@@ -7,6 +7,7 @@ import { getWallet } from "@/server/integrations/circle/wallets";
 import { currentBlock, payoutInTx, transfersFrom } from "@/server/domain/billing/arc";
 import { transition } from "@/server/domain/agent/ledger";
 import { cursorGet, cursorSet, openException } from "@/server/domain/reconcile/exceptions";
+import { verifyTransfers } from "@arc-growth/evidence";
 
 /**
  * Arc as the independent witness for an agent wallet. Circle saying "sent" is not proof; the
@@ -48,9 +49,13 @@ export async function confirmSend(db: DB, txId: string): Promise<string> {
     return "FAILED";
   }
   const elsewhereMicro = r.elsewhere.reduce((n, e) => n + e.amountMicro, 0);
-  const ok = r.toRecipientMicro === tx.amountMicro && elsewhereMicro === 0;
+  const checked = verifyTransfers({ chainId: ARC.chainId, asset: ARC.usdc, sender: wallet.address, recipient: tx.recipient, amountMicro: tx.amountMicro }, {
+    status: "confirmed", chainId: ARC.chainId, txHash: tx.txHash, blockNumber: r.blockNumber?.toString(),
+    transfers: [{ chainId: ARC.chainId, asset: ARC.usdc, sender: wallet.address, recipient: tx.recipient, amountMicro: r.toRecipientMicro }, ...r.elsewhere.map(e => ({ chainId: ARC.chainId, asset: ARC.usdc, sender: wallet.address!, recipient: e.to, amountMicro: e.amountMicro }))],
+  });
+  const ok = checked.status === "verified";
   const seen = `${fmtUsdc(r.toRecipientMicro)} to ${short(tx.recipient)}${r.elsewhere.length ? ` and ${r.elsewhere.map((e) => `${fmtUsdc(e.amountMicro)} to ${short(e.to)}`).join(", ")}` : ""}`;
-  await transition(db, tx.id, "SETTLED", { chainCheck: ok ? "verified" : "mismatch", chainCheckedAt: now }, ok ? `Checked on Arc (block ${r.blockNumber}): ${fmtUsdc(tx.amountMicro)} reached ${short(tx.recipient)}` : `Arc shows ${seen}; approved was ${fmtUsdc(tx.amountMicro)} to ${short(tx.recipient)}`);
+  await transition(db, tx.id, ok ? "SETTLED" : "EXCEPTION", { chainCheck: ok ? "verified" : "mismatch", chainCheckedAt: now }, ok ? `Checked on Arc (block ${r.blockNumber}): ${fmtUsdc(tx.amountMicro)} reached ${short(tx.recipient)}` : `Arc shows ${seen}; approved was ${fmtUsdc(tx.amountMicro)} to ${short(tx.recipient)}`);
   if (!ok) {
     await openException(db, {
       scope: "wallet",
@@ -64,7 +69,7 @@ export async function confirmSend(db: DB, txId: string): Promise<string> {
       detail: `Approved: ${fmtUsdc(tx.amountMicro)} to ${tx.recipient}. Arc shows this transaction moved ${seen} from the agent wallet. ${txExplorerUrl(tx.chain, tx.txHash)}`,
     });
   }
-  return "SETTLED";
+  return ok ? "SETTLED" : "EXCEPTION";
 }
 
 /**

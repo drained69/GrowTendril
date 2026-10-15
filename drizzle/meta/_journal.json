@@ -113,6 +113,20 @@
       "when": 1792000000000,
       "tag": "0015_configurable_payment_ceiling",
       "breakpoints": true
+    },
+    {
+      "idx": 16,
+      "version": "7",
+      "when": 1792000000001,
+      "tag": "0016_commerce_outcomes",
+      "breakpoints": true
+    },
+    {
+      "idx": 17,
+      "version": "7",
+      "when": 1792000000002,
+      "tag": "0017_creator_wallet_proofs",
+      "breakpoints": true
     }
   ]
 }

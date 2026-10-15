@@ -1,3 +1,7 @@
+import { commerceSummary } from "@/server/domain/growth/commerce";
+import { CommerceForm } from "@/components/features/integrations/commerce-form";
+import { ARC } from "@/server/integrations/circle/config";
+import { fmtUsdc } from "@/lib/money";
 import type { ReactNode } from "react";
 import Link from "next/link";
 import { eq } from "drizzle-orm";
@@ -48,6 +52,7 @@ function dotTone(c: ProviderConnection): "good" | "warn" | "bad" | "idle" {
 export default async function Integrations() {
   const { project, role, db } = await requireProject();
   const [connections, [profile], notificationEndpoints, notificationDeliveries] = await Promise.all([listConnections(db, project.id), db.select({ audience: s.productProfiles.audience }).from(s.productProfiles).where(eq(s.productProfiles.projectId, project.id)), listEndpoints(db, project.id), recentDeliveries(db, project.id)]);
+  const commerce = await commerceSummary(db, project.id);
   const canManage = can(role, "manage_integrations");
   const origin = await appOrigin();
   const endpoint = `${origin}/api/events`;
@@ -84,6 +89,17 @@ curl -X POST ${endpoint} \\
         <Stat label="Need setup" value={missing} tone={missing ? "warn" : undefined} />
         <Stat label="Failing checks" value={errors} tone={errors ? "bad" : undefined} />
       </StatStrip>
+
+      <Card>
+        <CardHeader title="Commerce payments" description="Connect captured purchases and refunds to customer value and creator rewards." />
+        <CardBody className="space-y-4">
+          <CommerceForm canManage={canManage} mainnetChainId={ARC.chainId} connection={commerce.connection} />
+          <p className="text-xs text-ink-3">{commerce.connection?.lastEventAt ? `Last verified event: ${relTime(commerce.connection.lastEventAt)}` : "Waiting for verified merchant events."} Testnet orders stay separate from live revenue and rewards.</p>
+          <CopyField value={`${origin}/api/commerce/events`} />
+          <p className="text-xs text-ink-3">Use your workspace signing secret below. Report the order ID, payment hash, customer ID, referral and transaction log pointers. GrowTendril reads the payment facts from the connected contract.</p>
+          {commerce.orders.length > 0 && <div className="overflow-x-auto"><table className="w-full text-left text-xs"><thead><tr><th className="py-2">Order</th><th>Status</th><th>Captured</th><th>Refunded</th><th>Network</th></tr></thead><tbody>{commerce.orders.map(o => <tr key={o.id} className="border-t border-line"><td className="py-2">{o.merchantOrderId}</td><td>{o.status.replace(/_/g," ")}</td><td>{fmtUsdc(o.capturedMicro)}</td><td>{fmtUsdc(o.refundedMicro)}</td><td>{o.dataMode === "TESTNET" ? "Testnet" : "Mainnet"}</td></tr>)}</tbody></table></div>}
+        </CardBody>
+      </Card>
 
       <div className="grid gap-4 lg:grid-cols-2 xl:grid-cols-3">
         {ordered.map((c) => {
@@ -217,7 +233,7 @@ curl -X POST ${endpoint} \\
                 Optional fields: <code className="num">customName</code>, <code className="num">visitorId</code>, <code className="num">occurredAt</code> (ISO 8601), <code className="num">value</code> (USDC), <code className="num">metadata</code>.
               </p>
               <p className="mt-2 text-[11.5px] leading-snug text-ink-3">
-                For <Link href="/app/customer-value" className="text-s1 hover:underline">Customer value</Link>: send your own stable customer or account ID as <code className="num">visitorId</code> on every event about that customer. Send <code className="num">ref</code> at least once (e.g. on signup); later <code className="num">purchase</code> events with the same <code className="num">visitorId</code> are linked even without it. Include <code className="num">value</code> on purchases and <code className="num">metadata.orderId</code> so a resent order isn&apos;t counted twice. Use an opaque ID rather than an email where you can.
+                For <Link href="/app/customer-value" className="text-s1 hover:underline">Customer value</Link>: send your own stable customer or account ID as <code className="num">visitorId</code> on every event about that customer. Send <code className="num">ref</code> at least once (e.g. on signup); later <code className="num">purchase</code> events with the same <code className="num">visitorId</code> are linked even without it. Send a <code className="num">refund</code> event with the same customer ID, positive refunded value and original <code className="num">metadata.orderId</code> when money is returned. Include <code className="num">value</code> on purchases and <code className="num">metadata.orderId</code> so a resent order isn&apos;t counted twice. Use an opaque ID rather than an email where you can.
               </p>
             </div>
           </CardBody>

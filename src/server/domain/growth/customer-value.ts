@@ -1,3 +1,4 @@
+import { netPurchases } from "@arc-growth/outcomes";
 import { and, eq, inArray, sql } from "drizzle-orm";
 import type { DB } from "@/server/db/client";
 import * as s from "@/server/db/schema";
@@ -41,7 +42,7 @@ export const STOP_RECOVERY_SHARE = 1 / 3;
 
 /** Ledger states, split by what they mean for cost. */
 export const CONFIRMED_TX_STATES = ["SETTLED"] as const;
-export const PENDING_TX_STATES = ["PROPOSED", "AWAITING_APPROVAL", "AUTHORIZED", "EXECUTING", "SUBMITTED"] as const;
+export const PENDING_TX_STATES = ["PROPOSED", "AWAITING_APPROVAL", "AUTHORIZED", "EXECUTING", "SUBMITTED", "EXCEPTION"] as const;
 export const NOT_PAID_TX_STATES = ["DENIED", "REJECTED", "FAILED"] as const;
 
 // ───────────────────────────── pure core ─────────────────────────────
@@ -85,6 +86,8 @@ export function dedupeEvents(events: CvEvent[]): { events: CvEvent[]; duplicates
     }
     const key = !e.customerId
       ? `id:${e.id}`
+      : e.type === "refund"
+        ? `refund:${e.id}`
       : e.type === "purchase"
         ? e.orderKey
           ? `p:${e.customerId}:o:${e.orderKey}`
@@ -130,7 +133,7 @@ export function buildOutcomes(raw: CvEvent[], settings: CohortSettings, now = Da
   const events = [...raw].sort(byTime);
   const entries = new Map<string, { e: CvEvent; touched: Set<string> }>();
   for (const e of events) {
-    if (!e.customerId || !e.experimentId || e.type === "visit") continue;
+    if (!e.customerId || !e.experimentId || ["visit", "refund"].includes(e.type)) continue;
     const cur = entries.get(e.customerId);
     if (!cur) entries.set(e.customerId, { e, touched: new Set([e.experimentId]) });
     else cur.touched.add(e.experimentId);
@@ -144,7 +147,8 @@ export function buildOutcomes(raw: CvEvent[], settings: CohortSettings, now = Da
     const mine = byCustomer.get(customerId) ?? [];
     const after = mine.filter((x) => x.occurredAt >= entry.occurredAt);
     const activation = after.find((x) => x.type === settings.activationEvent);
-    const purchases = after.filter((x) => x.type === "purchase").map((x) => ({ id: x.id, at: x.occurredAt, valueMicro: x.valueMicro }));
+    const adjusted = netPurchases(after.map(x => ({ ...x, orderId: x.orderKey })));
+    const purchases = adjusted.purchases.filter(x => x.valueMicro > 0 || !after.some(r => r.type === "refund" && r.orderKey && r.orderKey === x.orderKey)).map((x) => ({ id: x.id, at: x.occurredAt, valueMicro: x.valueMicro }));
     const first = purchases[0];
     const repeat = !!first && purchases.slice(1).some((p) => p.at.getTime() - first.at.getTime() <= windowMs);
     out.push({
@@ -279,7 +283,7 @@ export function valueMetrics(c: CohortSummary, cost: CostBreakdown, marginPct: n
       ? insufficient("No referred customer has purchased yet")
       : c.valuedPurchases === 0
         ? insufficient(`${c.purchases} purchase${c.purchases === 1 ? "" : "s"} arrived without a value — send “value” with purchase events`)
-        : { value: c.revenueMicro, kind: "recorded", detail: c.unvaluedPurchases ? `Partial: ${c.unvaluedPurchases} of ${c.purchases} purchases had no value and add nothing` : `Sum of ${c.purchases} recorded purchase value${c.purchases === 1 ? "" : "s"}` };
+        : { value: c.revenueMicro, kind: "recorded", detail: c.unvaluedPurchases ? `Partial: ${c.unvaluedPurchases} of ${c.purchases} purchases had no value and add nothing` : `Sum of ${c.purchases} recorded purchase value${c.purchases === 1 ? "" : "s"}, after matching refunds` };
   const grossProfit: Metric =
     revenue.value == null ? insufficient(revenue.detail) : marginPct == null ? insufficient("Set a gross margin to estimate gross profit") : { value: Math.round((revenue.value * marginPct) / 100), kind: "estimate", detail: `Recorded revenue × your ${marginPct}% gross margin assumption` };
 
@@ -423,6 +427,8 @@ export interface CustomerValueReport {
   events: CvEvent[];
   ledger: LedgerRow[];
   duplicatesRemoved: number;
+  refundedMicro: number;
+  unmatchedRefunds: number;
   /** Experiments with no tracking link — they can't refer anyone, so they aren't compared. */
   untrackedExperiments: number;
   /** Project-wide counts per event type (same data mode), for setup guidance. */
@@ -448,7 +454,7 @@ export async function loadCustomerValue(db: DB, projectId: string, now = Date.no
   const [project] = await db.select({ dataMode: s.projects.dataMode }).from(s.projects).where(eq(s.projects.id, projectId));
   const dataMode: "LIVE" | "DEMO" = project?.dataMode === "DEMO" ? "DEMO" : "LIVE";
   // Demo events never mix into a live workspace's numbers.
-  const modeFilter = dataMode === "DEMO" ? eq(s.conversionEvents.dataMode, "DEMO") : sql`${s.conversionEvents.dataMode} <> 'DEMO'`;
+  const modeFilter = dataMode === "DEMO" ? eq(s.conversionEvents.dataMode, "DEMO") : eq(s.conversionEvents.dataMode, "LIVE");
   const config = await getCohortConfig(db, projectId);
 
   const exps = await db.select().from(s.experiments).where(eq(s.experiments.projectId, projectId));
@@ -480,7 +486,7 @@ export async function loadCustomerValue(db: DB, projectId: string, now = Date.no
         .where(and(eq(s.conversionEvents.projectId, projectId), inArray(s.attribution.experimentId, trackedIds), modeFilter))
     : [];
   // Follow referred customers into events they sent later, with or without a referral code.
-  const customerIds = [...new Set(attributed.filter((e) => e.type !== "visit" && e.customerId).map((e) => e.customerId!))];
+  const customerIds = [...new Set(attributed.filter((e) => !["visit", "refund"].includes(e.type) && e.customerId).map((e) => e.customerId!))];
   const followUps: Row[] = [];
   for (const ids of chunks(customerIds)) {
     followUps.push(
@@ -555,6 +561,7 @@ export async function loadCustomerValue(db: DB, projectId: string, now = Date.no
     events,
     ledger,
     duplicatesRemoved,
+    ...(() => { const n = netPurchases(events.map(e => ({ ...e, orderId: e.orderKey }))); return { refundedMicro: n.refundedMicro, unmatchedRefunds: n.unmatchedRefunds }; })(),
     untrackedExperiments: exps.length - tracked.length,
     eventTypeCounts,
     purchasesWithoutCustomer: anon?.noCustomer ?? 0,
@@ -597,4 +604,3 @@ export function setupGaps(r: Omit<CustomerValueReport, "gaps">): Gap[] {
 export function customerAlias(projectId: string, customerId: string): string {
   return `cus_${pseudonym(`customer:${projectId}`, customerId)}`;
 }
-

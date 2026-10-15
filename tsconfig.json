@@ -25,6 +25,9 @@
     "paths": {
       "@/*": [
         "./src/*"
+      ],
+      "@arc-growth/*": [
+        "./packages/arc-growth-tools/dist/*"
       ]
     }
   },
@@ -43,6 +46,7 @@
   "exclude": [
     "node_modules",
     ".data",
-    "video"
+    "video",
+    "packages/arc-growth-tools/dist"
   ]
 }

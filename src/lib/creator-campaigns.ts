@@ -1,3 +1,4 @@
+import { calculateReward } from "@arc-growth/outcomes";
 import { z } from "zod";
 import { toMicro } from "@/lib/money";
 
@@ -44,10 +45,7 @@ export const ReviewInput = z.object({
 });
 export function qualityScore(v: z.infer<typeof ReviewInput>) { return (v.relevance + v.originality + v.usefulness + v.discussion) * 5; }
 export function rewardFor(v: { baseMicro: number; qualityBonusMicro: number; outcomeBonusMicro: number; outcomeCap: number }, score: number, outcomes: number) {
-  const qualityReward = Number(BigInt(v.qualityBonusMicro) * BigInt(score) / 100n);
-  const reward = v.baseMicro + qualityReward + v.outcomeBonusMicro * Math.min(outcomes, v.outcomeCap);
-  if (!Number.isSafeInteger(reward) || reward < 0) throw new Error("Creator reward must be a nonnegative, safe integer amount of micro-USDC");
-  return reward;
+  return calculateReward(v, score, outcomes).totalMicro;
 }
 export function publicLink(value: string) {
   const u = new URL(value.trim());

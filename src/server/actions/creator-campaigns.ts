@@ -27,7 +27,7 @@ export async function inviteCreatorAction(programId: string, _: unknown, form: F
 export async function acceptCreatorAction(token: string, _: unknown, form: FormData): Promise<ActionResult<{ url: string }>> {
   try { const { user, db } = await creator();
     if (form.get("terms") !== "on") throw new Error("Accept the published campaign terms");
-    await acceptCreatorInvite(db, user.id, token, String(form.get("address") ?? ""), String(form.get("proof") ?? "")); refresh();
+    await acceptCreatorInvite(db, user.id, token, String(form.get("address") ?? ""), String(form.get("proof") ?? ""), form.get("walletProof") ? String(form.get("walletProof")) : undefined); refresh();
     return { ok: true, data: { url: "/creator" }, message: "Joined. The business will review your ownership proof." };
   } catch (e) { return fail(e); }
 }

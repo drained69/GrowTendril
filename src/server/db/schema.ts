@@ -700,6 +700,41 @@ export const conversionEvents = pgTable(
   (t) => [index("events_project_idx").on(t.projectId, t.eventType)],
 );
 
+/** Authenticated merchant connection, with network/contract pinned by the workspace owner. */
+export const commerceConnections = pgTable("commerce_connections", {
+  projectId: text("project_id").primaryKey().references(() => projects.id, { onDelete: "cascade" }),
+  chainId: integer("chain_id").notNull(),
+  contract: text("contract").notNull(),
+  merchantAddress: text("merchant_address").notNull(),
+  status: text("status").notNull().default("connected"),
+  lastEventAt: timestamp("last_event_at", { withTimezone: true }),
+  updatedAt: updatedAt(),
+});
+export const commerceOrders = pgTable("commerce_orders", {
+  id: id(), projectId: text("project_id").notNull().references(() => projects.id, { onDelete: "cascade" }),
+  paymentId: text("payment_id").notNull(), merchantOrderId: text("merchant_order_id").notNull(),
+  chainId: integer("chain_id").notNull(), contract: text("contract").notNull(),
+  customerId: text("customer_id").notNull(), referralCode: text("referral_code"),
+  authorizedMicro: micro("authorized_micro").notNull().default(0), capturedMicro: micro("captured_micro").notNull().default(0),
+  refundedMicro: micro("refunded_micro").notNull().default(0), status: text("status").notNull().default("reserved"),
+  dataMode: dataMode("data_mode").notNull(), createdAt: createdAt(), updatedAt: updatedAt(),
+}, t => [uniqueIndex("commerce_payment_uq").on(t.projectId, t.chainId, t.contract, t.paymentId), uniqueIndex("commerce_order_uq").on(t.projectId, t.merchantOrderId)]);
+export const commerceEvents = pgTable("commerce_events", {
+  id: id(), orderId: text("order_id").notNull().references(() => commerceOrders.id, { onDelete: "cascade" }),
+  projectId: text("project_id").notNull().references(() => projects.id, { onDelete: "cascade" }),
+  eventKey: text("event_key").notNull(), body: jsonb("body").$type<Record<string, unknown>>().notNull(),
+  createdAt: createdAt(),
+}, t => [uniqueIndex("commerce_event_uq").on(t.projectId, t.eventKey)]);
+
+export const creatorWalletChallenges = pgTable("creator_wallet_challenges", {
+  id: id(), userId: text("user_id").notNull().references(() => users.id, { onDelete: "cascade" }),
+  participantId: text("participant_id").notNull().references(() => creatorParticipants.id, { onDelete: "cascade" }),
+  address: text("address").notNull(), chainId: integer("chain_id").notNull(), message: text("message").notNull(),
+  expiresAt: timestamp("expires_at", { withTimezone: true }).notNull(),
+  verifiedAt: timestamp("verified_at", { withTimezone: true }), consumedAt: timestamp("consumed_at", { withTimezone: true }),
+  createdAt: createdAt(),
+});
+
 export const attribution = pgTable("attribution", {
   id: id(),
   conversionEventId: text("conversion_event_id").notNull().unique().references(() => conversionEvents.id, { onDelete: "cascade" }),

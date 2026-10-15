@@ -2,8 +2,8 @@
 import { useEffect, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
 import Link from "next/link";
-import { Loader2, Play } from "lucide-react";
-import { Button } from "@/components/ui/button";
+import { Coins, Loader2, Play } from "lucide-react";
+import { Button, LinkButton } from "@/components/ui/button";
 import { toast } from "@/components/ui/toast";
 import { AgentLog } from "@/components/features/agent/agent-log";
 import { jobStatusAction, runCycleAction } from "@/server/actions/agent";
@@ -11,7 +11,7 @@ import { Dialog } from "@/components/ui/dialog";
 import { Callout } from "@/components/ui/misc";
 
 /** Queues an operator cycle on the job worker and streams its log by polling the job. */
-export function RunAgentButton({ disabled, priceUsdc }: { disabled?: boolean; priceUsdc?: number }) {
+export function RunAgentButton({ disabled, priceUsdc, creditLow, ownsCredit }: { disabled?: boolean; priceUsdc?: number; creditLow?: boolean; ownsCredit?: boolean }) {
   const [jobId, setJobId] = useState<string | null>(null);
   const [status, setStatus] = useState<string | null>(null);
   const [log, setLog] = useState<{ agent: string; message: string }[]>([]);
@@ -37,10 +37,10 @@ export function RunAgentButton({ disabled, priceUsdc }: { disabled?: boolean; pr
           setLog(r.data.log);
           if (r.data.status === "done" || r.data.status === "failed") {
             if (r.data.skipped) {
-              const message = r.data.skipped === "balance too low" ? "The balance is too low for a scan — top up in Billing." : r.data.skipped;
+              const message = r.data.skipped === "balance too low" ? "Prepaid scan credit is too low. Wallet USDC is separate; add credit in Billing." : r.data.skipped;
               setError(message);
               setStatus("skipped");
-              toast.error("Scan didn’t run", message);
+              toast.error("Scan didn’t run", message, r.data.skipped === "balance too low" ? { label: ownsCredit ? "Add credit in Billing" : "Ask workspace owner", href: ownsCredit ? "/billing" : "/app/team" } : undefined);
             } else if (r.data.status === "done") toast.success("Agent cycle complete", `${r.data.log.length} steps — see the log for decisions`);
             else {
               setError(r.data.error ?? "The worker could not complete this cycle.");
@@ -58,9 +58,12 @@ export function RunAgentButton({ disabled, priceUsdc }: { disabled?: boolean; pr
     };
     void poll();
     return () => { stopped = true; clearTimeout(timer); };
-  }, [jobId, router]);
+  }, [jobId, router, ownsCredit]);
 
   const running = !!jobId;
+  if (creditLow && !running && !starting && !disabled) {
+    return <LinkButton href={ownsCredit ? "/billing" : "/app/team"} variant="primary" icon={<Coins />}>{ownsCredit ? "Add scan credit" : "Request scan credit"}</LinkButton>;
+  }
   return (
     <div className="relative">
       <Button
@@ -68,7 +71,7 @@ export function RunAgentButton({ disabled, priceUsdc }: { disabled?: boolean; pr
         size="sm"
         disabled={disabled}
         loading={starting}
-        title={priceUsdc ? `Run a market scan now — ${priceUsdc} USDC from the balance` : "Run a market scan now"}
+        title={priceUsdc ? `Run a market scan now — ${priceUsdc} USDC from prepaid billing credit` : "Run a market scan now"}
         icon={running ? <Loader2 className="animate-spin" /> : <Play />}
         onClick={async () => {
           if (running) return setOpen(true);
@@ -77,7 +80,13 @@ export function RunAgentButton({ disabled, priceUsdc }: { disabled?: boolean; pr
           setStarting(true);
           try {
             const r = await runCycleAction();
-            if (!r.ok) return toast.error("Couldn’t start the agent", r.error);
+            if (!r.ok) {
+              if (r.code === "INSUFFICIENT_CREDIT") {
+                router.refresh();
+                return toast.error("Scan credit needed", r.error, { label: r.nextHref === "/app/team" ? "Ask workspace owner" : "Add credit in Billing", href: r.nextHref ?? "/billing" });
+              }
+              return toast.error("Couldn’t start the agent", r.error);
+            }
             if (!r.data?.jobId) return toast.error("Couldn’t start the agent", "No job was returned. Try again.");
             setError(null);
             setLog([]);

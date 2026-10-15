@@ -1,6 +1,6 @@
 /** Pure helpers for attribution primitives (UTM links + referral codes). */
 
-export const CONVERSION_EVENTS = ["visit", "signup", "lead", "booking", "app_install", "demo_request", "purchase", "wallet_connect", "sdk_key_created", "sdk_install", "custom"] as const;
+export const CONVERSION_EVENTS = ["visit", "signup", "lead", "booking", "app_install", "demo_request", "purchase", "refund", "wallet_connect", "sdk_key_created", "sdk_install", "custom"] as const;
 export type ConversionEventType = (typeof CONVERSION_EVENTS)[number];
 
 export const EVENT_LABEL: Record<ConversionEventType, string> = {
@@ -14,6 +14,7 @@ export const EVENT_LABEL: Record<ConversionEventType, string> = {
   sdk_install: "SDK install",
   demo_request: "Demo or quote request",
   purchase: "Purchase",
+  refund: "Refund",
   custom: "Custom",
 };
 

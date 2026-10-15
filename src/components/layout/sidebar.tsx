@@ -1,8 +1,8 @@
 "use client";
 import Link from "next/link";
 import { usePathname } from "next/navigation";
-import { Check, ChevronsUpDown, Coins, LogOut, Plus } from "lucide-react";
-import { ALL_NAV, NAV } from "@/components/layout/nav-config";
+import { Check, ChevronDown, ChevronsUpDown, Coins, LogOut, Plus } from "lucide-react";
+import { ALL_NAV, NAV, type NavItem } from "@/components/layout/nav-config";
 import { Menu, MenuItem, MenuLabel, MenuSeparator } from "@/components/ui/menu";
 import { Avatar } from "@/components/ui/misc";
 import { StatusDot } from "@/components/ui/badge";
@@ -51,6 +51,23 @@ function WorkspaceSwitcher({ workspace, workspaces, isGuest }: Pick<ShellProps, 
 
 export function Sidebar(p: ShellProps & { onNavigate?: () => void }) {
   const path = usePathname();
+  const activeHref = ALL_NAV.filter((n) => (n.href === "/app" ? path === "/app" : path === n.href || path.startsWith(`${n.href}/`))).sort((a, b) => b.href.length - a.href.length)[0]?.href;
+  function item(it: NavItem) {
+    const active = it.href === activeHref;
+    const Icon = it.icon;
+    return (
+      <li key={it.href}>
+        <Link href={it.href} aria-current={active ? "page" : undefined} onClick={p.onNavigate}
+          className={cn("group relative flex h-9 items-center gap-2.5 rounded-[12px] px-2.5 text-[13.5px] transition-[background-color,color,transform,box-shadow] duration-200 active:scale-[0.98]", active ? "bg-surface font-medium text-ink shadow-[0_0_0_1px_rgb(10_11_12/0.06),0_2px_8px_-3px_rgb(10_11_12/0.14)] dark:shadow-[0_0_0_1px_rgb(255_255_255/0.07)]" : "text-ink-3 hover:translate-x-0.5 hover:bg-surface/70 hover:text-ink")}
+        >
+          <Icon className={cn("size-[16px] shrink-0 transition-transform duration-300 group-hover:-rotate-6", active ? "text-accent" : "text-ink-4 group-hover:text-ink-2")} strokeWidth={1.75} />
+          <span className="flex-1 truncate">{it.label}</span>
+          {active && <span className="size-1.5 rounded-full bg-accent" />}
+          {it.badge === "approvals" && p.pendingApprovals > 0 && <span className="num rounded-full bg-warning/15 px-1.5 text-[10.5px] font-medium text-warning ring-1 ring-warning/30">{p.pendingApprovals}</span>}
+        </Link>
+      </li>
+    );
+  }
   return (
     <div className="flex h-full flex-col bg-surface-2/70">
       <div className="px-5 pb-2 pt-5">
@@ -61,34 +78,23 @@ export function Sidebar(p: ShellProps & { onNavigate?: () => void }) {
       </div>
       <nav className="flex-1 space-y-6 overflow-y-auto px-3 pb-4 pt-1" aria-label="Main">
         {NAV.map((g, gi) => {
-          // Only the most specific matching item is active (e.g. /app/kols/report, not also /app/kols).
-          const activeHref = ALL_NAV.filter((n) => (n.href === "/app" ? path === "/app" : path === n.href || path.startsWith(`${n.href}/`))).sort((a, b) => b.href.length - a.href.length)[0]?.href;
-          const items = g.items;
-          if (!items.length) return null;
+          const primary = g.items.filter((it) => !it.secondary);
+          const secondary = g.items.filter((it) => it.secondary);
           return (
             <div key={gi}>
               {g.section && <div className="label mb-2 px-2.5">{g.section}</div>}
               <ul className="space-y-0.5">
-                {items.map((it) => {
-                  const active = it.href === activeHref;
-                  const Icon = it.icon;
-                  return (
-                    <li key={it.href}>
-                      <Link
-                        href={it.href}
-                        aria-current={active ? "page" : undefined}
-                        onClick={p.onNavigate}
-                        className={cn("group relative flex h-9 items-center gap-2.5 rounded-[12px] px-2.5 text-[13.5px] transition-[background-color,color,transform,box-shadow] duration-200 active:scale-[0.98]", active ? "bg-surface font-medium text-ink shadow-[0_0_0_1px_rgb(10_11_12/0.06),0_2px_8px_-3px_rgb(10_11_12/0.14)] dark:shadow-[0_0_0_1px_rgb(255_255_255/0.07)]" : "text-ink-3 hover:translate-x-0.5 hover:bg-surface/70 hover:text-ink")}
-                      >
-                        <Icon className={cn("size-[16px] shrink-0 transition-transform duration-300 ease-[cubic-bezier(0.3,1.6,0.5,1)] group-hover:-rotate-6 group-hover:scale-115", active ? "text-accent" : "text-ink-4 group-hover:text-ink-2")} strokeWidth={1.75} />
-                        <span className="flex-1 truncate">{it.label}</span>
-                        {active && <span className="size-1.5 rounded-full bg-accent" />}
-                        {it.badge === "approvals" && p.pendingApprovals > 0 && <span className="num rounded-full bg-warning/15 px-1.5 text-[10.5px] font-medium text-warning ring-1 ring-warning/30">{p.pendingApprovals}</span>}
-                      </Link>
-                    </li>
-                  );
-                })}
+                {primary.map(item)}
               </ul>
+              {secondary.length > 0 && (
+                <details className="group/nav mt-1" open={secondary.some((it) => it.href === activeHref) || undefined}>
+                  <summary className="flex min-h-8 cursor-pointer list-none items-center justify-between rounded-[10px] px-2.5 text-[12px] text-ink-3 hover:bg-surface/70 hover:text-ink [&::-webkit-details-marker]:hidden">
+                    More {g.section?.toLowerCase() ?? "views"}
+                    <ChevronDown className="size-3.5 transition-transform group-open/nav:rotate-180" />
+                  </summary>
+                  <ul className="mt-1 space-y-0.5">{secondary.map(item)}</ul>
+                </details>
+              )}
             </div>
           );
         })}

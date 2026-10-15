@@ -1,6 +1,6 @@
 import Link from "next/link";
-import { and, desc, eq, gte, ne } from "drizzle-orm";
-import { ArrowRight, Building2, CircleDollarSign, Coins, Flag, Globe, Newspaper, Plug, Radar, ShieldCheck, TrendingUp, Users } from "lucide-react";
+import { and, count, desc, eq, gte, ne } from "drizzle-orm";
+import { ArrowRight, Building2, CircleDollarSign, Coins, Flag, Globe, Plug, Radar, TrendingUp, Users } from "lucide-react";
 import { requireProject } from "@/server/auth/current";
 import { balanceMicro, billingMode, priced } from "@/server/domain/billing";
 import { autopilotCostLabel, servicePriceMicro } from "@/lib/services";
@@ -21,6 +21,8 @@ import { ActionButton } from "@/components/features/agent/action-button";
 import { OverviewHero } from "@/components/features/workspace/overview-hero";
 import { SetupSummary } from "@/components/features/workspace/setup-summary";
 import { sourceAppliesTo } from "@/lib/source-readiness";
+import { nextGrowthStep } from "@/lib/next-growth-step";
+import { OpportunityCards } from "@/components/features/growth/opportunity-cards";
 
 const more = (href: string, label = "View all") => (
   <Link href={href} className="inline-flex items-center gap-1 text-[12px] text-ink-3 hover:text-ink">
@@ -43,7 +45,7 @@ export default async function Overview({ searchParams }: { searchParams: Promise
     spentTodayMicro(db, pid),
   ]);
   const billingOn = billingMode() !== "off";
-  const [[policy], [customerProfile], qualified, [topNarr], [topKol], issues, posts, credit, sum] = await Promise.all([
+  const [[policy], [customerProfile], qualified, [topNarr], [topKol], issues, posts, credit, sum, plays, [approvals]] = await Promise.all([
     db.select().from(s.policies).where(eq(s.policies.projectId, pid)),
     db.select({ audience: s.productProfiles.audience }).from(s.productProfiles).where(eq(s.productProfiles.projectId, pid)),
     db.select().from(s.companies).where(eq(s.companies.projectId, pid)).orderBy(desc(s.companies.overallScore)).limit(6),
@@ -53,6 +55,8 @@ export default async function Overview({ searchParams }: { searchParams: Promise
     db.select({ at: s.socialPosts.publishedAt }).from(s.socialPosts).where(and(eq(s.socialPosts.projectId, pid), gte(s.socialPosts.publishedAt, new Date(Date.now() - 14 * DAY_MS)))),
     billingOn ? balanceMicro(db, project.ownerId) : Promise.resolve(null),
     mission ? missionSummary(db, mission) : Promise.resolve(null),
+    db.select().from(s.opportunities).where(and(eq(s.opportunities.projectId, pid), eq(s.opportunities.status, "open"))).orderBy(desc(s.opportunities.overallScore)).limit(3),
+    db.select({ total: count() }).from(s.approvals).where(and(eq(s.approvals.projectId, pid), eq(s.approvals.status, "pending"))),
   ]);
   const quick =
     welcome === "quick"
@@ -63,11 +67,17 @@ export default async function Overview({ searchParams }: { searchParams: Promise
   const connected = connections.filter((c) => c.ready && sourceAppliesTo(c, customerProfile?.audience)).length;
 
   const lowCredit = credit != null && credit < servicePriceMicro("scan");
+  const next = nextGrowthStep({
+    hasProfile: !!customerProfile, hasMission: !!mission, readySources: connected,
+    scanStatus: scanning ? scanning.status === "queued" ? "queued" : "running" : null,
+    hasScanned: !!project.lastCycleAt, creditMicro: credit, pendingApprovals: approvals.total,
+    opportunityHref: plays[0] ? `/app/opportunities/${encodeURIComponent(plays[0].id)}` : undefined,
+    permissions: { operate: can(role, "operate"), approve: can(role, "approve"), manageProfile: can(role, "manage_workspace"), managePolicy: can(role, "manage_policy"), manageIntegrations: can(role, "manage_integrations"), ownsCredit: project.ownerId === user.id },
+  });
   const setup = [
     { done: !!mission, label: "Set a mission", detail: "A goal and a USDC budget to work against", href: "/app/missions", icon: <Flag /> },
-    { done: !!(project.website || project.docsUrl), label: "Add your website", detail: "Your site, shop or booking page — where tracked links send people", href: "/app/settings#workspace", icon: <Globe /> },
+    { done: !!customerProfile, label: "Review product context", detail: "What you sell and who it is for — drives discovery", href: "/app/settings#profile", icon: <Globe /> },
     { done: connected > 0, label: "Connect market sources", detail: `${connected} of ${connections.length} sources ready`, href: "/app/integrations", icon: <Plug /> },
-    { done: live, label: "Create the agent wallet", detail: "Arc mainnet wallet the agent spends from", href: "/app/wallet", icon: <CircleDollarSign /> },
     ...(credit != null ? [{ done: !lowCredit, label: "Add credit", detail: lowCredit ? `${fmtUsdc(credit)} left — a scan costs ${fmtUsdc(servicePriceMicro("scan"))}` : `${fmtUsdc(credit)} on the balance`, href: "/billing", icon: <Coins /> }] : []),
     { done: !!project.lastCycleAt, label: "Run the first scan", detail: scanning?.status === "queued" ? "Queued — waiting for the worker" : scanning ? "Scan in progress…" : "Collect evidence from connected sources", href: "/app/runs", icon: <Radar /> },
   ];
@@ -78,6 +88,7 @@ export default async function Overview({ searchParams }: { searchParams: Promise
       <OverviewHero
         name={user.isGuest ? "there" : user.name.split(" ")[0] || "there"}
         workspace={project.name}
+        nextMove={next}
         chips={
           <>
             <ModeBadge mode={project.dataMode} />
@@ -90,13 +101,20 @@ export default async function Overview({ searchParams }: { searchParams: Promise
         }
         actions={
           <>
-            {can(role, "operate") && <ActionButton action={runCycleAction} label={priced("Run cycle", "scan")} variant="primary" icon={<Radar />} />}
+            {next.kind === "scan" ? <ActionButton action={runCycleAction} label={priced(next.label, "scan")} variant="primary" icon={<Radar />} /> : <LinkButton href={next.href} variant="primary" icon={<ArrowRight />}>{next.label}</LinkButton>}
             <LinkButton href="/app/discover" variant="outline" icon={<Radar />}>Browse evidence</LinkButton>
-            <LinkButton href="/app/approvals" variant="outline" icon={<ShieldCheck />}>Approvals</LinkButton>
-            <LinkButton href="/app/brief" variant="ghost" icon={<Newspaper />}>Daily brief</LinkButton>
+            <LinkButton href="/app/plan" variant="outline" icon={<ArrowRight />}>Growth plan</LinkButton>
+            {can(role, "operate") && next.kind !== "scan" && <ActionButton action={runCycleAction} label={priced("Scan again", "scan")} variant="ghost" icon={<Radar />} disabled={!!scanning || lowCredit || connected === 0 || !customerProfile || !mission} />}
           </>
         }
       />
+
+      {plays.length > 0 && (
+        <section aria-labelledby="recommended-plays-title" className="space-y-3">
+          <div className="flex flex-wrap items-end justify-between gap-3"><div><h2 id="recommended-plays-title" className="text-[19px] font-semibold tracking-[-0.02em] text-ink">Growth opportunities to review</h2><p className="mt-1 text-[13px] text-ink-3">Recommended from your collected signals. Review the evidence before choosing a test.</p></div><LinkButton href="/app/opportunities" icon={<ArrowRight />}>All opportunities</LinkButton></div>
+          <OpportunityCards items={plays} />
+        </section>
+      )}
 
       {welcome === "quick" && quick && <SetupSummary website={project.website} profile={quick.profile} icps={quick.icps} mission={mission ?? null} scanning={!!scanning} scanStatus={scanning?.status} lowCredit={lowCredit} autopilot={credit != null ? `${AUTOPILOT_LABEL[project.autopilot] ?? project.autopilot} · ${autopilotCostLabel(project.autopilot)}` : undefined} />}
 
@@ -115,7 +133,7 @@ export default async function Overview({ searchParams }: { searchParams: Promise
       {setupLeft > 0 && (
         <Card>
           <CardHeader
-            title="Get the operator running"
+            title={project.lastCycleAt ? "Keep discovery ready" : "Prepare your first market scan"}
             description={`${setup.length - setupLeft} of ${setup.length} steps complete`}
             action={
               <span className="flex items-center gap-2">
@@ -139,6 +157,8 @@ export default async function Overview({ searchParams }: { searchParams: Promise
           </div>
         </Card>
       )}
+
+      {!live && <p className="px-1 text-[12px] text-ink-3">Ready to pay a creator? <Link href="/app/wallet" className="font-medium text-ink-2 underline underline-offset-4">Set up the workspace wallet</Link> when you need an operating budget for payments.</p>}
 
       {mission && sum ? (
         <div className="grid gap-4 lg:grid-cols-[1.4fr_1fr]">

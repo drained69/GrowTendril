@@ -4,12 +4,12 @@
   "private": true,
   "type": "module",
   "scripts": {
-    "dev": "next dev -p 3000",
-    "dev:web": "next dev -p 3000",
+    "dev": "npm run arc:tools:build && next dev -p 3000",
+    "dev:web": "npm run arc:tools:build && next dev -p 3000",
     "signals": "tsx services/signals-api/server.ts",
-    "build": "next build",
+    "build": "npm run arc:tools:build && next build",
     "start": "next start -p ${PORT:-3000}",
-    "typecheck": "tsc --noEmit",
+    "typecheck": "npm run arc:tools:build && tsc --noEmit",
     "test": "vitest run",
     "db:generate": "drizzle-kit generate",
     "test:events": "tsx scripts/test-events.ts",
@@ -17,13 +17,19 @@
     "doctor": "tsx scripts/doctor.ts",
     "circle:entity-secret": "tsx scripts/circle-entity-secret.ts",
     "env:push": "tsx scripts/push-env.ts",
-    "ledger:exceptions": "tsx scripts/ledger-exceptions.ts"
+    "ledger:exceptions": "tsx scripts/ledger-exceptions.ts",
+    "arc:tools:build": "tsc -p packages/arc-growth-tools/tsconfig.json",
+    "arc:contracts:generate": "node scripts/generate-arc-escrow-artifact.mjs",
+    "arc:escrow:deploy": "npm run arc:tools:build && node --import tsx scripts/arc-escrow-deploy.ts",
+    "arc:demo": "node --import tsx examples/arc-outcome-demo.ts",
+    "arc:verify-receipt": "node --import tsx scripts/verify-arc-receipt.ts"
   },
   "dependencies": {
     "@anthropic-ai/sdk": "^0.131.0",
     "@circle-fin/adapter-circle-wallets": "^1.8.1",
     "@circle-fin/app-kit": "^1.16.0",
     "@circle-fin/developer-controlled-wallets": "^10.8.1",
+    "@circle-fin/modular-wallets-core": "^1.0.16",
     "@circle-fin/onramp-kit": "^1.0.3",
     "@circle-fin/x402-batching": "^3.5.0",
     "@electric-sql/pglite": "^0.5.8",
@@ -64,6 +70,9 @@
       "postcss": "^8.5.28"
     },
     "toml": "^4.2.0",
-    "uuid": "^11.1.1"
+    "uuid": "^11.1.1",
+    "@circle-fin/modular-wallets-core": {
+      "viem": "$viem"
+    }
   }
 }

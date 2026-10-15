@@ -1,4 +1,5 @@
 "use client";
+import { PasskeyWallet, type PasskeyConfig } from "@/components/features/campaigns/passkey-wallet";
 import { useActionState, useEffect, useState, type ReactNode } from "react";
 import { useRouter } from "next/navigation";
 import { Button, Checkbox, Field, Input, Select, Textarea } from "@/components/ui";
@@ -60,11 +61,14 @@ export function InviteCreatorForm({ programId, creators }: { programId: string; 
     <Field label="Creator" htmlFor="invite-kol"><Select id="invite-kol" name="kolId" required><option value="">Select a creator</option>{creators.map(c => <option key={c.id} value={c.id}>@{c.handle}</option>)}</Select></Field>
   </ActionForm>;
 }
-export function AcceptCreatorForm({ token, challenge }: { token: string; challenge: string }) {
+export function AcceptCreatorForm({ token, challenge, passkey, username }: { token: string; challenge: string; passkey?: PasskeyConfig; username?: string }) {
+  const [address, setAddress] = useState(""), [proofId,setProofId] = useState("");
   return <ActionForm action={acceptCreatorAction.bind(null, token)} label="Accept campaign terms">
     <p className="text-sm text-ink-2">Publish <strong className="break-all">{challenge}</strong> on your social profile or in a public post. The business will check that it belongs to the invited account.</p>
     <Field label="Public ownership proof" htmlFor="proof"><Input id="proof" name="proof" type="url" required placeholder="https://…" /></Field>
-    <Field label="Your Arc USDC payout address" htmlFor="address"><Input id="address" name="address" required pattern="0x[0-9a-fA-F]{40}" placeholder="0x…" /></Field>
+    {passkey && username && <PasskeyWallet config={passkey} username={username} token={token} onVerified={(a,id)=>{setAddress(a);setProofId(id);}} />}
+    {proofId && <input type="hidden" name="walletProof" value={proofId} />}
+    <Field label="Your Arc USDC payout address" htmlFor="address"><Input id="address" name="address" value={address} onChange={e=>{setAddress(e.target.value);setProofId("");}} required pattern="0x[0-9a-fA-F]{40}" placeholder="0x…" /></Field>
     <Checkbox name="terms" required label="I accept these reward rules, the campaign dates, the one-post limit, and clear sponsorship disclosure. I control the account and payout address above." />
   </ActionForm>;
 }

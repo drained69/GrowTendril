@@ -19,7 +19,7 @@ packages** on npm (READMEs and `.d.ts` type definitions) and the organizer's ref
 | App Kit | `@circle-fin/app-kit` | `kit.send`, `kit.bridge`, `kit.unifiedBalance.getBalances`, chain ids `Arc_Testnet`, `Base_Sepolia` |
 | Adapters | `@circle-fin/adapter-circle-wallets`, `@circle-fin/adapter-viem-v2` | `createCircleWalletsAdapter({apiKey, entitySecret})`, `createViemAdapterFromPrivateKey` |
 | Onramp | `@circle-fin/onramp-kit` | `createOnrampServerKit`, `createSessionRouteHandler` |
-| Arc testnet | chain `eip155:5042002`, Gateway domain 26, USDC `0x3600…0000`, explorer `testnet.arcscan.app` | |
+| Arc testnet | chain `eip155:5042002`, Gateway domain 26, USDC `0x3600…0000`, explorer `explorer.testnet.arc.io` | |
 
 Earn Kit is marked "coming soon" in its own README → GrowTendril only *recommends* idle-fund placement, approval-gated, never executes it autonomously. Borrow is not built.
 
