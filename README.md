@@ -23,16 +23,20 @@ The guiding principle is simple: **recommendations should be explainable, spendi
 
 ![GrowTendril customer value dashboard](docs/dorahacks/11-app-customer-value.png)
 
-The customer-value view brings settled spend, tracked activity, referred customers, purchase events, and recommendation logic into one operating view. It is designed to make the next decision clear while preserving the records behind it.
+This is an **illustrative test workspace**, not a claim about production customer revenue. The customer-value view brings settled spend, tracked activity, referred customers, purchase events, and recommendation logic into one operating view. It is designed to make the next decision clear while preserving the records behind it.
 
 ## Contents
 
 - [Why GrowTendril](#why-growtendril)
 - [What the product does](#what-the-product-does)
+- [Product features by area](#product-features-by-area)
 - [How a workspace operates](#how-a-workspace-operates)
 - [Creator campaigns and rewards](#creator-campaigns-and-rewards)
 - [Measurement and attribution](#measurement-and-attribution)
 - [Spend controls and payment safety](#spend-controls-and-payment-safety)
+- [Arc and Circle integration](#arc-and-circle-integration)
+- [Composable tools for Arc builders](#composable-tools-for-arc-builders)
+- [Contract deployments and current routing](#contract-deployments-and-current-routing)
 - [Architecture](#architecture)
 - [Security model](#security-model)
 - [Local development](#local-development)
@@ -95,6 +99,27 @@ Creator payouts, research purchases, and other payment proposals pass through a 
 Tracked links, signed conversion events, manually recorded conversions, and settled payment records feed the customer-value view. It can show activated customers, paying customers, repeat activity, confirmed spend, cost per paying customer, and estimated payback when margin data is supplied.
 
 Referral attribution describes where a customer came from. It does not assert that an experiment caused a purchase without sufficient evidence.
+
+## Product features by area
+
+The navigation follows the operator's workflow. A page can be useful before any external provider is connected, but live results depend on the workspace's sources and events; an empty view is not a fabricated outcome.
+
+| Area | What is built | Primary output or action |
+| --- | --- | --- |
+| **Overview and Daily brief** | Workspace summary and a concise view of current signals and next actions. | Review what changed before starting work. |
+| **Discover** | Public-source ingestion, intent scoring, source links, and market research. | Inspect demand signals and the evidence behind each score. |
+| **Customers** | Lead and company context from relevant public conversations. | Review who may be ready to buy and why. |
+| **Narratives** | Recurring themes and market language from the collected signals. | Compare themes and inspect supporting posts. |
+| **Creators and Influencer report** | Creator scouting, authenticity and relevance scoring, contact routes, and outreach drafts. | Shortlist creators and prepare human-reviewed outreach. |
+| **Growth graph** | Connections among sources, people, creators, themes, and opportunities. | Explore how a recommendation was derived. |
+| **Opportunities, Growth plan, Missions, and Experiments** | Ranked opportunities, structured plans, goals, budget limits, hypotheses, tracked links, and stop conditions. | Turn research into small, measurable tests. |
+| **Creator campaigns** | Briefs, invitations, creator acceptance and ownership proof, submissions, review, and proposed base, quality, and outcome rewards. | Approve eligible creator work and payments. |
+| **Customer value** | Visits, attributed events, paying customers, confirmed spend, cost per paying customer, payback estimates, and rules-based recommendations. | Decide whether to keep testing, improve the funnel, or stop spending. |
+| **Wallet, Approvals, Arc / Circle activity, and Receipts** | Arc operating wallet, policy decisions, transfer status, settlement evidence, reconciliation, and portable receipt views. | Control funds and inspect what was actually paid. |
+| **Billing** | Arc USDC invoices, prepaid credit, service charges, refunds, and payment activity. | Fund and account for GrowTendril's own paid services. |
+| **Agent runs, Integrations, Team, and Settings** | Job history, source and event connections, notifications, role management, and operating rules. | Configure and audit the workspace. |
+
+The operator can draft messages and campaign material, but it does **not** send creator outreach automatically. Creator payouts require human approval. Autopilot starts **off** for new paid workspaces; a user must choose a cadence before recurring paid scans can run.
 
 ## How a workspace operates
 
@@ -185,6 +210,60 @@ Live workspace wallets use Circle developer-controlled wallets on Arc mainnet. C
 
 For eligible paid data requests, GrowTendril can authorize Circle Gateway x402 payments. It evaluates policy against the quoted amount, then protects the execution path against a higher amount than the approved quote.
 
+## Arc and Circle integration
+
+Arc is the live USDC settlement network for GrowTendril's billing and workspace money flows. The application uses **Arc mainnet (chain ID 5042)**, the Arc USDC ERC-20 interface at `0x3600000000000000000000000000000000000000`, and Circle Gateway domain **26**. These values are read from Circle's `@circle-fin/x402-batching` chain configuration in [src/server/integrations/circle/config.ts](src/server/integrations/circle/config.ts). Arc's native balance is also USDC; the application handles its 18-decimal native representation separately from the ERC-20 interface's six-decimal accounting units.
+
+| Arc/Circle tool or protocol | Where GrowTendril uses it | Important boundary |
+| --- | --- | --- |
+| **Arc RPC and viem** | Reads balances, receipts, USDC movement logs, merchant contract events, and transaction status; checks payouts against the intended sender, recipient, asset, and amount. | The app counts an invoice or payout only after matching successful on-chain evidence. |
+| **Circle developer-controlled wallets** (`@circle-fin/developer-controlled-wallets`) | Provisions or attaches a workspace Arc EOA and signs approved operations through Circle's server-side custody. | Circle controls signing keys; the app keeps wallet IDs and transaction references. Mainnet requires a production Circle key. |
+| **Circle App Kit and Circle wallet adapter** (`@circle-fin/app-kit`, `@circle-fin/adapter-circle-wallets`) | Approved USDC sends, wallet action steps, and an address-based unified balance view; bridge support exists behind the transaction adapter. | A submitted action is not called settled until its destination and on-chain result are checked. Cross-chain spending is disabled by the current live policy. |
+| **Circle Gateway** | Maintains a separately funded Gateway balance for supported paid requests and polls transfer/batch status. | Gateway funds are distinct from the workspace wallet and from GrowTendril prepaid credit. A Gateway authorization or batch reference is not an individual confirmed creator payout. |
+| **x402 / Gateway batching** (`@circle-fin/x402-batching`) | Quotes a seller's HTTP 402 terms, validates Arc USDC and the expected Gateway contract, applies the workspace spending policy, signs an EIP-712 authorization, and submits the `Payment-Signature` header. The optional [signals API](services/signals-api/server.ts) is a Gateway-protected seller example. | The buyer path caps the payment at the reviewed quote. The standalone seller service is optional and is not registered by default. |
+| **Circle x402 discovery** | Searches the Circle service marketplace for potentially useful research providers and records compatible service metadata. | Discovery is not permission to purchase; a candidate still needs quote, policy, and execution checks. |
+| **Circle Onramp Kit** (`@circle-fin/onramp-kit`) | Optional funding path for an Arc workspace wallet when configured. | A user can also transfer Arc USDC directly; Onramp availability depends on provider configuration. |
+| **Circle Modular Wallets / WebAuthn** (`@circle-fin/modular-wallets-core`) | Optional passkey-based creator recipient proof in the campaign flow. | This is recipient identity proof, not authority for the agent to spend. |
+| **Arc explorer and Sourcify** | Public transaction links and independently inspectable source/bytecode evidence for the deployed escrow. | Explorer indexing and source publication can lag deployment; verification status is stated below. |
+
+There are three separate USDC balances to understand:
+
+1. **Prepaid GrowTendril credit:** a user pays an invoice to the configured `BILLING_ARC_ADDRESS`. After Arc confirms the matching transfer, an internal ledger credits that user. A market scan deducts **2 USDC of credit**, not a fresh on-chain transfer per scan.
+2. **Workspace wallet:** a Circle-controlled Arc wallet holds operating USDC for approved creator and other outbound payments. The owner can pay a Billing invoice from this wallet using an emailed confirmation code, moving USDC to the billing address and receiving credit only after Arc confirms it.
+3. **Circle Gateway balance:** workspace funds deposited for supported x402 purchases. Depositing and purchasing create their own records; they do not refill GrowTendril scan credit.
+
+Invoice amounts include a small unique fractional suffix to identify an incoming transfer. Billing records the **actual paid amount** in micro-USDC. A service charge and any refund are separate ledger entries, so the current balance and history can be reconciled. An interrupted or failed paid scan is refunded before retry or final failure. Enabling Autopilot can consume credit when the next scheduled scan is due; it is an explicit setting.
+
+For routing details and operational constraints, see [the Arc deployment runbook](docs/ARC_DEPLOYMENT_RUNBOOK.md).
+
+## Composable tools for Arc builders
+
+The repo contains a separate, framework-independent [Arc growth tools package](packages/arc-growth-tools/README.md) for connecting commerce outcomes to controlled rewards. The toolkit is Apache-2.0 licensed and prepared for a separate public repository; it has **not** been published to npm. Build it locally with `npm run arc:tools:build`. Its [independent consumer](packages/arc-growth-tools/examples/independent-builder/README.md) imports the package by name and can check a real Arc mainnet ERC-20 transfer without signing or sending money. The root [fixture-only demo](examples/arc-outcome-demo.ts) remains separate.
+
+| Package subpath | Reusable capability |
+| --- | --- |
+| `commerce` and `commerce-abi` | Decode and reduce merchant capture/refund facts, including events compatible with Circle's `AuthCaptureEscrow` reference; identify events for replay-safe storage. |
+| `outcomes` | Calculate eligible purchases and reward amounts while accounting for the refund hold and later refunds. |
+| `policy` | Evaluate spend intents against limits, reserve budget in durable storage, bind approval to an exact recipient/amount, and execute a reserved spend. |
+| `evidence` | Compare observed Arc transfers with expected chain, token, sender, recipient, and amount; construct and verify portable receipts. |
+| `recipient` | Validate recipient proof inputs for a payout workflow. |
+| `escrow` | ABI and deployed-bytecode matcher for `OutcomeRewardsEscrow`; the host supplies a connected wallet and verifies the deployment. |
+
+The intended composition is **verified merchant event → refund-aware eligible outcome → calculated reward → policy and human approval → wallet transfer → independently checked receipt**. The host application must supply chain verification, authenticated approvers, durable locking, and its own wallet adapter. Package helpers do not themselves grant spending authority or prove that an arbitrary webhook is an on-chain sale. The [package README](packages/arc-growth-tools/README.md) specifies these integration responsibilities and the included third-party notices.
+
+The standalone, Apache-2.0 toolkit source is prepared with `node scripts/export-arc-toolkit.mjs <empty-directory>`. The export includes only the package, its own tests and independent consumer, contract source/tests/manifests, and CI; it does not copy the private application or its Git history. **A public GitHub repository and npm release are still pending**, so do not cite the private application repository as a forkable toolkit.
+
+## Contract deployments and current routing
+
+The repository has **one custom contract type**, `OutcomeRewardsEscrow`, with one deployment on each Arc network. Its source is [contracts/src/OutcomeRewardsEscrow.sol](contracts/src/OutcomeRewardsEscrow.sol), and its manifests record constructor values, compiler settings, hashes, and verification evidence.
+
+| Network | Address and evidence | Current use |
+| --- | --- | --- |
+| **Arc mainnet, 5042** | [`0x2964e74d30413de186f5f4936eb133ab815845d3`](https://explorer.arc.io/address/0x2964e74d30413de186f5f4936eb133ab815845d3); [deployment transaction](https://explorer.arc.io/tx/0x29d876d0d5ee161897959252af559a380fbb6511a409160edabe7b5b9134a822); [manifest](contracts/deployments/arc-mainnet.json); [Sourcify exact match](https://repo.sourcify.dev/5042/0x2964E74d30413DE186f5F4936Eb133Ab815845D3). | Deployed with Arc USDC and a 72-hour refund hold. **Not funded or routed into production creator payouts.** Arc explorer source publication remains pending in the recorded verification state. |
+| **Arc testnet, 5042002** | [`0x2371d0f4a064d1eb5f154dd99d355a7f4fa71aa3`](https://explorer.testnet.arc.io/address/0x2371d0f4a064d1eb5f154dd99d355a7f4fa71aa3); [manifest](contracts/deployments/arc-testnet.json). | Prototype used by the explicit testnet escrow UI; unfunded in the deployment record. |
+
+The escrow can bound a prefunded creator reward and enforce a review/refund window. **Production creator payouts still follow founder approval and the Circle wallet/App Kit route.** Merchant sales use the merchant's contract when configured; x402 purchases use Circle Gateway; billing top-ups go to the configured billing address. These flows do not pass through the custom escrow. The contract has not received an independent security audit, so a mainnet deployment alone is not a production payout launch. See [the runbook](docs/ARC_DEPLOYMENT_RUNBOOK.md) for reproduction, verification, and rollout gates.
+
 ## Outbound notifications
 
 Workspace admins can configure Slack, Discord, or a signed JSON webhook for:
@@ -208,6 +287,23 @@ Endpoints must use HTTPS and pass the public-network guard. Endpoint credentials
 | Custody and payments | Circle developer-controlled wallets, Arc USDC, Circle Gateway x402 | Approved wallet actions and paid data requests |
 | Authentication | Email/password or Google OAuth; signed sessions | Identity, email verification, workspace membership |
 | Deployment | Railway-compatible Node.js service | Production delivery and environment configuration |
+
+### Tool and service inventory
+
+| Category | Tools in this repository | Role |
+| --- | --- | --- |
+| Interface | Next.js App Router, React, TypeScript, Tailwind CSS, Lucide icons | Pages, server actions, responsive styling, and product UI. |
+| Data and validation | PostgreSQL, PGlite, Drizzle ORM/Kit, Zod | Production storage, local database, migrations, and validated inputs. |
+| AI | Google Gemini and Anthropic Claude adapters | Optional product analysis, synthesis, and drafts; payment decisions remain in code. |
+| Public research | Bluesky, Hacker News, Reddit, GitHub, YouTube, RSS, and credentialed X adapters | Source-linked market, customer, and creator signals; availability varies with provider configuration. |
+| Wallet and chain | Arc mainnet/testnet, USDC, viem, Circle developer-controlled wallets, Circle App Kit, Circle wallet adapter | Wallet provisioning, signed transfers, chain reads, and reconciliation. |
+| Paid data | Circle Gateway, x402 batching, Circle discovery | Quote, policy-check, pay for, and track compatible paid resources. |
+| Creator wallet and funding | Circle Modular Wallets/WebAuthn, Circle Onramp Kit | Optional recipient proof and wallet-funding interfaces. |
+| Smart contracts | Solidity 0.8.30, Arc Foundry, `OutcomeRewardsEscrow`, Sourcify | Contract tests, deployment checks, and source/bytecode verification. |
+| Identity and messages | Email/password, Google OAuth, Resend, signed inbound/outbound webhooks | Account access, codes, receipts, invitations, and event exchange. |
+| Delivery and checks | Railway-compatible deployment, GitHub Actions, Vitest, TypeScript compiler | Hosting, CI, tests, and static checks. |
+
+An installed dependency is not necessarily an enabled production feature. For example, X reads need an X credential, onramp needs provider configuration, the signals seller runs as a separate service, and the deployed mainnet escrow is not the live payout route.
 
 ## Security model
 
@@ -273,6 +369,11 @@ When email is not configured locally, verification codes are written to the serv
 | npm run env:push | Upload configured environment values and redeploy through Railway. |
 | npm run ledger:exceptions | List ledger records that require reconciliation review. |
 | npm run signals | Start the optional standalone paid data service. |
+| npm run arc:tools:build | Compile the private composable Arc toolkit. |
+| npm run arc:demo | Run its fixture-only outcome-to-payout example; no transaction is sent. |
+| npm run arc:verify-receipt | Run the portable-receipt verification utility (see script arguments). |
+| npm run arc:contracts:generate | Generate the escrow artifact binding from a compiled contract. |
+| npm run arc:escrow:deploy -- --check | Check testnet chain, bytecode, and gas requirements without broadcasting. See the runbook before using `--broadcast`. |
 
 Before a release, run:
 
@@ -384,9 +485,17 @@ The application uses a durable database queue for operator cycles, settlement ch
 | [src/server/domain](src/server/domain) | Core business rules for intelligence, policy, billing, payments, attribution, and notifications. |
 | [src/server/integrations](src/server/integrations) | Circle, AI, source-provider, email, and vault adapters. |
 | [src/server/jobs](src/server/jobs) | Durable queue, scheduling, and job handlers. |
+| [packages/arc-growth-tools](packages/arc-growth-tools) | Reusable Arc commerce, reward, policy, evidence, recipient, and escrow helpers. |
+| [contracts](contracts) | `OutcomeRewardsEscrow` source, tests, Foundry configuration, and deployment manifests. |
+| [examples/arc-outcome-demo.ts](examples/arc-outcome-demo.ts) | Fixture-only composable outcome-to-payout demonstration. |
+| [services/signals-api](services/signals-api) | Optional Gateway x402 paid-resource seller. |
 | [drizzle](drizzle) | Versioned database migrations and schema metadata. |
 | [tests](tests) | Automated coverage for product, security, financial, and integration behavior. |
 | [docs/USER_GUIDE.md](docs/USER_GUIDE.md) | Step-by-step guide for workspace operators. |
+| [docs/ARC_DEPLOYMENT_RUNBOOK.md](docs/ARC_DEPLOYMENT_RUNBOOK.md) | Arc deployment evidence, payment routing, and rollout conditions. |
+| [docs/RELEASE_AUDIT_2026-10-16.md](docs/RELEASE_AUDIT_2026-10-16.md) | Verification results, dependency findings, and remaining release gates. |
+| [scripts/export-arc-toolkit.mjs](scripts/export-arc-toolkit.mjs) | Prepare a clean standalone toolkit source tree for a separate public repository. |
+| [public/dorahacks](public/dorahacks) | Publicly served submission screenshots after the corresponding application release. |
 | [docs/PLAN.md](docs/PLAN.md) | Product and delivery planning material. |
 
 ## Contributing

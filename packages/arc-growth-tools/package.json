@@ -3,9 +3,12 @@
   "version": "0.1.0",
   "type": "module",
   "description": "Composable outcome rewards, spending controls and Arc payment evidence",
+  "license": "Apache-2.0",
   "files": [
     "dist",
     "README.md",
+    "LICENSE",
+    "NOTICE",
     "THIRD_PARTY_NOTICES.md",
     "LICENSES"
   ],
@@ -44,10 +47,15 @@
     }
   },
   "scripts": {
-    "build": "tsc -p tsconfig.json"
+    "build": "tsc -p tsconfig.json",
+    "test": "npm run build && node --test tests/*.test.mjs"
   },
   "engines": {
     "node": ">=22"
   },
-  "private": true
+  "private": false,
+  "devDependencies": {
+    "@types/node": "^26.6.4",
+    "typescript": "^5.9.3"
+  }
 }
