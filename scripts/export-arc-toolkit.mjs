@@ -10,7 +10,7 @@ if (destination === root || destination.startsWith(`${root}/`)) throw new Error(
 await mkdir(destination, { recursive: true });
 if ((await readdir(destination)).length) throw new Error("Output directory must be empty; refusing to overwrite another repository");
 
-for (const name of ["README.md", "LICENSE", "NOTICE", "THIRD_PARTY_NOTICES.md", "package.json", "package-lock.json", "tsconfig.json", "src", "tests", "examples", "LICENSES", ".github"]) {
+for (const name of ["README.md", "LICENSE", "NOTICE", "CONTRACT_LICENSE.md", "THIRD_PARTY_NOTICES.md", "package.json", "package-lock.json", "tsconfig.json", "src", "tests", "examples", "LICENSES", ".github"]) {
   await cp(join(packageRoot, name), join(destination, name), { recursive: true, filter: source => !source.split("/").includes("node_modules") });
 }
 for (const name of ["foundry.toml", "src", "test", "deployments"]) {

@@ -238,7 +238,7 @@ For routing details and operational constraints, see [the Arc deployment runbook
 
 ## Composable tools for Arc builders
 
-The repo contains a separate, framework-independent [Arc growth tools package](packages/arc-growth-tools/README.md) for connecting commerce outcomes to controlled rewards. The toolkit is Apache-2.0 licensed and prepared for a separate public repository; it has **not** been published to npm. Build it locally with `npm run arc:tools:build`. Its [independent consumer](packages/arc-growth-tools/examples/independent-builder/README.md) imports the package by name and can check a real Arc mainnet ERC-20 transfer without signing or sending money. The root [fixture-only demo](examples/arc-outcome-demo.ts) remains separate.
+The repo contains a separate, framework-independent [Arc growth tools package](packages/arc-growth-tools/README.md) for connecting commerce outcomes to controlled rewards. Its [public Apache-2.0 repository](https://github.com/drained69/arc-growth-tools) is independently forkable; the package has **not** been published to npm. Build it locally with `npm run arc:tools:build`. Its [independent consumer](packages/arc-growth-tools/examples/independent-builder/README.md) imports the package by name and can check a real Arc mainnet ERC-20 transfer without signing or sending money. The root [fixture-only demo](examples/arc-outcome-demo.ts) remains separate.
 
 | Package subpath | Reusable capability |
 | --- | --- |
@@ -251,7 +251,7 @@ The repo contains a separate, framework-independent [Arc growth tools package](p
 
 The intended composition is **verified merchant event → refund-aware eligible outcome → calculated reward → policy and human approval → wallet transfer → independently checked receipt**. The host application must supply chain verification, authenticated approvers, durable locking, and its own wallet adapter. Package helpers do not themselves grant spending authority or prove that an arbitrary webhook is an on-chain sale. The [package README](packages/arc-growth-tools/README.md) specifies these integration responsibilities and the included third-party notices.
 
-The standalone, Apache-2.0 toolkit source is prepared with `node scripts/export-arc-toolkit.mjs <empty-directory>`. The export includes only the package, its own tests and independent consumer, contract source/tests/manifests, and CI; it does not copy the private application or its Git history. **A public GitHub repository and npm release are still pending**, so do not cite the private application repository as a forkable toolkit.
+The [standalone toolkit repository](https://github.com/drained69/arc-growth-tools) was created from `node scripts/export-arc-toolkit.mjs <empty-directory>`. The export includes only the package, its own tests and independent consumer, contract source/tests/manifests, and CI; it does not copy the private application or its Git history. The exact deployed Solidity source retains its historical SPDX header to preserve the mainnet source hash; the [explicit Apache-2.0 grant for those public copies](packages/arc-growth-tools/CONTRACT_LICENSE.md) explains their licensing. An npm release is still pending. See the [release audit](docs/RELEASE_AUDIT_2026-10-16.md) for tested paths and remaining live-provider checks.
 
 ## Contract deployments and current routing
 

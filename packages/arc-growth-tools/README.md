@@ -1,6 +1,6 @@
 # Arc growth tools
 
-Small TypeScript tools for builders connecting Arc commerce to measured growth and controlled spending. This package is independently buildable and licensed under [Apache-2.0](LICENSE). It has no runtime dependencies; import a focused subpath such as `@growtendril/arc-growth-tools/commerce`. The root entry also exports Node.js receipt signing helpers and is intended for server runtimes. The package is prepared for a separate public repository; it has **not** been published to npm.
+Small TypeScript tools for builders connecting Arc commerce to measured growth and controlled spending. The [standalone source repository](https://github.com/drained69/arc-growth-tools) is public, independently buildable and licensed under [Apache-2.0](LICENSE). It has no runtime dependencies; import a focused subpath such as `@growtendril/arc-growth-tools/commerce`. The root entry also exports Node.js receipt signing helpers and is intended for server runtimes. The package has **not** been published to npm; clone the repository or install it from a reviewed Git commit.
 
 In the standalone toolkit repository, build, test, and run the independent example:
 
@@ -22,7 +22,7 @@ The [independent example](examples/independent-builder/README.md) imports the pa
 
 All monetary values in these tools use integer micro-USDC (6 decimal places), the precision of Arc's ERC-20 USDC interface. Arc's native gas balance has 18 decimals and must be converted separately.
 
-`escrow` exports the ABI and deployed-bytecode matcher for the `OutcomeRewardsEscrow` prototype. The standalone repository also includes its Solidity source, tests and deployment manifests under `contracts/`. Contract actions require an explicitly connected wallet. A host must verify the deployment's chain, bytecode, token and hold period before using it. The current mainnet contract is deployed but is not a live payout route; the contract has not had an independent security audit. The included `commerce-abi` reproduces the relevant event definitions from Circle's `AuthCaptureEscrow` reference; its [notice](THIRD_PARTY_NOTICES.md) and [Apache license](LICENSES/Apache-2.0.txt) are included.
+`escrow` exports the ABI and deployed-bytecode matcher for the `OutcomeRewardsEscrow` prototype. The standalone repository also includes its Solidity source, tests and deployment manifests under `contracts/`. The original Solidity files retain a historical `UNLICENSED` SPDX header to preserve the exact deployed-source hash; [the copyright holder's Apache-2.0 grant for the public copies](CONTRACT_LICENSE.md) explains this. Contract actions require an explicitly connected wallet. A host must verify the deployment's chain, bytecode, token and hold period before using it. The current mainnet contract is deployed but is not a live payout route; the contract has not had an independent security audit. The included `commerce-abi` reproduces the relevant event definitions from Circle's `AuthCaptureEscrow` reference; its [notice](THIRD_PARTY_NOTICES.md) and [Apache license](LICENSES/Apache-2.0.txt) are included.
 
 ## What this adds to Arc references
 
