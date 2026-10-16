@@ -17,7 +17,9 @@ Understand the product → discover demand → qualify people and creators → p
 
 The guiding principle is simple: **recommendations should be explainable, spending should be bounded, and people should remain accountable for consequential decisions.**
 
-> **Status:** This repository is a private, production-oriented application. Live payment capabilities require explicit Arc mainnet and Circle configuration. The product does not use seeded customer outcomes or simulated production payments.
+> **Status:** This repository contains the private application. The independently forkable [Arc Growth Tools toolkit](https://github.com/drained69/arc-growth-tools) is public under Apache-2.0. The creator escrow is [deployed and source-matched on Arc mainnet](#contract-deployments-and-current-routing), but production creator payouts still use founder-approved Circle wallet sends; the escrow has not had an independent security audit. Live payment capabilities require explicit Arc mainnet and Circle configuration. Product screenshots below are labelled when they show an illustrative test workspace.
+
+Start with the [operator guide](docs/USER_GUIDE.md) to use the product, the [DoraHacks walkthrough](docs/dorahacks/DETAILS.md) to review the complete Arc flow, or the [public toolkit](https://github.com/drained69/arc-growth-tools) to reuse the independent building blocks.
 
 ## Product preview
 
@@ -36,6 +38,7 @@ This is an **illustrative test workspace**, not a claim about production custome
 - [Spend controls and payment safety](#spend-controls-and-payment-safety)
 - [Arc and Circle integration](#arc-and-circle-integration)
 - [Composable tools for Arc builders](#composable-tools-for-arc-builders)
+- [Try the public toolkit](#try-the-public-toolkit)
 - [Contract deployments and current routing](#contract-deployments-and-current-routing)
 - [Architecture](#architecture)
 - [Security model](#security-model)
@@ -253,6 +256,27 @@ The intended composition is **verified merchant event → refund-aware eligible 
 
 The [standalone toolkit repository](https://github.com/drained69/arc-growth-tools) was created from `node scripts/export-arc-toolkit.mjs <empty-directory>`. The export includes only the package, its own tests and independent consumer, contract source/tests/manifests, and CI; it does not copy the private application or its Git history. The exact deployed Solidity source retains its historical SPDX header to preserve the mainnet source hash; the [explicit Apache-2.0 grant for those public copies](packages/arc-growth-tools/CONTRACT_LICENSE.md) explains their licensing. An npm release is still pending. See the [release audit](docs/RELEASE_AUDIT_2026-10-16.md) for tested paths and remaining live-provider checks.
 
+## Try the public toolkit
+
+The separate repository builds and tests without this application, its database, or its private configuration:
+
+~~~bash
+git clone https://github.com/drained69/arc-growth-tools.git
+cd arc-growth-tools
+npm ci
+npm test
+npm --prefix examples/independent-builder install
+npm --prefix examples/independent-builder run demo
+~~~
+
+The demo consumes `@growtendril/arc-growth-tools` by package name and uses fixture commerce events; it does **not** send USDC or demonstrate a real merchant sale. Its optional read-only verifier accepts an actual Arc mainnet ERC-20 USDC transaction hash and expected sender, recipient and amount:
+
+~~~bash
+npm --prefix examples/independent-builder run verify-transfer -- 0xTRANSACTION_HASH 0xSENDER 0xRECIPIENT 2.00
+~~~
+
+The verifier checks a confirmed, canonical Arc receipt and exact transfer logs. A production integration must also verify merchant event provenance, authenticate approvals, persist spend reservations, reconcile uncertain wallet sends and trust receipt-signing keys from outside the receipt. See the [standalone integration guide](https://github.com/drained69/arc-growth-tools/blob/main/README.md) and [independent example](https://github.com/drained69/arc-growth-tools/tree/main/examples/independent-builder).
+
 ## Contract deployments and current routing
 
 The repository has **one custom contract type**, `OutcomeRewardsEscrow`, with one deployment on each Arc network. Its source is [contracts/src/OutcomeRewardsEscrow.sol](contracts/src/OutcomeRewardsEscrow.sol), and its manifests record constructor values, compiler settings, hashes, and verification evidence.
@@ -369,7 +393,7 @@ When email is not configured locally, verification codes are written to the serv
 | npm run env:push | Upload configured environment values and redeploy through Railway. |
 | npm run ledger:exceptions | List ledger records that require reconciliation review. |
 | npm run signals | Start the optional standalone paid data service. |
-| npm run arc:tools:build | Compile the private composable Arc toolkit. |
+| npm run arc:tools:build | Compile the local copy of the public Arc toolkit. |
 | npm run arc:demo | Run its fixture-only outcome-to-payout example; no transaction is sent. |
 | npm run arc:verify-receipt | Run the portable-receipt verification utility (see script arguments). |
 | npm run arc:contracts:generate | Generate the escrow artifact binding from a compiled contract. |
@@ -456,7 +480,11 @@ The billing address is operated by GrowTendril. The application observes Arc tra
 
 Browsing, workspace settings, team management, and exports are free. Top-ups start at 2 USDC. If an autopilot run is due while the balance is too low, it waits rather than charging or executing a paid cycle.
 
-> **Two balances, two purposes:** prepaid credit pays for GrowTendril services. The workspace wallet funds approved experiment and creator payments. Keep these balances distinct when operating the product.
+> **Separate balances:** prepaid credit pays for GrowTendril services; the workspace wallet funds approved external payments; Circle Gateway holds funds for supported x402 purchases. None automatically refills another.
+
+### Pay for a scan with workspace-wallet USDC
+
+Wallet funding does **not** add prepaid service credit automatically. To use those funds for a 2 USDC scan, create a Billing invoice for 2 USDC, open its payment page, and choose **Pay from workspace wallet**. The owner confirms the exact invoice transfer by email. After GrowTendril verifies the Arc payment, the confirmed amount appears as credit; the scan then deducts 2 USDC from that ledger. The invoice includes a small unique fractional suffix, and the wallet keeps 0.05 USDC available for Arc fees, so a wallet holding exactly 2.00 USDC cannot make this transfer. The Billing page shows the resulting top-up and scan charge separately.
 
 ## Operations reference
 

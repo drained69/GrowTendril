@@ -397,7 +397,7 @@ export function Pricing({ startHref, signedIn }: { startHref: string; signedIn: 
             <br />
             Nothing else.
           </Headline>
-          <Lede center>No subscription and no seats. Top up USDC on Arc — from {MIN_TOPUP_USDC} USDC — and each service takes its fixed price when it runs. Credit never expires.</Lede>
+          <Lede center>No subscription and no seats. Top up prepaid credit with USDC on Arc — from {MIN_TOPUP_USDC} USDC — and each service takes its fixed price when it runs. Your separate workspace wallet pays external recipients. Credit never expires.</Lede>
         </Reveal>
         <div className="mt-14 grid gap-5 md:grid-cols-3">
           {SERVICE_KEYS.map((k, i) => {
@@ -452,7 +452,7 @@ export function Terms() {
     },
     {
       title: "USDC on Arc",
-      body: "Top-ups and payouts settle in USDC on Arc, checked on-chain. No card on file, no invoices to chase.",
+      body: "Pay a one-time Arc invoice to add service credit. Creator payouts use a separate workspace wallet. Both transfers are checked on-chain.",
       mock: (
         <div className="space-y-1.5 font-mono text-[12px]">
           {[["network", "Arc"], ["asset", "USDC"]].map(([k, v]) => <div key={k} className="flex justify-between rounded-[10px] bg-surface-2 px-3 py-1.5"><span className="text-ink-4">{k}</span><span>{v}</span></div>)}
@@ -461,7 +461,7 @@ export function Terms() {
     },
     {
       title: "Freeze any time",
-      body: "One switch stops the wallet. Nothing moves until you turn it back on — scans and reports keep working.",
+      body: "One switch freezes outbound workspace-wallet spending. Scans and reports can still use prepaid credit; no wallet payment is sent for each scan.",
       mock: (
         <div className="flex items-center justify-between rounded-[10px] bg-surface-2 px-3 py-2 font-mono text-[12px]">
           wallet <span className="flex items-center gap-1 rounded-full bg-s1/10 px-2 py-0.5 text-s1"><Snowflake className="size-3" /> frozen</span>
@@ -508,9 +508,9 @@ const FAQ = [
   ["Does it spend money on its own?", "Every payment asks by default and names its recipient, amount, chain and reason. You can enable limited research and service purchases in Settings. Creator payments always need approval. You set the per-payment hard ceiling, which starts at 10 USDC for new workspaces. Mission budgets still apply, and taking the day's total above the daily limit asks for approval."],
   ["What kinds of products does it work for?", "Shops, apps, services, software and developer tools. It learns your customers and market from your site and a short profile, then listens in the places they talk."],
   ["Where does the evidence come from?", "Public sources you connect or that need no key. Every claim links back to the post, page or profile it came from so you can judge it yourself."],
-  ["How are payments made?", "In USDC on Arc through a wallet your workspace controls. You can freeze it at any time."],
+  ["How are payments made?", "You pay a one-time Arc USDC invoice to add GrowTendril credit; scans and reports then use that credit. Creator payouts use a separate workspace wallet, which you can freeze. You can also pay a credit invoice from that wallet with owner confirmation."],
   ["Can my team use it too?", "Yes. Invite teammates with viewer, operator or admin roles. Approvals and settings respect those roles."],
-  ["What happens when my balance runs out?", "Nothing is lost. Scans and reports pause — autopilot included — until you top up again, and everything you have already found stays available."],
+  ["What happens when my credit runs out?", "Nothing is lost. Paid scans and reports pause — autopilot included — until you add credit. USDC in your workspace wallet does not become scan credit automatically; you can use it to pay a Billing invoice."],
   ["Is there a subscription?", "No. You top up USDC on Arc whenever you like and each service takes its fixed price when it runs. Credit never expires."],
 ];
 
@@ -577,7 +577,7 @@ export function Finale({ startHref, signedIn }: { startHref: string; signedIn: b
 export function Footer({ startHref, signedIn }: { startHref: string; signedIn: boolean }) {
   const cols: [string, [string, string][]][] = [
     ["Product", [["What it does", "#product"], ["How a cycle works", "#how"], ["Creators", "#creators"], ["Pricing", "#pricing"]]],
-    ["Trust", [["Your rules", "#controls"], ["Receipts", "#receipts"], ["On your terms", "#terms"], ["Questions", "#faq"]]],
+    ["Trust", [["Your rules", "#controls"], ["Receipts", "#receipts"], ["On your terms", "#terms"], ["Open Arc toolkit", "https://github.com/drained69/arc-growth-tools"], ["Questions", "#faq"]]],
     ["Account", signedIn ? [["Open workspace", "/app"]] : [["Sign in", "/login"], ["Create account", "/signup"], ["Start a mission", startHref]]],
   ];
   return (
@@ -592,7 +592,7 @@ export function Footer({ startHref, signedIn }: { startHref: string; signedIn: b
             <div className="text-[13px] text-ink-4">{title}</div>
             <ul className="mt-4 space-y-2.5 text-[14px] text-ink-2">
               {links.map(([label, href]) => (
-                <li key={label}>{href.startsWith("#") ? <a href={href} className="transition-colors hover:text-accent">{label}</a> : <Link href={href} className="transition-colors hover:text-accent">{label}</Link>}</li>
+                <li key={label}>{href.startsWith("#") ? <a href={href} className="transition-colors hover:text-accent">{label}</a> : href.startsWith("https://") ? <a href={href} target="_blank" rel="noopener noreferrer" className="transition-colors hover:text-accent">{label}<span className="sr-only"> (opens in a new tab)</span></a> : <Link href={href} className="transition-colors hover:text-accent">{label}</Link>}</li>
               ))}
             </ul>
           </div>

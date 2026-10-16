@@ -75,7 +75,7 @@ export default async function Billing() {
             <p className="mt-1.5 max-w-2xl text-[13px] leading-relaxed text-ink-3">
               Top up USDC on Arc once, then pay only for what runs. Each service has one fixed price, taken from your balance when it runs — whoever on your team starts it. Browsing, settings, team and exports are free.
             </p>
-            {mode !== "off" && <p className="mt-2 max-w-2xl text-[12.5px] leading-relaxed text-ink-3">Scan credit is separate from your workspace wallet. To use wallet USDC for a scan, create a 2 USDC invoice here and choose &ldquo;Pay from workspace wallet&rdquo; on its payment page. You approve the transfer by email, and credit is added after Arc confirms it.</p>}
+            {mode !== "off" && <p className="mt-2 max-w-2xl text-[12.5px] leading-relaxed text-ink-3">Scan credit is separate from your workspace wallet. To use wallet USDC for a scan, create a 2 USDC invoice here and choose &ldquo;Pay from workspace wallet&rdquo; on its payment page. You approve the transfer by email, and credit is added after Arc confirms it. The exact invoice amount includes a small identifying suffix; the workspace wallet also keeps 0.05 USDC for Arc fees.</p>}
           </div>
 
           {mode === "off" && (
@@ -142,9 +142,9 @@ export default async function Billing() {
             </div>
 
             <Card>
-              <CardHeader title="Add credit" description={mode === "arc" ? "Pay in USDC on Arc — settles in about a second." : "Choose an amount."} icon={<Sparkles />} />
+              <CardHeader title="Add credit" description={mode === "arc" ? "Create an Arc USDC invoice. Credit appears after your payment is confirmed." : "Choose an amount."} icon={<Sparkles />} />
               <CardBody>
-                {mode === "off" ? <p className="text-[12.5px] text-ink-3">Nothing to pay while billing is off.</p> : <div className="space-y-3"><TopUpForm mode={mode} suggested={balance === 0 ? 10 : undefined} />{mode === "arc" && owned && balance < servicePriceMicro("scan") && <TopUpButton usdc={2} mode="arc" label="Fund one scan from wallet" />}</div>}
+                {mode === "off" ? <p className="text-[12.5px] text-ink-3">Nothing to pay while billing is off.</p> : <div className="space-y-3"><TopUpForm mode={mode} suggested={balance === 0 ? 10 : undefined} />{mode === "arc" && owned && balance < servicePriceMicro("scan") && <TopUpButton usdc={2} mode="arc" label="Create invoice to fund one scan" />}</div>}
               </CardBody>
             </Card>
           </div>

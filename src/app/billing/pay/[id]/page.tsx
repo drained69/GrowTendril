@@ -73,7 +73,7 @@ export default async function PayInvoicePage({ params }: { params: Promise<{ id:
         <div>
           <h1 className="display text-[28px] leading-tight text-ink">Pay with USDC on Arc</h1>
           <p className="mt-1 text-[13px] text-ink-3">
-            Top up {fmtUsdc(inv.priceMicro)} of credit · settles in about a second on Arc. The full amount you send is added to your balance.
+            Top up {fmtUsdc(inv.priceMicro)} of credit. Send the exact invoice amount below; its final digits identify your payment. The full confirmed amount is added to your credit balance.
           </p>
         </div>
 
