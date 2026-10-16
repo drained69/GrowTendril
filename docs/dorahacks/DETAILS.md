@@ -35,30 +35,15 @@ It is an operator with review points, not a guarantee of customers or an automat
 
 *Interface illustration from a test workspace; the displayed customer and credit values are not production customer outcomes.*
 
-## What each product area is for
-
-| Area                                        | Operator decision or evidence                                                                                  |
-| ------------------------------------------- | -------------------------------------------------------------------------------------------------------------- |
-| Overview and Daily brief                    | What needs attention now, what changed, and the next useful action.                                            |
-| Discover and Narratives                     | Source-linked market signals and recurring language, with coverage dependent on connected sources.             |
-| Customers and Opportunities                 | Companies or individual public conversations, score explanations, original posts and reviewable proposals.     |
-| Creators and Influencer report              | Creator fit, a report, contact routes when known, and draft outreach for human review.                         |
-| Growth graph and Growth plan                | Relationships between evidence, audience, creators, goals and planned actions.                                 |
-| Missions and Experiments                    | Goal, budget, hypothesis, success event, time frame and stop rule.                                             |
-| Creator campaigns                           | Published reward terms, participant verification, submitted posts, qualified outcomes and final reward review. |
-| Customer value                              | Referred cohorts, purchases, matching refunds, net recorded revenue, confirmed spend and payback estimates.    |
-| Wallet, Approvals, Activity and Receipts    | Operating funds, exact payment decisions, Circle/Arc settlement state and auditable evidence.                  |
-| Agent runs, Integrations, Team and Settings | Execution history, provider and merchant connections, permissions, business context and spending policy.       |
-
-The sidebar keeps the common daily actions visible and places additional views in expandable groups. All routes remain available. See navigation (`src/components/layout/nav-config.ts`) and the product review (docs/PRODUCT_REVIEW_ORIGAMI.md).
+The workspace brings together daily briefs, discovery, customers, creators, growth plans, experiments, campaigns, customer value, wallet activity, approvals, receipts, integrations, team access and settings. Each area is tied to a decision or an auditable record rather than a vanity dashboard.
 
 ## Why Arc is part of the design
 
 [Arc mainnet](https://docs.arc.io/arc/references/rpc-endpoints) uses chain ID 5042 and USDC as its native gas asset. A workspace can use USDC for fees and payments without acquiring a separate gas token. Arc exposes the same underlying USDC balance through native value with 18 decimals and an [ERC-20 interface](https://docs.arc.io/arc/concepts/stablecoin-native-model) at 0x3600000000000000000000000000000000000000 with 6 decimals. GrowTendril's business amounts use integer micro-USDC; native gas and native transfer values must be converted separately.
 
-Arc's [system emitter](https://docs.arc.io/arc/concepts/stablecoin-native-model) logs USDC sends, ERC-20 transfers, mints and burns in 18-decimal units. An ERC-20 transfer also emits its 6-decimal token log. The Arc reader (`src/server/domain/billing/arc.ts`) uses the system event for a complete movement view and avoids counting both logs as two payments. It checks the transaction receipt and the actual address and amount before treating a direct payout as verified. Gas deductions do not appear as transfer events.
+Arc's [system emitter](https://docs.arc.io/arc/concepts/stablecoin-native-model) logs USDC sends, ERC-20 transfers, mints and burns in 18-decimal units. The Arc reader (`src/server/domain/billing/arc.ts`) uses that event for a complete movement view, avoids double-counting ERC-20 logs, and checks the receipt, address and amount before treating a payout as verified.
 
-A chain transaction is still possible without a new GrowTendril contract. Existing [Arc USDC, Gateway and CCTP contracts](https://docs.arc.io/arc/references/contract-addresses) already provide the token, paid-request and cross-chain primitives. A custom contract is useful when GrowTendril needs its own enforceable custody rule, such as holding a creator reward until a review and refund window closes.
+Existing [Arc USDC, Gateway and CCTP contracts](https://docs.arc.io/arc/references/contract-addresses) provide token, paid-request and cross-chain primitives. A custom contract is useful when GrowTendril needs its own custody rule, such as holding a creator reward until a review and refund window closes.
 
 ### Current payment routes
 
@@ -85,7 +70,7 @@ With BILLING_ARC_ADDRESS configured, a top-up creates a two-hour invoice for the
 
 A live workspace wallet is a Circle developer-controlled Arc EOA. The server uses Circle credentials and an entity secret; the application never gives the creator or customer that wallet's private key. A TEST or malformed Circle API key is rejected for mainnet custody. See wallet integration (`src/server/integrations/circle/wallets.ts`) and chain configuration (`src/server/integrations/circle/config.ts`).
 
-For x402 research, GrowTendril first requests the seller's payment terms. It accepts only the expected Arc USDC/Gateway option, runs policy against the quoted price, then creates a capped EIP-712 authorization. A seller cannot increase the amount beyond the approved maximum during payment creation. Gateway may accept the authorization before an on-chain batch settles, so the UI and ledger must not call that initial acceptance a confirmed individual on-chain payment. See x402 integration (`src/server/integrations/circle/x402.ts`) and settlement execution (`src/server/domain/agent/execute.ts`).
+For x402 research, GrowTendril requests the seller's terms, accepts the expected Arc USDC/Gateway option, runs policy against the quoted price, and creates a capped EIP-712 authorization. A seller cannot increase the approved maximum. Gateway acceptance and later batch settlement remain distinct states. See x402 integration (`src/server/integrations/circle/x402.ts`).
 
 ![Operating wallet](https://growtendril.xyz/dorahacks/12-app-wallet.png)
 
@@ -116,7 +101,7 @@ Customer value applies matching refunds to recorded purchases, keeps unknown val
 
 **One GrowTendril contract has been deployed twice:** [Arc testnet](https://explorer.testnet.arc.io/address/0x2371d0f4a064d1eb5f154dd99d355a7f4fa71aa3) and [Arc mainnet](https://explorer.arc.io/address/0x2964e74d30413de186f5f4936eb133ab815845d3). The mainnet deployment transaction is [0x29d876…34a822](https://explorer.arc.io/tx/0x29d876d0d5ee161897959252af559a380fbb6511a409160edabe7b5b9134a822). Sourcify reported an exact creation-bytecode and runtime-bytecode match for the [mainnet source](https://sourcify.dev/server/v2/verify/1c6ed23a-11ff-4440-a102-76dc05608be6). Arc's explorer API blocked source publication with a Cloudflare challenge, so its own Contract tab may not yet display verified source. The deployment manifest (contracts/deployments/arc-mainnet.json) records the chain, address, constructor, source hash and verification status.
 
-OutcomeRewardsEscrow.sol (contracts/src/OutcomeRewardsEscrow.sol) is a prefunded, USDC-only reward pool. Each campaign fixes an owner, independent arbiter, deadline, maximum budget, reward formula, slot count and terms hash. The reward formula is base + quality bonus scaled from 0–100 + outcome bonus times eligible outcomes, within the campaign's cap. The owner can queue at most one reward per recipient after the campaign deadline and within a seven-day review window. A queued reward waits **72 hours** before claim. Before that hold ends, a qualifying refund can reduce its outcome bonus; owner or recipient can dispute, and the arbiter resolves release or rejection. Anyone can relay an eligible claim, but payment goes to the bound recipient. Unused, unreserved funds can be returned after the review window. The contract cannot itself determine whether a post was good or a customer event was genuine; those are business attestations supplied before queueing.
+OutcomeRewardsEscrow.sol (contracts/src/OutcomeRewardsEscrow.sol) is a prefunded, USDC-only reward pool. Each campaign fixes an owner, arbiter, deadline, budget, reward formula, slots and terms hash. Rewards combine a base, quality score and eligible outcomes within the campaign cap. One reward per recipient can be queued after the deadline during a seven-day review window, then claimed after a **72-hour** hold. Refunds can reduce the outcome bonus and an arbiter resolves disputes. Unused funds can be returned after review. Post quality and customer authenticity remain business attestations.
 
 The campaign escrow controls currently in the app connect **only to Arc testnet**. The mainnet contract was deployed and source-matched, but it was not funded or wired into live creator payouts at deployment. It has not received an independent security audit. The deployment and routing runbook (docs/ARC_DEPLOYMENT_RUNBOOK.md) tracks the remaining security review, testnet end-to-end exercise, production integration and reconciliation steps. Source verification is evidence that published source matches bytecode; it is not a security audit or a claim that every GrowTendril transaction flows through this contract.
 
