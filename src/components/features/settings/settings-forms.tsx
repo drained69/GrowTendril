@@ -195,9 +195,9 @@ export function PolicyForm({ p, disabled }: { p: Policy; disabled?: boolean }) {
 
 const CADENCE_HELP: Record<string, string> = {
   off: "The operator only runs when someone clicks Run cycle.",
-  hourly: "Scan, score and act within policy every hour.",
-  every_6h: "Four cycles a day — a good default for most teams.",
-  daily: "One cycle per day, before the daily brief.",
+  hourly: "May scan as soon as credit is available, then every hour.",
+  every_6h: "May scan as soon as credit is available, then every six hours.",
+  daily: "May scan as soon as credit is available, then once a day.",
 };
 
 export function AutopilotControl({ value, labels, disabled, billing }: { value: string; labels: Record<string, string>; disabled?: boolean; billing?: boolean }) {

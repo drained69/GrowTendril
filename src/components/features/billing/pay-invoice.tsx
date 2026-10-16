@@ -135,7 +135,7 @@ export function PayInvoice(p: { invoiceId: string; payTo: string; amountMicro: n
   if (status === "paid") {
     return (
       <Callout tone="success" title="Payment confirmed">
-        Credit added to your balance. Taking you to billing…
+        Credit added to your balance. Taking you to {p.next === "/billing" ? "billing" : "your workspace"}…
       </Callout>
     );
   }

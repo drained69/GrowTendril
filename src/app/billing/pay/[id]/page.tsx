@@ -1,6 +1,6 @@
 import Link from "next/link";
 import { notFound } from "next/navigation";
-import { and, eq } from "drizzle-orm";
+import { and, eq, ne } from "drizzle-orm";
 import { currentProject, requireUser } from "@/server/auth/current";
 import { getDb, schema as s } from "@/server/db/client";
 import { logoutAction } from "@/server/actions/auth";
@@ -38,6 +38,7 @@ export default async function PayInvoicePage({ params }: { params: Promise<{ id:
   const amount = (inv.amountMicro / 1e6).toFixed(6);
   const next = await nextStep(db, user.id, null);
   const balance = inv.status === "paid" ? await balanceMicro(db, user.id) : 0;
+  const scheduled = inv.status === "pending" ? await db.select({ name: s.projects.name }).from(s.projects).where(and(eq(s.projects.ownerId, user.id), ne(s.projects.autopilot, "off"))) : [];
   const paymentNext = inv.priceMicro === servicePriceMicro("scan") ? "/app/discover" : "/billing";
   const selected = await currentProject(user.id);
   const walletOwner = selected?.project.ownerId === user.id && !expired && inv.status === "pending";
@@ -129,6 +130,7 @@ export default async function PayInvoicePage({ params }: { params: Promise<{ id:
                 ]}
               />
               <Callout tone="info">Send on Arc only. USDC sent on another network can&apos;t be matched to your top-up. Arc&apos;s network fee is also paid in USDC (usually under a cent), so keep a little more than this amount in your wallet.</Callout>
+              {scheduled.length > 0 && <Callout tone="warn" title="Autopilot may use this top-up immediately">{scheduled.map((p) => p.name).join(", ")} {scheduled.length === 1 ? "has" : "have"} scheduled scans enabled. A due scan can take 2 USDC of your credit as soon as this payment confirms. <Link href="/app/settings#autopilot" className="underline">Review Autopilot settings</Link> before paying if you want to start the scan yourself.</Callout>}
               {walletFunds && <PayWorkspaceWallet invoiceId={inv.id} amountMicro={inv.amountMicro} availableMicro={walletFunds.availableMicro} balanceMicro={walletFunds.balanceMicro} />}
               {walletUnavailable && <Callout tone="warn">{walletUnavailable}</Callout>}
               <PayInvoice invoiceId={inv.id} payTo={inv.payTo} amountMicro={inv.amountMicro} usdc={ARC.usdc} chainId={ARC.chainId} rpcUrl={ARC.publicRpcUrl} explorer={ARC.explorer} next={paymentNext} />

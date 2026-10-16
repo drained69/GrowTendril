@@ -127,3 +127,45 @@ describe("operator cycle after a crash", () => {
     expect((await db.select().from(s.jobs).where(eq(s.jobs.projectId, "p2")))).toHaveLength(1);
   });
 });
+
+describe("scan credit after worker interruption", () => {
+  it("refunds an interrupted charge before retry and on an expired final attempt", async () => {
+    process.env.BILLING_ARC_ADDRESS = "0x2222222222222222222222222222222222222222";
+    try {
+      const billing = await import("@/server/domain/billing");
+      await db.insert(s.users).values({ id: "billing-owner", email: "billing@example.test", name: "Billing", passwordHash: "x" });
+      await db.insert(s.projects).values({ id: "billing-project", ownerId: "billing-owner", name: "Billing", webhookSecret: "x" });
+      await billing.addCredit(db, { userId: "billing-owner", amountMicro: 4_000_000, ref: "billing-test-topup" });
+      const queued = await q.enqueue(db, { kind: "cycle", projectId: "billing-project", maxAttempts: 2, runAt: new Date(Date.now() - 86_400_000) });
+      const first = await q.claimNext(db, "billing-worker");
+      expect(first?.id).toBe(queued?.id);
+      await billing.chargeService(db, { ownerId: "billing-owner", projectId: "billing-project", service: "scan", ref: `job:${queued!.id}:1` });
+      expect(await billing.balanceMicro(db, "billing-owner")).toBe(2_000_000);
+      await db.update(s.jobs).set({ lockedUntil: new Date(Date.now() - 1_000) }).where(eq(s.jobs.id, queued!.id));
+      const retry = await q.claimNext(db, "billing-worker-2");
+      expect(retry?.id).toBe(queued?.id);
+      expect(retry?.attempts).toBe(2);
+      expect(await billing.balanceMicro(db, "billing-owner")).toBe(4_000_000);
+      await billing.chargeService(db, { ownerId: "billing-owner", projectId: "billing-project", service: "scan", ref: `job:${queued!.id}:2` });
+      await db.update(s.jobs).set({ lockedUntil: new Date(Date.now() - 1_000) }).where(eq(s.jobs.id, queued!.id));
+      await q.claimNext(db, "billing-worker-3");
+      const [failed] = await db.select().from(s.jobs).where(eq(s.jobs.id, queued!.id));
+      expect(failed.status).toBe("failed");
+      expect(await billing.balanceMicro(db, "billing-owner")).toBe(4_000_000);
+    } finally { delete process.env.BILLING_ARC_ADDRESS; }
+  });
+
+  it("refunds a charged scan when the worker reports failure", async () => {
+    process.env.BILLING_ARC_ADDRESS = "0x2222222222222222222222222222222222222222";
+    try {
+      const billing = await import("@/server/domain/billing");
+      const before = await billing.balanceMicro(db, "billing-owner");
+      const queued = await q.enqueue(db, { kind: "cycle", projectId: "billing-project", maxAttempts: 1, runAt: new Date(Date.now() - 86_400_000) });
+      const claimed = await q.claimNext(db, "billing-fail-worker");
+      expect(claimed?.id).toBe(queued?.id);
+      await billing.chargeService(db, { ownerId: "billing-owner", projectId: "billing-project", service: "scan", ref: `job:${queued!.id}:1` });
+      await q.failJob(db, claimed!, "scan failed");
+      expect(await billing.balanceMicro(db, "billing-owner")).toBe(before);
+    } finally { delete process.env.BILLING_ARC_ADDRESS; }
+  });
+});

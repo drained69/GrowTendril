@@ -6,6 +6,7 @@ import type { AnalysisResult, IcpProposal } from "@/server/domain/intel/product-
 import { DEFAULT_POLICY } from "@/server/domain/agent/policy";
 import { missionTemplate } from "@/lib/missions";
 import { enqueue } from "@/server/jobs/queue";
+import { billingMode } from "@/server/domain/billing";
 import { newId } from "@/server/lib/ids";
 import { toMicro } from "@/lib/money";
 import { DAY_MS } from "@/lib/time";
@@ -121,7 +122,7 @@ export function policyValues(r: SpendingRules) {
   };
 }
 
-/** Saves the spending rules, marks onboarding done and queues the first market scan. */
+/** Saves the spending rules and activates the workspace. A paid first scan needs an explicit run or Autopilot opt-in. */
 export async function activateWorkspace(db: DB, a: { projectId: string; rules: SpendingRules; autopilot: string }) {
   const values = policyValues(a.rules);
   if (values.hardCeilingMicro <= 0) throw new Error("Set a positive per-payment ceiling");
@@ -131,6 +132,6 @@ export async function activateWorkspace(db: DB, a: { projectId: string; rules: S
     await tx.select({ id: s.projects.id }).from(s.projects).where(eq(s.projects.id, a.projectId)).for("update");
     await tx.insert(s.policies).values({ id: newId(), projectId: a.projectId, ...values }).onConflictDoUpdate({ target: s.policies.projectId, set: values });
     await tx.update(s.projects).set({ onboardingStep: 5, autopilot: a.autopilot }).where(eq(s.projects.id, a.projectId));
-    await enqueue(tx as unknown as DB, { kind: "cycle", projectId: a.projectId, trigger: "user", dedupeKey: `first-scan:${a.projectId}` });
+    if (billingMode() === "off") await enqueue(tx as unknown as DB, { kind: "cycle", projectId: a.projectId, trigger: "user", dedupeKey: `first-scan:${a.projectId}` });
   });
 }

@@ -4,7 +4,7 @@ import { ArrowDownLeft, ArrowUpRight, Coins, Receipt, RotateCcw, Sparkles } from
 import { requireUser } from "@/server/auth/current";
 import { getDb, schema as s } from "@/server/db/client";
 import { logoutAction } from "@/server/actions/auth";
-import { balanceMicro, billingMode, invoicesFor, ledgerFor } from "@/server/domain/billing";
+import { billingMode, billingSummary, invoicesFor, ledgerFor } from "@/server/domain/billing";
 import { nextStep } from "@/server/auth/next-step";
 import { txExplorerUrl } from "@/server/integrations/circle/config";
 import { fmtUsdc } from "@/lib/money";
@@ -17,6 +17,8 @@ import { TopUpButton, TopUpForm } from "@/components/features/billing/top-up";
 
 export const dynamic = "force-dynamic";
 
+const exactUsdc = (micro: number) => (micro / 1_000_000).toLocaleString("en-US", { minimumFractionDigits: 2, maximumFractionDigits: 6 });
+
 const KIND: Record<string, { label: string; icon: React.ReactNode; tone: string }> = {
   topup: { label: "Top-up", icon: <ArrowDownLeft />, tone: "text-good" },
   charge: { label: "Charge", icon: <ArrowUpRight />, tone: "text-ink" },
@@ -27,14 +29,23 @@ export default async function Billing() {
   const user = await requireUser();
   const db = await getDb();
   const mode = billingMode();
-  const [balance, ledger, invoices, next] = await Promise.all([balanceMicro(db, user.id), ledgerFor(db, user.id, 100), invoicesFor(db, user.id, 24), nextStep(db, user.id, null)]);
+  const [summary, ledger, invoices, next, ownedWorkspaces] = await Promise.all([
+    billingSummary(db, user.id), ledgerFor(db, user.id, 100), invoicesFor(db, user.id, 24), nextStep(db, user.id, null),
+    db.select({ id: s.projects.id, name: s.projects.name, autopilot: s.projects.autopilot }).from(s.projects).where(eq(s.projects.ownerId, user.id)),
+  ]);
+  const balance = summary.balanceMicro;
   const projectIds = [...new Set(ledger.map((l) => l.projectId).filter((x): x is string => !!x))];
   const names = new Map(projectIds.length ? (await db.select({ id: s.projects.id, name: s.projects.name }).from(s.projects).where(inArray(s.projects.id, projectIds))).map((p) => [p.id, p.name]) : []);
-  const [owned] = await db.select({ id: s.projects.id }).from(s.projects).where(eq(s.projects.ownerId, user.id)).limit(1);
+  const owned = ownedWorkspaces[0];
+  const scheduledWorkspaces = ownedWorkspaces.filter((p) => p.autopilot !== "off");
   const pending = invoices.find((i) => i.status === "pending" && i.expiresAt.getTime() > Date.now());
   const paid = invoices.filter((i) => i.status === "paid");
   const scans = Math.floor(balance / servicePriceMicro("scan"));
-  const spent = ledger.filter((l) => l.kind === "charge").reduce((a, l) => a - l.amountMicro, 0) - ledger.filter((l) => l.kind === "refund").reduce((a, l) => a + l.amountMicro, 0);
+  const topupIndex = ledger.findIndex((l) => l.kind === "topup");
+  const latestTopup = topupIndex >= 0 ? ledger[topupIndex] : null;
+  const afterTopup = topupIndex >= 0 ? ledger.slice(0, topupIndex) : [];
+  const correctedScan = afterTopup.find((l) => l.kind === "refund" && l.service === "scan" && l.note?.startsWith("Credit restored: Quick Start"));
+  const latestCharge = afterTopup.find((l) => l.kind === "charge" && !afterTopup.some((r) => r.kind === "refund" && r.ref === l.ref));
 
   return (
     <div className="min-h-screen bg-bg">
@@ -85,6 +96,21 @@ export default async function Billing() {
               {fmtUsdc(pending.priceMicro)} — send exactly <span className="num">{(pending.amountMicro / 1e6).toFixed(6)}</span> USDC on Arc. Expires {relTime(pending.expiresAt)}.
             </Callout>
           )}
+          {scheduledWorkspaces.length > 0 && mode === "arc" && (
+            <Callout tone="warn" title="Autopilot can use new credit automatically" action={<LinkButton href="/app/settings#autopilot" size="sm" variant="secondary">Autopilot settings</LinkButton>}>
+              {scheduledWorkspaces.map((p) => p.name).join(", ")} {scheduledWorkspaces.length === 1 ? "has" : "have"} Autopilot enabled. A due market scan may start as soon as your top-up settles and use 2 USDC. Pause Autopilot before paying if you want to run the scan yourself.
+            </Callout>
+          )}
+          {latestTopup && latestCharge && balance < servicePriceMicro("scan") && (
+            <Callout tone="info" title={latestCharge.note === "Autopilot scan" ? "Your top-up funded an Autopilot scan" : "Your top-up funded a service"} action={<LinkButton href="/app/runs" size="sm" variant="secondary">View runs</LinkButton>}>
+              {exactUsdc(latestTopup.amountMicro)} USDC was added to your credit, then {exactUsdc(-latestCharge.amountMicro)} USDC was charged for {latestCharge.note === "Autopilot scan" ? "a scheduled scan" : latestCharge.service ?? "a service"}. Your exact current balance is {exactUsdc(balance)} USDC.
+            </Callout>
+          )}
+          {correctedScan && (
+            <Callout tone="success" title="Your scan credit was restored" action={<LinkButton href="/app/discover" size="sm" variant="primary">Run a scan</LinkButton>}>
+              {exactUsdc(correctedScan.amountMicro)} USDC was returned to your credit after a scan started by the Quick Start Autopilot default. Your exact current balance is {exactUsdc(balance)} USDC. {ownedWorkspaces.find((p) => p.id === correctedScan.projectId)?.autopilot === "off" ? "Autopilot is paused for this workspace." : "Review your Autopilot setting before adding more credit."}
+            </Callout>
+          )}
 
           <div className="grid gap-4 md:grid-cols-[1fr_1.15fr]">
             <div className="sky-soft relative rounded-[22px] border border-line p-6 shadow-[var(--shadow-card)]">
@@ -94,8 +120,8 @@ export default async function Billing() {
                   <Coins className="size-4" /> Balance
                 </div>
                 <div className="mt-3 flex items-baseline gap-2">
-                  <span className={cn("display text-[56px] leading-none", balance > 0 ? "text-ink" : "text-ink-3")}>
-                    <CountUp text={(balance / 1e6).toFixed(2)} />
+                  <span className={cn("display text-[clamp(2rem,5vw,3.5rem)] leading-none", balance > 0 ? "text-ink" : "text-ink-3")}>
+                    <CountUp text={exactUsdc(balance)} />
                   </span>
                   <span className="num text-[14px] text-ink-3">USDC</span>
                 </div>
@@ -105,11 +131,11 @@ export default async function Billing() {
                 <div className="mt-5 grid grid-cols-2 gap-3 border-t border-line pt-4 text-[12px]">
                   <div>
                     <div className="text-ink-3">Spent so far</div>
-                    <div className="num mt-0.5 text-[15px] text-ink">{fmtUsdc(Math.max(0, spent), { unit: false })}</div>
+                    <div className="num mt-0.5 text-[15px] text-ink">{fmtUsdc(Math.max(0, summary.spentMicro), { unit: false })}</div>
                   </div>
                   <div>
                     <div className="text-ink-3">Top-ups</div>
-                    <div className="num mt-0.5 text-[15px] text-ink">{paid.length + ledger.filter((l) => l.kind === "topup" && l.ref.startsWith("dev:")).length}</div>
+                    <div className="num mt-0.5 text-[15px] text-ink">{summary.topups}</div>
                   </div>
                 </div>
               </div>
@@ -146,7 +172,7 @@ export default async function Billing() {
           </Card>
 
           <Card>
-            <CardHeader title="Activity" description="Every top-up, charge and refund on your balance." />
+            <CardHeader title="Recent activity" description="Latest 100 top-ups, charges and refunds. Balance and totals include your full history." />
             {ledger.length ? (
               <Table>
                 <thead>
@@ -170,7 +196,7 @@ export default async function Billing() {
                             <span className={cn("[&_svg]:size-3.5", k.tone)}>{k.icon}</span>
                             <span className="text-ink">{l.service ? SERVICES[l.service as ServiceKey]?.name ?? l.service : k.label}</span>
                             {l.kind !== "charge" && l.service && <Badge tone="good">{k.label}</Badge>}
-                            {l.note && l.kind === "charge" && <span className="text-ink-4">· {l.note}</span>}
+                            {l.note && <span className="text-ink-4">· {l.note}</span>}
                           </span>
                         </td>
                         <td className="text-ink-3">{l.projectId ? names.get(l.projectId) ?? "—" : "—"}</td>
@@ -190,7 +216,7 @@ export default async function Billing() {
 
           {paid.length > 0 && (
             <Card>
-              <CardHeader title="Payments on Arc" description="Each top-up is a USDC transfer you can check on the Arc explorer." />
+              <CardHeader title="Recent payments on Arc" description="The latest invoices and their USDC transfers on Arc." />
               <Table>
                 <thead>
                   <tr>

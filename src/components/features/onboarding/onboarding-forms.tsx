@@ -246,7 +246,7 @@ const LIMITS = [
 
 export function AutonomyStep({ autopilot, billing }: { autopilot: Record<string, string>; billing?: boolean }) {
   const [state, action, pending] = useActionState(onboardAutonomyAction, null);
-  const [cadence, setCadence] = useState("every_6h");
+  const [cadence, setCadence] = useState("off");
   return (
     <form action={action} onSubmit={keepValues(action)}>
       <div className="divide-y divide-line">
@@ -268,7 +268,7 @@ export function AutonomyStep({ autopilot, billing }: { autopilot: Record<string,
         <div className="text-[12.5px] font-medium text-ink">Autopilot</div>
         <p className="text-[11.5px] text-ink-3">
           How often the operator runs a full cycle on its own. You can change this in Settings.
-          {billing && <> Each run is one market scan ({SERVICES.scan.priceUsdc} USDC), and runs wait while your balance is too low.</>}
+          {billing && <> Each run is one market scan ({SERVICES.scan.priceUsdc} USDC). If enabled, an overdue run can start as soon as you add credit.</>}
         </p>
         <input type="hidden" name="autopilot" value={cadence} />
         <div className="mt-2.5 flex flex-wrap gap-1.5" role="radiogroup" aria-label="Autopilot cadence">

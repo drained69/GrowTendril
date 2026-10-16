@@ -1,6 +1,5 @@
 "use server";
 
-import { billingMode } from "@/server/domain/billing";
 import { cookies } from "next/headers";
 import { redirect } from "next/navigation";
 import { revalidatePath } from "next/cache";
@@ -47,7 +46,7 @@ export interface QuickStartSummary {
 /**
  * Paste a website, get a working workspace: read the site, build the product profile and
  * ideal customers, start a goal that fits the audience, set safe spending rules (every
- * payment asks first) and queue the first market scan.
+ * payment asks first). Paid scans are started only after the owner chooses to run one or opts in to Autopilot.
  */
 export async function quickStartAction(_: unknown, form: FormData): Promise<ActionResult<QuickStartSummary>> {
   try {
@@ -91,7 +90,7 @@ export async function quickStartAction(_: unknown, form: FormData): Promise<Acti
     });
     await replaceIcps(tx as unknown as typeof db, projectId, icp.icps);
     await startMission(tx as unknown as typeof db, { projectId, templateKey: template.key, goal: template.goal, days: template.days, budget: template.budget });
-    await activateWorkspace(tx as unknown as typeof db, { projectId, rules: { dailySpend: "10", hardCeiling: "10", autonomousLimit: "0" }, autopilot: billingMode() === "off" ? "every_6h" : "daily" });
+    await activateWorkspace(tx as unknown as typeof db, { projectId, rules: { dailySpend: "10", hardCeiling: "10", autonomousLimit: "0" }, autopilot: "off" });
     await audit(tx as unknown as typeof db, { projectId, actorType: "user", actorId: user.id, action: "workspace.quickstart", data: { url: facts.url, pages: facts.readablePages, generatedBy: analysis.generatedBy } });
     return projectId;
     });

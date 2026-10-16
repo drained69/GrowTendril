@@ -1,5 +1,5 @@
 import { randomInt } from "node:crypto";
-import { and, desc, eq, gt, inArray, lt, sql } from "drizzle-orm";
+import { and, desc, eq, gt, inArray, lt, ne, sql } from "drizzle-orm";
 import type { DB } from "@/server/db/client";
 import * as s from "@/server/db/schema";
 import { newId } from "@/server/lib/ids";
@@ -57,6 +57,17 @@ export class InsufficientCredit extends Error {
 export async function balanceMicro(db: DB, userId: string): Promise<number> {
   const [r] = await db.select({ n: sql<string>`coalesce(sum(${s.creditLedger.amountMicro}), 0)` }).from(s.creditLedger).where(eq(s.creditLedger.userId, userId));
   return Number(r?.n ?? 0);
+}
+
+/** Complete account totals; the activity table below may intentionally show only recent rows. */
+export async function billingSummary(db: DB, userId: string) {
+  const [r] = await db.select({
+    balance: sql<string>`coalesce(sum(${s.creditLedger.amountMicro}), 0)`,
+    charged: sql<string>`coalesce(sum(-${s.creditLedger.amountMicro}) filter (where ${s.creditLedger.kind} = 'charge'), 0)`,
+    refunded: sql<string>`coalesce(sum(${s.creditLedger.amountMicro}) filter (where ${s.creditLedger.kind} = 'refund'), 0)`,
+    topups: sql<string>`count(*) filter (where ${s.creditLedger.kind} = 'topup')`,
+  }).from(s.creditLedger).where(eq(s.creditLedger.userId, userId));
+  return { balanceMicro: Number(r?.balance ?? 0), spentMicro: Number(r?.charged ?? 0) - Number(r?.refunded ?? 0), topups: Number(r?.topups ?? 0) };
 }
 
 export async function ledgerFor(db: DB, userId: string, limit = 50) {
@@ -127,12 +138,13 @@ async function receiptEmail(db: DB, userId: string, v: { amountMicro: number; tx
   if (!u) return;
   const app = v.appUrl ?? process.env.APP_URL?.trim() ?? "";
   const balance = await balanceMicro(db, userId);
+  const [scheduled] = await db.select({ id: s.projects.id }).from(s.projects).where(and(eq(s.projects.ownerId, userId), ne(s.projects.autopilot, "off"))).limit(1);
   await sendEmail(db, {
     to: u.email,
     userId,
     kind: "credit_added",
     subject: `Payment received — ${fmtUsdc(v.amountMicro)} added to your GrowTendril balance`,
-    text: `Hi ${u.name.split(" ")[0] || "there"},\n\nThanks — ${fmtUsdc(v.amountMicro)} is now on your GrowTendril balance (${fmtUsdc(balance)} in total).\n\nReceipt: ${(v.amountMicro / 1e6).toFixed(6)} USDC on Arc\nTransaction: ${txExplorerUrl(v.chain, v.txHash)}`,
+    text: `Hi ${u.name.split(" ")[0] || "there"},\n\nThanks — ${fmtUsdc(v.amountMicro)} is now on your GrowTendril balance (${fmtUsdc(balance)} at the moment this receipt was sent).${scheduled ? "\n\nAutopilot is enabled in one of your workspaces. A scheduled market scan may use 2 USDC of this credit immediately if a run is due; check Billing activity for your current balance." : ""}\n\nReceipt: ${(v.amountMicro / 1e6).toFixed(6)} USDC on Arc\nTransaction: ${txExplorerUrl(v.chain, v.txHash)}`,
     action: app ? { label: "Open billing", url: `${app}/billing` } : undefined,
   }).catch((e) => console.warn(`[billing] receipt email failed: ${(e as Error).message}`));
 }

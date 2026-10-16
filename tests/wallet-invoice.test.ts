@@ -57,5 +57,7 @@ describe("workspace wallet to scan credit", () => {
     expect(await billing.balanceMicro(db, "owner")).toBe(invoice.amountMicro);
     await billing.payInvoiceWithTx(db, invoice, arc.hash, undefined, WALLET);
     expect(await billing.balanceMicro(db, "owner")).toBe(invoice.amountMicro);
+    await billing.chargeService(db, { ownerId: "owner", projectId: "project", service: "scan", ref: "job:one:1", note: "Autopilot scan" });
+    expect(await billing.billingSummary(db, "owner")).toEqual({ balanceMicro: invoice.amountMicro - 2_000_000, spentMicro: 2_000_000, topups: 1 });
   });
 });
