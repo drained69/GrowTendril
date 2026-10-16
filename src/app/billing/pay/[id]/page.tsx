@@ -1,7 +1,7 @@
 import Link from "next/link";
 import { notFound } from "next/navigation";
 import { and, eq } from "drizzle-orm";
-import { requireUser } from "@/server/auth/current";
+import { currentProject, requireUser } from "@/server/auth/current";
 import { getDb, schema as s } from "@/server/db/client";
 import { logoutAction } from "@/server/actions/auth";
 import { balanceMicro, billingMode } from "@/server/domain/billing";
@@ -19,7 +19,11 @@ import { Badge, Callout, Card, CardBody, CardHeader, KeyValue, LinkButton } from
 import { CopyField } from "@/components/ui/copy";
 import { Logo } from "@/components/layout/logo";
 import { PayInvoice } from "@/components/features/billing/pay-invoice";
+import { PayWorkspaceWallet } from "@/components/features/billing/pay-workspace-wallet";
 import { TopUpButton } from "@/components/features/billing/top-up";
+import { withdrawable } from "@/server/domain/agent/withdraw";
+import { servicePriceMicro } from "@/lib/services";
+import { getWallet, walletIsLive } from "@/server/integrations/circle/wallets";
 
 export const dynamic = "force-dynamic";
 
@@ -34,6 +38,15 @@ export default async function PayInvoicePage({ params }: { params: Promise<{ id:
   const amount = (inv.amountMicro / 1e6).toFixed(6);
   const next = await nextStep(db, user.id, null);
   const balance = inv.status === "paid" ? await balanceMicro(db, user.id) : 0;
+  const paymentNext = inv.priceMicro === servicePriceMicro("scan") ? "/app/discover" : "/billing";
+  const selected = await currentProject(user.id);
+  const walletOwner = selected?.project.ownerId === user.id && !expired && inv.status === "pending";
+  const workspaceWallet = walletOwner ? await getWallet(db, selected.project.id) : null;
+  const walletFunds = walletOwner && workspaceWallet && walletIsLive(workspaceWallet) && !workspaceWallet.frozen
+    ? await withdrawable(db, selected.project.id).catch(() => null) : null;
+  const walletUnavailable = walletOwner && !walletFunds
+    ? workspaceWallet?.frozen ? "Workspace spending is frozen. Resume it on the Wallet page to pay this invoice." : walletIsLive(workspaceWallet) ? "Couldn't read the workspace wallet balance right now. Try refreshing this page." : "Create or attach an Arc mainnet workspace wallet to pay from it."
+    : null;
 
   return (
     <div className="min-h-screen bg-bg">
@@ -83,9 +96,8 @@ export default async function PayInvoicePage({ params }: { params: Promise<{ id:
                   },
                 ]}
               />
-              <LinkButton href={next} variant="primary">
-                Continue
-              </LinkButton>
+              <LinkButton href={next} variant="primary">Continue to app</LinkButton>
+              <LinkButton href="/app/discover" variant="secondary">Run a scan</LinkButton>
             </CardBody>
           </Card>
         ) : expired ? (
@@ -117,7 +129,9 @@ export default async function PayInvoicePage({ params }: { params: Promise<{ id:
                 ]}
               />
               <Callout tone="info">Send on Arc only. USDC sent on another network can&apos;t be matched to your top-up. Arc&apos;s network fee is also paid in USDC (usually under a cent), so keep a little more than this amount in your wallet.</Callout>
-              <PayInvoice invoiceId={inv.id} payTo={inv.payTo} amountMicro={inv.amountMicro} usdc={ARC.usdc} chainId={ARC.chainId} rpcUrl={ARC.publicRpcUrl} explorer={ARC.explorer} next="/billing" />
+              {walletFunds && <PayWorkspaceWallet invoiceId={inv.id} amountMicro={inv.amountMicro} availableMicro={walletFunds.availableMicro} balanceMicro={walletFunds.balanceMicro} />}
+              {walletUnavailable && <Callout tone="warn">{walletUnavailable}</Callout>}
+              <PayInvoice invoiceId={inv.id} payTo={inv.payTo} amountMicro={inv.amountMicro} usdc={ARC.usdc} chainId={ARC.chainId} rpcUrl={ARC.publicRpcUrl} explorer={ARC.explorer} next={paymentNext} />
             </CardBody>
           </Card>
         )}

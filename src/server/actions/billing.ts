@@ -2,16 +2,18 @@
 
 import { redirect } from "next/navigation";
 import { revalidatePath } from "next/cache";
-import { and, eq } from "drizzle-orm";
+import { and, eq, like } from "drizzle-orm";
 import { z } from "zod";
 import { getDb, schema as s } from "@/server/db/client";
 import { audit } from "@/server/db/helpers";
 import { currentUser } from "@/server/auth/current";
-import { addCredit, billingMode, checkInvoice, createInvoice, parseTopUp, payInvoiceWithTx } from "@/server/domain/billing";
+import { addCredit, billingMode, checkInvoice, createInvoice, parseTopUp, payInvoiceWithTx, payToAddress } from "@/server/domain/billing";
 import { newId } from "@/server/lib/ids";
-import { fmtUsdc } from "@/lib/money";
+import { fmtUsdc, microToDecimal } from "@/lib/money";
 import { appOrigin } from "@/server/lib/origin";
-import { fail, limited, type ActionResult } from "@/server/actions/_common";
+import { fail, guard, limited, type ActionResult } from "@/server/actions/_common";
+import { checkWithdrawal, withdraw, withdrawalScope } from "@/server/domain/agent/withdraw";
+import { issueCode, consumeCode } from "@/server/domain/auth/codes";
 
 async function verifiedUser() {
   const user = await currentUser();
@@ -25,6 +27,70 @@ async function ownInvoice(invoiceId: string, userId: string) {
   const [inv] = await db.select().from(s.billingInvoices).where(and(eq(s.billingInvoices.id, invoiceId), eq(s.billingInvoices.userId, userId)));
   if (!inv) throw new Error("Invoice not found");
   return { db, inv };
+}
+
+/** Only the owner of the selected workspace may move its USDC into their billing credit. */
+async function walletInvoice(invoiceId: string) {
+  const { user, project, db } = await guard("manage_workspace");
+  if (project.ownerId !== user.id) throw new Error("Only the workspace owner can pay from its wallet.");
+  if (billingMode() !== "arc") throw new Error("Arc billing is unavailable.");
+  const [inv] = await db.select().from(s.billingInvoices).where(and(eq(s.billingInvoices.id, invoiceId), eq(s.billingInvoices.userId, user.id)));
+  if (!inv) throw new Error("Invoice not found.");
+  if (inv.status !== "pending" || inv.expiresAt.getTime() <= Date.now()) throw new Error("This invoice is no longer open. Create a new top-up.");
+  if (inv.payTo.toLowerCase() !== payToAddress()?.toLowerCase()) throw new Error("The billing address has changed. Create a new top-up.");
+  return { user, project, db, inv };
+}
+
+const invoiceTransferPrefix = (projectId: string, invoiceId: string) => `withdraw:${projectId}:billing-invoice:${invoiceId}:`;
+
+async function assertNoWalletPaymentInFlight(db: Awaited<ReturnType<typeof getDb>>, projectId: string, invoiceId: string) {
+  const [existing] = await db.select({ state: s.transactions.state }).from(s.transactions).where(and(
+    eq(s.transactions.projectId, projectId),
+    like(s.transactions.idempotencyKey, `${invoiceTransferPrefix(projectId, invoiceId)}%`),
+  )).limit(1);
+  // Even FAILED may mean Circle accepted a send before the SDK timed out. Never auto-send twice.
+  if (existing) throw new Error("A wallet payment was already attempted for this invoice. Check its Arc receipt before trying another payment; contact support if its status is unclear.");
+}
+
+/** Email confirmation for the exact invoice amount and billing destination. */
+export async function requestWalletInvoiceCodeAction(invoiceId: string): Promise<ActionResult<{ summary: string }>> {
+  try {
+    const { user, project, db, inv } = await walletInvoice(invoiceId);
+    await limited(`wallet-invoice-code:${user.id}`, 5, 0.02);
+    await assertNoWalletPaymentInFlight(db, project.id, inv.id);
+    const checked = await checkWithdrawal(db, project.id, { amount: microToDecimal(inv.amountMicro), to: inv.payTo });
+    const summary = `${fmtUsdc(inv.amountMicro)} from ${checked.walletAddress} to GrowTendril billing (${inv.payTo}) for invoice ${inv.id}`;
+    await issueCode(db, user, "withdraw", Date.now(), { scope: `${withdrawalScope(project.id, inv.amountMicro, inv.payTo)}:invoice:${inv.id}`, summary });
+    return { ok: true, data: { summary }, message: `We emailed a code to ${user.email}. It authorizes only this invoice payment.` };
+  } catch (e) { return fail(e); }
+}
+
+/** Explicitly approved wallet payment. Billing credit is added only when Arc confirms the transfer. */
+export async function payWalletInvoiceAction(invoiceId: string, code: string): Promise<ActionResult<{ state: string; txHash: string | null }>> {
+  try {
+    const { user, project, db, inv } = await walletInvoice(invoiceId);
+    await limited(`wallet-invoice-pay:${user.id}`, 5, 0.02);
+    await assertNoWalletPaymentInFlight(db, project.id, inv.id);
+    const checked = await checkWithdrawal(db, project.id, { amount: microToDecimal(inv.amountMicro), to: inv.payTo });
+    const codeId = await consumeCode(db, user.id, "withdraw", code, Date.now(), `${withdrawalScope(project.id, inv.amountMicro, inv.payTo)}:invoice:${inv.id}`);
+    const sent = await withdraw(db, { projectId: project.id, userId: user.id, amount: microToDecimal(inv.amountMicro), to: inv.payTo, requestKey: `billing-invoice:${inv.id}:${codeId}` });
+    if (sent.state === "FAILED") return { ok: false, error: "The wallet payment did not confirm. No scan credit was added. Check its Arc receipt before trying another payment." };
+    if (sent.state === "EXCEPTION") return { ok: false, error: "The Arc transfer did not match the approved payment. Scan credit was not added; contact support." };
+    let credited = false;
+    if (sent.state === "SETTLED" && sent.txHash) {
+      try {
+        await payInvoiceWithTx(db, inv, sent.txHash, await appOrigin(), checked.walletAddress);
+        credited = true;
+        revalidatePath("/", "layout");
+      } catch (e) {
+        // The receipt can precede RPC transaction indexing. Keep watching the exact invoice;
+        // no second transfer is allowed, and the background matcher will add credit on arrival.
+        if (!(e instanceof Error) || !e.message.includes("can't find a successful transaction")) throw e;
+      }
+    }
+    await audit(db, { actorType: "user", actorId: user.id, action: "billing.wallet_payment", target: inv.id, data: { projectId: project.id, txHash: sent.txHash, state: sent.state } });
+    return { ok: true, data: { state: credited ? "SETTLED" : "SUBMITTED", txHash: sent.txHash }, message: credited ? "Wallet payment verified on Arc. Scan credit is ready." : "Wallet payment sent. Arc confirmation is in progress; this page will add credit when it arrives." };
+  } catch (e) { return fail(e); }
 }
 
 /** Top up: an invoice for an exact USDC amount on Arc, then its payment page. */

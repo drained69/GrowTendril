@@ -17,6 +17,7 @@ let db: DB;
 let billing: typeof import("@/server/domain/billing");
 const HASH_A = `0x${"a".repeat(64)}`;
 const HASH_C = `0x${"c".repeat(64)}`;
+const HASH_D = `0x${"d".repeat(64)}`;
 
 beforeAll(async () => {
   const client = await import("@/server/db/client");
@@ -45,5 +46,20 @@ describe("claiming a top-up by transaction hash", () => {
     const carol = await billing.createInvoice(db, "bob", 2_000_000, { block: 900n });
     chain.payment = { from: "0x9999999999999999999999999999999999999999", amountMicro: 2_000_000, blockNumber: 960n };
     await expect(billing.payInvoiceWithTx(db, carol, HASH_C)).resolves.toEqual({ paid: true });
+  });
+
+  it("credits a workspace-wallet invoice only when its Arc sender matches that wallet", async () => {
+    const invoice = await billing.createInvoice(db, "alice", 2_000_000, { block: 900n });
+    const wallet = "0x8888888888888888888888888888888888888888";
+    const before = await billing.balanceMicro(db, "alice");
+    chain.payment = { from: "0x9999999999999999999999999999999999999999", amountMicro: invoice.amountMicro, blockNumber: 960n };
+    await expect(billing.payInvoiceWithTx(db, invoice, HASH_D, undefined, wallet)).rejects.toThrow(/did not come from/);
+    expect(await billing.balanceMicro(db, "alice")).toBe(before);
+    chain.payment = { ...chain.payment, from: wallet };
+    await expect(billing.payInvoiceWithTx(db, invoice, HASH_D, undefined, wallet)).resolves.toEqual({ paid: true });
+    const [paid] = (await billing.invoicesFor(db, "alice")).filter((i) => i.id === invoice.id);
+    expect(paid.status).toBe("paid");
+    expect(paid.payer?.toLowerCase()).toBe(wallet.toLowerCase());
+    expect(await billing.balanceMicro(db, "alice")).toBe(before + invoice.amountMicro);
   });
 });

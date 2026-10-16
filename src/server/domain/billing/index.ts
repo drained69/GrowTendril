@@ -48,7 +48,7 @@ export class InsufficientCredit extends Error {
     readonly service: ServiceKey,
     readonly balanceMicro: number,
   ) {
-    super(`${SERVICES[service].name} costs ${fmtUsdc(servicePriceMicro(service))} of prepaid credit; the workspace owner's credit balance is ${fmtUsdc(balanceMicro)}. Wallet USDC is separate. The owner can add credit in Billing.`);
+    super(`${SERVICES[service].name} costs ${fmtUsdc(servicePriceMicro(service))} of prepaid credit; the workspace owner's credit balance is ${fmtUsdc(balanceMicro)}. The owner can pay a Billing invoice from the workspace wallet to fund the scan.`);
   }
 }
 
@@ -244,11 +244,12 @@ export async function checkInvoice(db: DB, inv: Invoice, appUrl?: string): Promi
  * transaction went to the billing address after the invoice was created. Works for an expired
  * invoice too, so a slow payer isn't stranded.
  */
-export async function payInvoiceWithTx(db: DB, inv: Invoice, txHash: string, appUrl?: string): Promise<{ paid: boolean }> {
+export async function payInvoiceWithTx(db: DB, inv: Invoice, txHash: string, appUrl?: string, expectedFrom?: string): Promise<{ paid: boolean }> {
   if (!isTxHash(txHash)) throw new Error("That doesn't look like a transaction hash (0x followed by 64 characters).");
   if (inv.status === "paid") return { paid: true };
   const p = await paymentInTx(txHash, inv.payTo);
   if (!p) throw new Error("We can't find a successful transaction with that hash on Arc yet. If you just sent it, wait a few seconds and try again.");
+  if (expectedFrom && p.from.toLowerCase() !== expectedFrom.toLowerCase()) throw new Error("The Arc payment did not come from this workspace wallet.");
   const [used] = await db.select({ id: s.billingInvoices.id }).from(s.billingInvoices).where(eq(s.billingInvoices.txHash, txHash.toLowerCase()));
   if (used && used.id !== inv.id) throw new Error("That transaction has already paid another invoice.");
   if (p.blockNumber < BigInt(inv.fromBlock)) throw new Error("That transaction happened before this invoice was created, so it can't pay it.");
